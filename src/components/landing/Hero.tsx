@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Phone, Sparkles } from 'lucide-react';
 import VoiceOrb3D from './VoiceOrb3D';
-import { useScrollReveal, useScrollY } from './scroll';
+import { useCursor, useMagnetic, useScrollReveal, useScrollY } from './scroll';
 
 const GREETINGS: { lang: string; greet: string }[] = [
   { lang: 'English', greet: 'Welcome — would you like a table tonight?' },
@@ -38,8 +38,10 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
   const [index, setIndex] = useState(0);
   const [typed, setTyped] = useState('');
   const scrollY = useScrollY();
+  const cursor = useCursor();
   const leftReveal = useScrollReveal<HTMLDivElement>();
   const orbReveal = useScrollReveal<HTMLDivElement>();
+  const magneticBtn = useMagnetic<HTMLButtonElement>(0.3);
 
   useEffect(() => {
     const target = GREETINGS[index].greet;
@@ -59,14 +61,22 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
 
   const headlineY = `translate3d(0, ${scrollY * 0.12}px, 0)`;
   const orbScale = Math.max(0.78, 1 - scrollY * 0.0005);
-  const orbY = `translate3d(0, ${scrollY * -0.08}px, 0) scale(${orbScale})`;
+  const orbY = `translate3d(${(cursor.x - 0.5) * 14}px, ${scrollY * -0.08 + (cursor.y - 0.5) * 12}px, 0) scale(${orbScale})`;
+  const meshY = `translate3d(${(cursor.x - 0.5) * -20}px, ${(cursor.y - 0.5) * -20 + scrollY * 0.04}px, 0)`;
+  const fadeOut = Math.max(0, 1 - scrollY / 800);
 
   return (
     <section className="relative overflow-hidden text-stone-50">
-      <div className="absolute -left-32 top-32 w-[420px] h-[420px] rounded-full bg-amber-500/[0.08] blur-3xl pointer-events-none" />
-      <div className="absolute -right-32 bottom-0 w-[480px] h-[480px] rounded-full bg-cyan-500/[0.06] blur-3xl pointer-events-none" />
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ transform: meshY, transition: 'transform 700ms cubic-bezier(0.16, 1, 0.3, 1)', opacity: fadeOut }}
+      >
+        <div className="absolute -left-40 top-24 w-[520px] h-[520px] rounded-full bg-amber-500/[0.10] blur-3xl" />
+        <div className="absolute -right-40 bottom-0 w-[560px] h-[560px] rounded-full bg-cyan-500/[0.07] blur-3xl" />
+        <div className="absolute top-[10%] left-[40%] w-[460px] h-[460px] rounded-full bg-rose-500/[0.08] blur-3xl" />
+      </div>
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-10 pt-24 pb-32">
+      <div className="relative max-w-7xl mx-auto px-6 sm:px-10 pt-28 pb-32">
         <div className="grid lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-6 items-center">
           <div ref={leftReveal} className="scroll-reveal relative z-10" style={{ transform: headlineY }}>
             <div className="inline-flex items-center gap-2 bg-stone-50/[0.06] border border-stone-50/10 rounded-full pl-1.5 pr-3 py-1 text-[11.5px] tracking-wide text-stone-300 backdrop-blur-md">
@@ -88,7 +98,7 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
               in their native tongue — 24 hours a day, in real time, with zero wait.
             </p>
 
-            <div className="mt-8 inline-flex items-center gap-3 bg-stone-50/[0.05] border border-stone-50/10 rounded-2xl px-4 py-3 backdrop-blur shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+            <div className="mt-8 inline-flex items-center gap-3 glass-panel-dark rounded-2xl px-4 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />
                 <span className="text-[11px] uppercase tracking-[0.18em] text-stone-400">Live</span>
@@ -102,9 +112,10 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
 
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <button
+                ref={magneticBtn}
                 type="button"
                 onClick={onTryIt}
-                className="group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-5 pr-4 py-3 text-[13.5px] transition-all shadow-[0_10px_40px_rgba(251,191,36,0.4)]"
+                className="magnetic-cta group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-5 pr-4 py-3 text-[13.5px]"
               >
                 Try it now
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
@@ -138,6 +149,7 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
           >
             <div className="absolute inset-0 -z-10">
               <div className="absolute inset-0 m-auto w-[420px] h-[420px] rounded-full bg-gradient-to-br from-amber-400/20 via-rose-400/10 to-transparent blur-3xl animate-ring-pulse" />
+              <div className="absolute inset-0 m-auto w-[520px] h-[520px] rounded-full conic-sweep opacity-60" />
             </div>
 
             <VoiceOrb3D />
@@ -171,9 +183,19 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
 }
 
 function Stat({ value, label }: { value: string; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState(false);
   return (
-    <div>
-      <div className="text-[26px] font-semibold tracking-tight text-stone-50 tabular-nums">
+    <div
+      ref={ref}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="relative cursor-default"
+    >
+      <div
+        className="text-[26px] font-semibold tracking-tight tabular-nums transition-colors duration-300"
+        style={{ color: hover ? '#fcd34d' : '#fafaf8' }}
+      >
         {value}
       </div>
       <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500 mt-1">{label}</div>

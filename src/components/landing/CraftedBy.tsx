@@ -4,7 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import VoiceOrb3D from './VoiceOrb3D';
 import AvatarUploader from './AvatarUploader';
-import { useScrollReveal, useScrollY, useScrollProgress, useTilt } from './scroll';
+import { useMagnetic, useScrollReveal, useScrollY, useScrollProgress } from './scroll';
 
 interface Contributor {
   id: string;
@@ -108,6 +108,7 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [showUploader, setShowUploader] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [filter, setFilter] = useState<string>('all');
   const scrollY = useScrollY();
   const progress = useScrollProgress();
 
@@ -267,8 +268,21 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
 
       <ManifestoSection />
 
+      <CategoryFilter
+        active={filter}
+        onChange={setFilter}
+        counts={{
+          all: contributors.length,
+          founders: grouped.founders?.length ?? 0,
+          engineering: grouped.engineering?.length ?? 0,
+          data: grouped.data?.length ?? 0,
+          linguists: grouped.linguists?.length ?? 0,
+        }}
+      />
+
       <section className="relative max-w-7xl mx-auto px-6 sm:px-10 pb-32 space-y-28">
         {SECTIONS.map((section) => {
+          if (filter !== 'all' && filter !== section.key) return null;
           const items = grouped[section.key] ?? [];
           if (items.length === 0 && !loading) return null;
           return (
@@ -623,6 +637,7 @@ function NameChip({ name, accent }: { name: string; accent: boolean }) {
 
 function ClosingCTA({ onTryIt }: { onTryIt: () => void }) {
   const ref = useScrollReveal<HTMLDivElement>();
+  const magneticBtn = useMagnetic<HTMLButtonElement>(0.32);
   return (
     <section className="relative py-32">
       <div
@@ -631,6 +646,7 @@ function ClosingCTA({ onTryIt }: { onTryIt: () => void }) {
       >
         <div className="relative overflow-hidden rounded-[32px] border border-stone-50/10 bg-gradient-to-b from-stone-50/[0.05] to-transparent p-12 sm:p-16 text-center">
           <div className="absolute inset-0 bg-radial-amber opacity-60 pointer-events-none" />
+          <div className="absolute inset-0 conic-sweep opacity-50 pointer-events-none" />
           <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl animate-blob-1" />
           <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-rose-500/10 blur-3xl animate-blob-2" />
 
@@ -651,9 +667,10 @@ function ClosingCTA({ onTryIt }: { onTryIt: () => void }) {
               them, we'd love to hear you next.
             </p>
             <button
+              ref={magneticBtn}
               type="button"
               onClick={onTryIt}
-              className="mt-10 group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-6 pr-5 py-3.5 text-[14px] transition-all shadow-[0_10px_40px_rgba(251,191,36,0.4)]"
+              className="magnetic-cta mt-10 group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-6 pr-5 py-3.5 text-[14px]"
             >
               Try Algoritm now
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
@@ -662,5 +679,55 @@ function ClosingCTA({ onTryIt }: { onTryIt: () => void }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function CategoryFilter({
+  active,
+  onChange,
+  counts,
+}: {
+  active: string;
+  onChange: (k: string) => void;
+  counts: Record<string, number>;
+}) {
+  const ref = useScrollReveal<HTMLDivElement>();
+  const options = [
+    { key: 'all', label: 'Everyone' },
+    { key: 'founders', label: 'Founders' },
+    { key: 'engineering', label: 'Engineering & Design' },
+    { key: 'data', label: 'Data' },
+    { key: 'linguists', label: 'Linguists' },
+  ].filter((o) => (o.key === 'all' ? true : (counts[o.key] ?? 0) > 0));
+
+  return (
+    <div ref={ref} className="scroll-reveal max-w-7xl mx-auto px-6 sm:px-10 pb-12">
+      <div className="flex flex-wrap items-center gap-2 glass-panel-dark rounded-full p-1.5 w-fit">
+        {options.map((o) => {
+          const isActive = active === o.key;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => onChange(o.key)}
+              className={`relative inline-flex items-center gap-2 rounded-full px-4 py-2 text-[12.5px] font-medium transition-all ${
+                isActive
+                  ? 'bg-amber-400 text-stone-900 shadow-[0_8px_24px_rgba(251,191,36,0.4)]'
+                  : 'text-stone-300 hover:text-stone-50 hover:bg-stone-50/[0.06]'
+              }`}
+            >
+              {o.label}
+              <span
+                className={`text-[10px] tabular-nums tracking-wider px-1.5 py-0.5 rounded-full ${
+                  isActive ? 'bg-stone-900/15 text-stone-900/80' : 'bg-stone-50/[0.08] text-stone-500'
+                }`}
+              >
+                {counts[o.key] ?? 0}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }

@@ -56,7 +56,7 @@ export default function FeatureBento() {
   const headerRef = useScrollReveal<HTMLDivElement>();
 
   return (
-    <section id="features" className="relative text-stone-50 py-32 overflow-hidden">
+    <section className="relative text-stone-50 py-32 overflow-hidden">
       <div className="absolute left-1/2 top-0 -translate-x-1/2 w-[80%] h-px bg-gradient-to-r from-transparent via-stone-50/15 to-transparent" />
 
       <div className="relative max-w-7xl mx-auto px-6 sm:px-10">

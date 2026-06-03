@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sparkles, Mail, Lock, AlertCircle, Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -16,6 +16,23 @@ export default function Login({ onBack }: LoginProps) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [cursor, setCursor] = useState({ x: 0.5, y: 0.5 });
+
+  useEffect(() => {
+    let raf = 0;
+    function onMove(e: MouseEvent) {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        setCursor({ x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight });
+      });
+    }
+    window.addEventListener('mousemove', onMove);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
 
   async function handleEmailAuth(e: React.FormEvent) {
     e.preventDefault();
@@ -74,14 +91,25 @@ export default function Login({ onBack }: LoginProps) {
 
   const isSignin = mode === 'signin';
 
+  const halo1 = `translate3d(${(cursor.x - 0.5) * 40}px, ${(cursor.y - 0.5) * 40}px, 0)`;
+  const halo2 = `translate3d(${(cursor.x - 0.5) * -50}px, ${(cursor.y - 0.5) * -30}px, 0)`;
+  const cardTilt = `perspective(1200px) rotateX(${(cursor.y - 0.5) * -2}deg) rotateY(${(cursor.x - 0.5) * 2}deg)`;
+
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#fafaf8] flex items-center justify-center p-6 relative">
+    <div className="h-screen w-screen overflow-hidden bg-mesh-light flex items-center justify-center p-6 relative noise-overlay">
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-32 -left-32 w-[480px] h-[480px] rounded-full bg-gradient-to-br from-amber-200/40 to-transparent blur-3xl" />
-        <div className="absolute -bottom-32 -right-32 w-[480px] h-[480px] rounded-full bg-gradient-to-tr from-rose-200/40 to-transparent blur-3xl" />
+        <div
+          className="absolute -top-40 -left-40 w-[640px] h-[640px] rounded-full bg-gradient-to-br from-amber-300/50 to-transparent blur-3xl animate-blob-1"
+          style={{ transform: halo1, transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+        />
+        <div
+          className="absolute -bottom-40 -right-40 w-[640px] h-[640px] rounded-full bg-gradient-to-tr from-rose-300/50 to-transparent blur-3xl animate-blob-2"
+          style={{ transform: halo2, transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+        />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[420px] h-[420px] rounded-full bg-amber-200/30 blur-3xl animate-blob-3" />
       </div>
 
-      <div className="relative w-full max-w-[400px]">
+      <div className="relative w-full max-w-[420px]" style={{ transform: cardTilt, transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}>
         {onBack && (
           <button
             type="button"
@@ -92,20 +120,23 @@ export default function Login({ onBack }: LoginProps) {
             Back to home
           </button>
         )}
-        <div className="flex flex-col items-center mb-10">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center mb-4 shadow-lg shadow-rose-200/50">
-            <Sparkles className="w-6 h-6 text-white" />
+        <div className="flex flex-col items-center mb-8">
+          <div className="relative mb-4">
+            <div className="absolute inset-0 m-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-rose-400 blur-xl opacity-60" />
+            <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-[0_10px_40px_rgba(251,113,133,0.45)]">
+              <Sparkles className="w-6 h-6 text-white" />
+            </div>
           </div>
-          <h1 className="text-[22px] font-semibold text-stone-800 tracking-tight">Samvaad</h1>
-          <p className="text-[12px] text-stone-400 mt-1 tracking-wide">Voice Agent Studio</p>
+          <h1 className="text-[26px] font-semibold text-stone-900 tracking-[-0.02em]">Algoritm</h1>
+          <p className="text-[12px] text-stone-500 mt-1 tracking-wide">Voice Agent Studio</p>
         </div>
 
-        <div className="bg-white border border-stone-100 rounded-3xl shadow-xl shadow-stone-200/30 p-8">
+        <div className="glass-panel rounded-3xl p-8">
           <div className="mb-6">
-            <h2 className="text-[18px] font-semibold text-stone-800 tracking-tight">
+            <h2 className="text-[20px] font-semibold text-stone-900 tracking-[-0.02em]">
               {isSignin ? 'Welcome back' : 'Create your account'}
             </h2>
-            <p className="text-[12.5px] text-stone-400 mt-1">
+            <p className="text-[12.5px] text-stone-500 mt-1">
               {isSignin ? 'Sign in to continue to your studio.' : 'Get started in less than a minute.'}
             </p>
           </div>
@@ -114,7 +145,7 @@ export default function Login({ onBack }: LoginProps) {
             type="button"
             onClick={handleGoogleAuth}
             disabled={googleLoading || loading}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-stone-200 rounded-xl px-4 py-2.5 text-[13px] font-medium text-stone-700 hover:bg-stone-50 hover:border-stone-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-3 bg-white border border-stone-200/80 rounded-xl px-4 py-2.5 text-[13px] font-medium text-stone-700 hover:bg-stone-50 hover:border-stone-300 hover:shadow-md hover:-translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {googleLoading ? (
               <Loader2 className="w-4 h-4 animate-spin text-stone-400" />
@@ -125,43 +156,43 @@ export default function Login({ onBack }: LoginProps) {
           </button>
 
           <div className="flex items-center gap-3 my-5">
-            <div className="flex-1 h-px bg-stone-100" />
+            <div className="flex-1 h-px bg-stone-200/70" />
             <span className="text-[10.5px] uppercase tracking-wider text-stone-400 font-medium">or</span>
-            <div className="flex-1 h-px bg-stone-100" />
+            <div className="flex-1 h-px bg-stone-200/70" />
           </div>
 
           <form onSubmit={handleEmailAuth} className="space-y-3">
-            <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
+            <div className="relative group">
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300 group-focus-within:text-amber-500 transition-colors" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="w-full bg-stone-50 border border-stone-100 rounded-xl pl-10 pr-3.5 py-2.5 text-[13px] text-stone-800 placeholder-stone-300 focus:outline-none focus:bg-white focus:border-stone-300 transition-all"
+                className="input-focus-ring w-full bg-white/80 border border-stone-200/70 rounded-xl pl-10 pr-3.5 py-2.5 text-[13px] text-stone-800 placeholder-stone-300 focus:outline-none focus:bg-white focus:border-amber-300 transition-all"
               />
             </div>
-            <div className="relative">
-              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
+            <div className="relative group">
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300 group-focus-within:text-amber-500 transition-colors" />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={isSignin ? 'Your password' : 'At least 6 characters'}
                 autoComplete={isSignin ? 'current-password' : 'new-password'}
-                className="w-full bg-stone-50 border border-stone-100 rounded-xl pl-10 pr-3.5 py-2.5 text-[13px] text-stone-800 placeholder-stone-300 focus:outline-none focus:bg-white focus:border-stone-300 transition-all"
+                className="input-focus-ring w-full bg-white/80 border border-stone-200/70 rounded-xl pl-10 pr-3.5 py-2.5 text-[13px] text-stone-800 placeholder-stone-300 focus:outline-none focus:bg-white focus:border-amber-300 transition-all"
               />
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">
+              <div className="flex items-start gap-2 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2 animate-fade-in-up">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-400 mt-0.5 flex-shrink-0" />
                 <p className="text-[12px] text-rose-600 leading-relaxed">{error}</p>
               </div>
             )}
             {info && (
-              <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+              <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 animate-fade-in-up">
                 <p className="text-[12px] text-emerald-700 leading-relaxed">{info}</p>
               </div>
             )}
@@ -169,14 +200,14 @@ export default function Login({ onBack }: LoginProps) {
             <button
               type="submit"
               disabled={loading || googleLoading}
-              className="w-full flex items-center justify-center gap-2 bg-stone-900 text-white rounded-xl px-4 py-2.5 text-[13px] font-medium hover:bg-stone-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-1"
+              className="group w-full flex items-center justify-center gap-2 bg-stone-900 text-white rounded-xl px-4 py-3 text-[13px] font-medium hover:bg-stone-800 hover:shadow-lg hover:-translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-1"
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>
                   {isSignin ? 'Sign in' : 'Create account'}
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
                 </>
               )}
             </button>
@@ -187,14 +218,14 @@ export default function Login({ onBack }: LoginProps) {
             <button
               type="button"
               onClick={() => switchMode(isSignin ? 'signup' : 'signin')}
-              className="text-stone-700 font-medium hover:text-stone-900 transition-colors"
+              className="text-stone-700 font-medium hover:text-amber-600 transition-colors"
             >
               {isSignin ? 'Sign up' : 'Sign in'}
             </button>
           </p>
         </div>
 
-        <p className="text-center text-[11px] text-stone-300 mt-6 tracking-wide">
+        <p className="text-center text-[11px] text-stone-400 mt-6 tracking-wide">
           By continuing, you agree to our Terms and Privacy Policy.
         </p>
       </div>

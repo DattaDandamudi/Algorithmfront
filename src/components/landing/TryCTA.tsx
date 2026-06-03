@@ -1,25 +1,58 @@
+import { useRef, useState } from 'react';
 import { ArrowRight, LogIn } from 'lucide-react';
 import VoiceOrb3D from './VoiceOrb3D';
-import { useScrollReveal, useScrollY } from './scroll';
+import { useMagnetic, useScrollReveal, useScrollY } from './scroll';
 
 interface TryCTAProps {
   onTryIt: () => void;
   onSignIn: () => void;
 }
 
+interface Particle {
+  id: number;
+  bx: number;
+  by: number;
+  color: string;
+}
+
+const PARTICLE_COLORS = ['#fbbf24', '#fb7185', '#22d3ee', '#fb923c', '#f5d77a'];
+
 export default function TryCTA({ onTryIt, onSignIn }: TryCTAProps) {
   const reveal = useScrollReveal<HTMLDivElement>();
   const orbReveal = useScrollReveal<HTMLDivElement>();
   const scrollY = useScrollY();
   const orbY = `translate3d(0, ${scrollY * -0.04}px, 0)`;
+  const magneticBtn = useMagnetic<HTMLButtonElement>(0.32);
+  const [particles, setParticles] = useState<Particle[]>([]);
+  const burstId = useRef(0);
+
+  function handleTry() {
+    const next: Particle[] = Array.from({ length: 18 }).map(() => {
+      burstId.current += 1;
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 70 + Math.random() * 90;
+      return {
+        id: burstId.current,
+        bx: Math.cos(angle) * radius,
+        by: Math.sin(angle) * radius,
+        color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
+      };
+    });
+    setParticles((prev) => [...prev, ...next]);
+    window.setTimeout(() => {
+      setParticles((prev) => prev.filter((p) => !next.includes(p)));
+    }, 950);
+    onTryIt();
+  }
 
   return (
-    <section id="try" className="relative text-stone-50 py-32 overflow-hidden">
+    <section className="relative text-stone-50 py-32 overflow-hidden">
       <div className="absolute inset-0 bg-radial-amber pointer-events-none" />
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-stone-50/15 to-transparent" />
 
       <div className="relative max-w-7xl mx-auto px-6 sm:px-10">
         <div className="relative overflow-hidden rounded-[40px] border border-stone-50/10 bg-gradient-to-b from-stone-50/[0.05] to-transparent shadow-[0_30px_120px_rgba(0,0,0,0.4)]">
+          <div className="absolute inset-0 conic-sweep opacity-50" />
           <div className="absolute -top-32 -left-32 w-[480px] h-[480px] rounded-full bg-amber-500/15 blur-3xl animate-blob-1" />
           <div className="absolute -bottom-32 -right-24 w-[480px] h-[480px] rounded-full bg-rose-500/12 blur-3xl animate-blob-2" />
           <div className="absolute inset-0 bg-grid-tight opacity-[0.18]" />
@@ -50,15 +83,32 @@ export default function TryCTA({ onTryIt, onSignIn }: TryCTAProps) {
                 conversation. No signup needed.
               </p>
 
-              <div className="mt-9 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={onTryIt}
-                  className="group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-6 pr-5 py-3.5 text-[14px] transition-all shadow-[0_12px_50px_rgba(251,191,36,0.4)]"
-                >
-                  Try it now
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-                </button>
+              <div className="mt-9 flex flex-wrap items-center gap-3 relative">
+                <div className="relative">
+                  <button
+                    ref={magneticBtn}
+                    type="button"
+                    onClick={handleTry}
+                    className="magnetic-cta group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-6 pr-5 py-3.5 text-[14px]"
+                  >
+                    Try it now
+                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                  {particles.map((p) => (
+                    <span
+                      key={p.id}
+                      className="particle"
+                      style={
+                        {
+                          background: p.color,
+                          boxShadow: `0 0 12px ${p.color}`,
+                          ['--bx' as string]: `${p.bx}px`,
+                          ['--by' as string]: `${p.by}px`,
+                        } as React.CSSProperties
+                      }
+                    />
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={onSignIn}
