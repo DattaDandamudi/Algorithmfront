@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowRight, LogIn } from 'lucide-react';
 import VoiceOrb3D from './VoiceOrb3D';
-import { useMagnetic, useScrollReveal, useScrollY } from './scroll';
+import { useScrollReveal } from './scroll';
 
 interface TryCTAProps {
   onTryIt: () => void;
@@ -20,13 +20,11 @@ const PARTICLE_COLORS = ['#fbbf24', '#fb7185', '#22d3ee', '#fb923c', '#f5d77a'];
 export default function TryCTA({ onTryIt, onSignIn }: TryCTAProps) {
   const reveal = useScrollReveal<HTMLDivElement>();
   const orbReveal = useScrollReveal<HTMLDivElement>();
-  const scrollY = useScrollY();
   const isMobile = useMemo(
     () => typeof window !== 'undefined' && window.innerWidth < 768,
     []
   );
-  const orbY = isMobile ? undefined : `translate3d(0, ${scrollY * -0.04}px, 0)`;
-  const magneticBtn = useMagnetic<HTMLButtonElement>(0.32);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
   const burstId = useRef(0);
 
@@ -65,7 +63,6 @@ export default function TryCTA({ onTryIt, onSignIn }: TryCTAProps) {
             <div
               ref={orbReveal}
               className="scroll-reveal relative h-[280px] sm:h-[360px] hidden lg:flex items-center justify-center"
-              style={orbY ? { transform: orbY } : undefined}
             >
               <div className="absolute inset-0 m-auto w-[320px] sm:w-[420px] h-[320px] sm:h-[420px] rounded-full bg-gradient-to-br from-amber-400/30 via-rose-400/15 to-transparent blur-2xl sm:blur-3xl animate-ring-pulse" />
               <div className="relative scale-90 origin-center">
@@ -90,7 +87,7 @@ export default function TryCTA({ onTryIt, onSignIn }: TryCTAProps) {
               <div className="mt-7 sm:mt-9 flex flex-wrap items-center gap-3 relative">
                 <div className="relative">
                   <button
-                    ref={magneticBtn}
+                    ref={btnRef}
                     type="button"
                     onClick={handleTry}
                     className="magnetic-cta group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-5 sm:pl-6 pr-4 sm:pr-5 py-3 sm:py-3.5 text-[13px] sm:text-[14px]"

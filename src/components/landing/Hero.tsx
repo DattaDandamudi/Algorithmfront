@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Phone, Sparkles } from 'lucide-react';
 import VoiceOrb3D from './VoiceOrb3D';
-import { useCursor, useMagnetic, useScrollReveal, useScrollY } from './scroll';
+import { useScrollReveal } from './scroll';
 
 const GREETINGS: { lang: string; greet: string }[] = [
   { lang: 'English', greet: 'Welcome — would you like a table tonight?' },
   { lang: 'Telugu', greet: 'Namaskaram — meeku table kaavala?' },
-  { lang: 'Spanish', greet: 'Hola — ¿le gustaría una mesa esta noche?' },
+  { lang: 'Spanish', greet: 'Hola — le gustaria una mesa esta noche?' },
   { lang: 'French', greet: 'Bonsoir — souhaitez-vous une table?' },
-  { lang: 'Mandarin', greet: 'Nín hǎo — qǐng wèn jǐ wèi?' },
-  { lang: 'Arabic', greet: 'Marḥaban — hal turīd ṭāwila al-layla?' },
+  { lang: 'Mandarin', greet: 'Nin hao — qing wen ji wei?' },
+  { lang: 'Arabic', greet: 'Marhaban — hal turid tawila al-layla?' },
   { lang: 'Hindi', greet: 'Namaste — kya aap ke liye table chahiye?' },
   { lang: 'Japanese', greet: 'Irasshaimase — gonin sama desu ka?' },
   { lang: 'Italian', greet: 'Buonasera — desidera un tavolo?' },
@@ -20,7 +20,7 @@ const FLOATING_CARDS = [
   { text: 'Reserved a table for 4 at 8 PM', sub: 'Spanish caller', tone: 'amber' },
   { text: 'Naa order ekkada undi?', sub: 'Translated to English', tone: 'rose' },
   { text: 'Allergy noted: peanuts, shellfish', sub: 'Mandarin caller', tone: 'cyan' },
-  { text: 'Une réservation pour deux', sub: 'French caller', tone: 'amber' },
+  { text: 'Une reservation pour deux', sub: 'French caller', tone: 'amber' },
 ] as const;
 
 const TONE_CLASS: Record<string, string> = {
@@ -37,11 +37,9 @@ interface HeroProps {
 export default function Hero({ onTryIt, onSignIn }: HeroProps) {
   const [index, setIndex] = useState(0);
   const [typed, setTyped] = useState('');
-  const scrollY = useScrollY();
-  const cursor = useCursor();
   const leftReveal = useScrollReveal<HTMLDivElement>();
   const orbReveal = useScrollReveal<HTMLDivElement>();
-  const magneticBtn = useMagnetic<HTMLButtonElement>(0.3);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   const isMobile = useMemo(
     () => typeof window !== 'undefined' && (window.innerWidth < 768 || 'ontouchstart' in window),
@@ -57,39 +55,18 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
       setTyped(target.slice(0, i));
       if (i >= target.length) window.clearInterval(interval);
     }, 28);
-    const next = window.setTimeout(() => setIndex((i) => (i + 1) % GREETINGS.length), 4200);
+    const next = window.setTimeout(() => setIndex((prev) => (prev + 1) % GREETINGS.length), 4200);
     return () => {
       window.clearInterval(interval);
       window.clearTimeout(next);
     };
   }, [index]);
 
-  const headlineY = isMobile ? undefined : `translate3d(0, ${scrollY * 0.12}px, 0)`;
-  const orbScale = isMobile ? 1 : Math.max(0.78, 1 - scrollY * 0.0005);
-  const orbY = isMobile
-    ? undefined
-    : `translate3d(${(cursor.x - 0.5) * 14}px, ${scrollY * -0.08 + (cursor.y - 0.5) * 12}px, 0) scale(${orbScale})`;
-  const meshY = isMobile
-    ? undefined
-    : `translate3d(${(cursor.x - 0.5) * -20}px, ${(cursor.y - 0.5) * -20 + scrollY * 0.04}px, 0)`;
-  const fadeOut = isMobile ? 1 : Math.max(0, 1 - scrollY / 800);
-
   return (
     <section className="relative overflow-hidden text-stone-50">
-      {!isMobile && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ transform: meshY, transition: 'transform 700ms cubic-bezier(0.16, 1, 0.3, 1)', opacity: fadeOut }}
-        >
-          <div className="absolute -left-40 top-24 w-[520px] h-[520px] rounded-full bg-amber-500/[0.10] blur-3xl" />
-          <div className="absolute -right-40 bottom-0 w-[560px] h-[560px] rounded-full bg-cyan-500/[0.07] blur-3xl" />
-          <div className="absolute top-[10%] left-[40%] w-[460px] h-[460px] rounded-full bg-rose-500/[0.08] blur-3xl" />
-        </div>
-      )}
-
       <div className="relative max-w-7xl mx-auto px-5 sm:px-10 pt-24 sm:pt-28 pb-20 sm:pb-32">
         <div className="grid lg:grid-cols-[1.05fr_1fr] gap-10 lg:gap-6 items-center">
-          <div ref={leftReveal} className="scroll-reveal relative z-10" style={headlineY ? { transform: headlineY } : undefined}>
+          <div ref={leftReveal} className="scroll-reveal relative z-10">
             <div className="inline-flex items-center gap-2 bg-stone-50/[0.06] border border-stone-50/10 rounded-full pl-1.5 pr-3 py-1 text-[11px] sm:text-[11.5px] tracking-wide text-stone-300 backdrop-blur-md">
               <span className="flex items-center gap-1 bg-amber-400/20 text-amber-200 rounded-full px-2 py-0.5 font-medium">
                 <Sparkles className="w-3 h-3" />
@@ -124,7 +101,7 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
 
             <div className="mt-7 sm:mt-9 flex flex-wrap items-center gap-3">
               <button
-                ref={magneticBtn}
+                ref={btnRef}
                 type="button"
                 onClick={onTryIt}
                 className="magnetic-cta group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-5 pr-4 py-3 text-[13px] sm:text-[13.5px]"
@@ -135,7 +112,7 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
               <button
                 type="button"
                 onClick={onSignIn}
-                className="inline-flex items-center gap-2 bg-stone-50/[0.06] hover:bg-stone-50/[0.1] border border-stone-50/10 text-stone-100 rounded-full px-5 py-3 text-[13px] sm:text-[13.5px] font-medium transition-all backdrop-blur"
+                className="inline-flex items-center gap-2 bg-stone-50/[0.06] hover:bg-stone-50/[0.1] border border-stone-50/10 text-stone-100 rounded-full px-5 py-3 text-[13px] sm:text-[13.5px] font-medium transition-colors backdrop-blur"
               >
                 <Phone className="w-3.5 h-3.5" />
                 Sign in to studio
@@ -148,28 +125,23 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
               <StatItem value="24/7" label="Always on" />
             </div>
 
-            <div className="mt-10 sm:mt-14 hidden sm:flex items-center gap-3 text-[10.5px] tracking-[0.3em] uppercase text-stone-500 animate-float-soft">
+            <div className="mt-10 sm:mt-14 hidden sm:flex items-center gap-3 text-[10.5px] tracking-[0.3em] uppercase text-stone-500">
               <span className="w-8 h-px bg-stone-50/20" />
               Scroll to explore
             </div>
           </div>
 
-          <div
-            ref={orbReveal}
-            className="scroll-reveal relative perspective-1200"
-            style={orbY ? { transform: orbY, transitionDelay: '120ms' } : { transitionDelay: '120ms' }}
-          >
+          <div ref={orbReveal} className="scroll-reveal relative" style={{ transitionDelay: '120ms' }}>
             {!isMobile && (
               <div className="absolute inset-0 -z-10">
-                <div className="absolute inset-0 m-auto w-[420px] h-[420px] rounded-full bg-gradient-to-br from-amber-400/20 via-rose-400/10 to-transparent blur-3xl animate-ring-pulse" />
-                <div className="absolute inset-0 m-auto w-[520px] h-[520px] rounded-full conic-sweep opacity-60" />
+                <div className="absolute inset-0 m-auto w-[420px] h-[420px] rounded-full bg-gradient-to-br from-amber-400/20 via-rose-400/10 to-transparent blur-2xl animate-ring-pulse" />
               </div>
             )}
 
             <VoiceOrb3D />
 
             <div className="hidden sm:block">
-              <FloatingCard className="absolute -top-2 left-2 sm:left-6 animate-drift-1" tone={FLOATING_CARDS[0].tone}>
+              <FloatingCard className="absolute -top-2 left-6 animate-drift-1" tone={FLOATING_CARDS[0].tone}>
                 <div className="text-[12px] font-medium">{FLOATING_CARDS[0].text}</div>
                 <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[0].sub}</div>
               </FloatingCard>
@@ -220,7 +192,7 @@ function FloatingCard({
 }) {
   return (
     <div
-      className={`backdrop-blur-md border rounded-2xl px-3.5 py-2.5 max-w-[220px] shadow-[0_10px_40px_rgba(0,0,0,0.45)] ${TONE_CLASS[tone]} ${className ?? ''}`}
+      className={`border rounded-2xl px-3.5 py-2.5 max-w-[220px] shadow-[0_10px_40px_rgba(0,0,0,0.45)] ${TONE_CLASS[tone]} ${className ?? ''}`}
     >
       {children}
     </div>

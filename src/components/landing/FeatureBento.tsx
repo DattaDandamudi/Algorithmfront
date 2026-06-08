@@ -52,12 +52,6 @@ const ACCENT_ICON: Record<string, string> = {
   cyan: 'from-cyan-400/25 to-cyan-600/10 border-cyan-400/40 text-cyan-300',
 };
 
-const ACCENT_GLOW: Record<string, string> = {
-  amber: 'from-amber-400/15 via-amber-500/5 to-transparent',
-  rose: 'from-rose-400/15 via-rose-500/5 to-transparent',
-  cyan: 'from-cyan-400/15 via-cyan-500/5 to-transparent',
-};
-
 export default function FeatureBento() {
   const headerRef = useScrollReveal<HTMLDivElement>();
 
@@ -65,7 +59,7 @@ export default function FeatureBento() {
     <section className="relative text-stone-50 py-20 sm:py-32 overflow-hidden">
       <div className="absolute left-1/2 top-0 -translate-x-1/2 w-[80%] h-px bg-gradient-to-r from-transparent via-stone-50/15 to-transparent" />
 
-      <div className="relative max-w-7xl mx-auto px-5 sm:px-10">
+      <div className="relative max-w-6xl mx-auto px-5 sm:px-10">
         <div ref={headerRef} className="scroll-reveal">
           <div className="flex items-end gap-4 sm:gap-6 flex-wrap">
             <div className="text-[60px] sm:text-[80px] lg:text-[110px] leading-none font-semibold tracking-[-0.04em] text-stroke select-none">
@@ -90,7 +84,7 @@ export default function FeatureBento() {
           <div className="mt-6 sm:mt-8 h-px w-full bg-gradient-to-r from-stone-50/20 via-stone-50/5 to-transparent" />
         </div>
 
-        <div className="mt-10 sm:mt-14 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4">
+        <div className="mt-10 sm:mt-14 grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
           {FEATURES.map((f, i) => (
             <FeatureCard key={f.title} feature={f} index={i} />
           ))}
@@ -121,30 +115,25 @@ function FeatureCard({
         ref={tilt.ref}
         onMouseMove={tilt.onMouseMove}
         onMouseLeave={tilt.onMouseLeave}
-        className="spotlight-card tilt-card group relative overflow-hidden rounded-2xl border border-stone-50/[0.08] bg-[#0c0c0e] hover:border-stone-50/20 transition-all duration-500 aspect-square"
+        className="spotlight-card tilt-card group relative overflow-hidden rounded-2xl border border-stone-50/[0.08] bg-[#0c0c0e] hover:border-stone-50/20 transition-colors duration-300"
       >
-        <div className={`pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full bg-gradient-to-br ${ACCENT_GLOW[feature.accent]} opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-2xl`} />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-stone-50/[0.03] to-transparent opacity-60" />
-
-        <div className="relative p-4 flex flex-col h-full">
-          <div className="flex items-start justify-between">
+        <div className="relative p-3.5 sm:p-5">
+          <div className="flex items-center gap-2.5 mb-3">
             <div
-              className={`w-8 h-8 rounded-lg bg-gradient-to-br ${ACCENT_ICON[feature.accent]} border flex items-center justify-center`}
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br ${ACCENT_ICON[feature.accent]} border flex items-center justify-center flex-shrink-0`}
             >
               <Icon className="w-4 h-4" />
             </div>
+            <h3 className="text-[12px] sm:text-[14px] font-semibold tracking-tight text-stone-100 leading-tight">
+              {feature.title}
+            </h3>
           </div>
 
-          <div className="relative flex-1 mt-3 rounded-lg overflow-hidden border border-stone-50/[0.05] bg-stone-50/[0.02]">
+          <div className="relative h-[100px] sm:h-[120px] rounded-lg overflow-hidden border border-stone-50/[0.05] bg-stone-50/[0.02] mb-3">
             <FeatureVisual kind={feature.visual} accent={feature.accent} />
           </div>
 
-          <div className="mt-3">
-            <h3 className="text-[13px] font-semibold tracking-tight text-stone-100 leading-tight">
-              {feature.title}
-            </h3>
-            <p className="mt-1 text-[10.5px] text-stone-500 leading-[1.5] line-clamp-2">{feature.desc}</p>
-          </div>
+          <p className="text-[10.5px] sm:text-[12px] text-stone-400 leading-[1.55]">{feature.desc}</p>
         </div>
       </div>
     </div>
@@ -158,25 +147,22 @@ function FeatureVisual({ kind, accent }: { kind: string; accent: string }) {
   if (kind === 'reservation') {
     return (
       <div className="absolute inset-0 p-2.5 flex flex-col">
-        <div className="flex-1 grid grid-cols-7 grid-rows-4 gap-[3px]">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[8px] font-medium text-stone-400">March 2026</span>
+          <span className="text-[7px] uppercase tracking-wider text-stone-600">Auto-book</span>
+        </div>
+        <div className="flex-1 grid grid-cols-7 grid-rows-4 gap-[2px]">
           {Array.from({ length: 28 }).map((_, i) => {
             const isBooked = [4, 10, 11, 17, 18, 19, 24, 25].includes(i);
             const isHighlight = i === 18;
             return (
               <div
                 key={i}
-                className="rounded flex items-center justify-center text-[7px] font-medium"
+                className="rounded-sm flex items-center justify-center text-[6px] sm:text-[7px] font-medium"
                 style={{
-                  background: isHighlight
-                    ? `${accentColor}33`
-                    : isBooked
-                    ? 'rgba(255,255,255,0.04)'
-                    : 'transparent',
-                  border: isHighlight
-                    ? `1px solid ${accentColor}77`
-                    : '1px solid rgba(255,255,255,0.04)',
+                  background: isHighlight ? `${accentColor}33` : isBooked ? 'rgba(255,255,255,0.04)' : 'transparent',
+                  border: isHighlight ? `1px solid ${accentColor}66` : '1px solid rgba(255,255,255,0.03)',
                   color: isHighlight ? accentColor : isBooked ? '#a8a29e' : '#44403c',
-                  boxShadow: isHighlight ? `0 2px 8px ${accentColor}30` : undefined,
                 }}
               >
                 {i + 1}
@@ -189,20 +175,22 @@ function FeatureVisual({ kind, accent }: { kind: string; accent: string }) {
   }
 
   if (kind === 'order') {
-    const items = ['Truffle Risotto', 'Wagyu Tartare', 'Tiramisu'];
+    const items = [
+      { name: 'Truffle Risotto', price: '$24' },
+      { name: 'Wagyu Tartare', price: '$32' },
+      { name: 'Tiramisu', price: '$14' },
+    ];
     return (
       <div className="absolute inset-0 p-2.5 flex flex-col justify-center gap-1.5">
         {items.map((item, i) => (
           <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-stone-50/[0.03] border border-stone-50/[0.05]">
-            <div className="w-4 h-4 rounded flex items-center justify-center text-[8px] font-bold" style={{ background: `${accentColor}18`, color: accentColor }}>
+            <div className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center text-[7px] font-bold" style={{ background: `${accentColor}18`, color: accentColor }}>
               {i + 1}
             </div>
-            <span className="text-[9px] text-stone-300 flex-1 truncate">{item}</span>
+            <span className="text-[9px] sm:text-[10px] text-stone-300 flex-1 truncate">{item.name}</span>
+            <span className="text-[8px] sm:text-[9px] text-stone-500">{item.price}</span>
           </div>
         ))}
-        <div className="flex items-center justify-end mt-0.5">
-          <span className="text-[9px] font-semibold" style={{ color: accentColor }}>$70</span>
-        </div>
       </div>
     );
   }
@@ -210,17 +198,20 @@ function FeatureVisual({ kind, accent }: { kind: string; accent: string }) {
   if (kind === 'phone') {
     return (
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="absolute inset-0" style={{ background: `radial-gradient(circle at 50% 50%, ${accentColor}0a, transparent 70%)` }} />
-        <div className="absolute w-20 h-20 rounded-full animate-ring-pulse" style={{ border: `1px solid ${accentColor}25` }} />
-        <div className="absolute w-14 h-14 rounded-full animate-ring-pulse" style={{ border: `1px solid ${accentColor}40`, animationDelay: '0.5s' }} />
+        <div className="absolute w-16 h-16 sm:w-20 sm:h-20 rounded-full animate-ring-pulse" style={{ border: `1px solid ${accentColor}25` }} />
+        <div className="absolute w-10 h-10 sm:w-14 sm:h-14 rounded-full animate-ring-pulse" style={{ border: `1px solid ${accentColor}40`, animationDelay: '0.5s' }} />
         <div
-          className="relative w-10 h-10 rounded-xl flex items-center justify-center"
+          className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center"
           style={{
             background: `linear-gradient(135deg, ${accentColor}, ${accentColor}88)`,
-            boxShadow: `0 6px 20px ${accentColor}40`,
+            boxShadow: `0 4px 16px ${accentColor}40`,
           }}
         >
           <Phone className="w-4 h-4 text-stone-900" />
+        </div>
+        <div className="absolute bottom-2 flex gap-4">
+          <span className="text-[8px] text-stone-500">100% answered</span>
+          <span className="text-[8px] text-stone-500">0.4s avg</span>
         </div>
       </div>
     );
@@ -233,7 +224,7 @@ function FeatureVisual({ kind, accent }: { kind: string; accent: string }) {
         {tags.map((tag, i) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[8px] font-medium border"
+            className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-[7px] sm:text-[8px] font-medium border"
             style={{
               background: i < 2 ? `${accentColor}12` : 'rgba(255,255,255,0.02)',
               borderColor: i < 2 ? `${accentColor}30` : 'rgba(255,255,255,0.06)',
@@ -249,19 +240,22 @@ function FeatureVisual({ kind, accent }: { kind: string; accent: string }) {
   }
 
   if (kind === 'wait') {
-    const progress = [90, 60, 35, 12];
+    const parties = [
+      { progress: 90, name: 'Martinez' },
+      { progress: 60, name: 'Chen' },
+      { progress: 35, name: 'Williams' },
+      { progress: 12, name: 'Patel' },
+    ];
     return (
       <div className="absolute inset-0 p-2.5 flex flex-col justify-center gap-2">
-        {progress.map((p, i) => (
+        {parties.map((p, i) => (
           <div key={i} className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold" style={{ border: `1px solid ${accentColor}40`, color: accentColor }}>
-              {i + 1}
-            </div>
+            <span className="text-[7px] sm:text-[8px] text-stone-500 w-12 sm:w-14 truncate">{p.name}</span>
             <div className="flex-1 h-1.5 rounded-full bg-stone-50/[0.06] overflow-hidden">
               <div
                 className="h-full rounded-full"
                 style={{
-                  width: `${p}%`,
+                  width: `${p.progress}%`,
                   background: `linear-gradient(90deg, ${accentColor}, ${accentColor}55)`,
                 }}
               />
@@ -276,10 +270,11 @@ function FeatureVisual({ kind, accent }: { kind: string; accent: string }) {
     const bars = [40, 65, 50, 80, 60, 92, 75];
     return (
       <div className="absolute inset-0 p-2.5 flex flex-col">
-        <div className="flex items-center justify-end mb-1">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[8px] text-stone-500">Revenue</span>
           <span className="text-[9px] font-semibold" style={{ color: accentColor }}>+70%</span>
         </div>
-        <div className="flex-1 flex items-end gap-1">
+        <div className="flex-1 flex items-end gap-[3px] sm:gap-1">
           {bars.map((h, i) => (
             <div
               key={i}

@@ -1,19 +1,12 @@
-import { useMemo } from 'react';
 import { Sparkles, Globe, Heart } from 'lucide-react';
-import { useScrollY, useScrollReveal } from './scroll';
+import { useScrollReveal } from './scroll';
 
 interface LandingFooterProps {
   onCrafted?: () => void;
 }
 
 export default function LandingFooter({ onCrafted }: LandingFooterProps) {
-  const scrollY = useScrollY();
   const wordmarkRef = useScrollReveal<HTMLDivElement>();
-  const isMobile = useMemo(
-    () => typeof window !== 'undefined' && window.innerWidth < 768,
-    []
-  );
-  const lift = isMobile ? 0 : Math.max(-30, Math.min(30, (scrollY - 2400) * 0.04));
 
   return (
     <footer className="relative bg-[#08080a] text-stone-400 border-t border-stone-50/10 overflow-hidden">
@@ -88,10 +81,7 @@ export default function LandingFooter({ onCrafted }: LandingFooterProps) {
         >
           <div
             className="text-center leading-[0.9] text-shimmer animate-gradient-shift font-semibold tracking-[-0.06em] whitespace-nowrap"
-            style={{
-              fontSize: 'clamp(48px, 14vw, 184px)',
-              transform: lift ? `translate3d(0, ${lift}px, 0)` : undefined,
-            }}
+            style={{ fontSize: 'clamp(48px, 14vw, 184px)' }}
           >
             Algoritm
           </div>
