@@ -25,26 +25,20 @@ interface CraftedByProps {
 
 const SECTIONS: { key: string; index: string; title: string; subtitle: string }[] = [
   {
-    key: 'founders',
-    index: '01',
-    title: 'Founders',
-    subtitle: 'The first two who said yes — and never stopped.',
-  },
-  {
     key: 'engineering',
-    index: '02',
+    index: '01',
     title: 'Engineering & Design',
     subtitle: 'The hands behind every line of code, every pixel, every millisecond.',
   },
   {
     key: 'linguists',
-    index: '03',
+    index: '02',
     title: 'Linguists & Advisors',
     subtitle: 'The voices that taught Algoritm how the world really speaks.',
   },
   {
     key: 'data',
-    index: '04',
+    index: '03',
     title: 'Data Engineers',
     subtitle: 'The team that wrangles the data, models, and pipelines that keep Algoritm fluent.',
   },
@@ -54,8 +48,8 @@ const FALLBACK: Contributor[] = [
   {
     id: '1',
     name: 'Aarav Mehta',
-    role: 'Founder & CEO',
-    category: 'founders',
+    role: 'Lead Engineer',
+    category: 'engineering',
     bio: 'Built Algoritm to give every restaurant a multilingual voice — no matter how small.',
     avatar_url: '',
     location: 'San Francisco, USA',
@@ -65,8 +59,8 @@ const FALLBACK: Contributor[] = [
   {
     id: '2',
     name: 'Priya Nair',
-    role: 'Founder & CTO',
-    category: 'founders',
+    role: 'Platform Architect',
+    category: 'engineering',
     bio: 'Architected the real-time speech pipeline running under 400ms across 80+ languages.',
     avatar_url: '',
     location: 'Bangalore, India',
@@ -278,7 +272,6 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
         onChange={setFilter}
         counts={{
           all: contributors.length,
-          founders: grouped.founders?.length ?? 0,
           engineering: grouped.engineering?.length ?? 0,
           data: grouped.data?.length ?? 0,
           linguists: grouped.linguists?.length ?? 0,
@@ -699,7 +692,6 @@ function CategoryFilter({
   const ref = useScrollReveal<HTMLDivElement>();
   const options = [
     { key: 'all', label: 'Everyone' },
-    { key: 'founders', label: 'Founders' },
     { key: 'engineering', label: 'Engineering & Design' },
     { key: 'data', label: 'Data' },
     { key: 'linguists', label: 'Linguists' },
