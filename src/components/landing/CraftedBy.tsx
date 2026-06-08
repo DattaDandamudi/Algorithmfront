@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Heart, MapPin, ExternalLink, Sparkles, Globe as Globe2, Users, Languages as LanguagesIcon, ImagePlus } from 'lucide-react';
-import type { Session } from '@supabase/supabase-js';
+import { ArrowLeft, ArrowRight, Heart, MapPin, ExternalLink, Sparkles, Globe as Globe2, Users, Languages as LanguagesIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import VoiceOrb3D from './VoiceOrb3D';
-import AvatarUploader from './AvatarUploader';
 import { useMagnetic, useScrollReveal, useScrollY, useScrollProgress } from './scroll';
 
 interface Contributor {
@@ -99,8 +97,6 @@ function initials(name: string): string {
 export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState<Session | null>(null);
-  const [showUploader, setShowUploader] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [filter, setFilter] = useState<string>('all');
   const scrollY = useScrollY();
@@ -110,14 +106,6 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
     () => typeof window !== 'undefined' && (window.innerWidth < 768 || 'ontouchstart' in window),
     []
   );
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,17 +180,6 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
             Crafted by
           </div>
           <div className="flex items-center gap-2">
-            {session && (
-              <button
-                type="button"
-                onClick={() => setShowUploader(true)}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[12px] font-medium text-stone-300 hover:text-stone-50 bg-stone-50/[0.04] hover:bg-stone-50/[0.08] border border-stone-50/10 transition-colors"
-                title="Upload a contributor avatar"
-              >
-                <ImagePlus className="w-3.5 h-3.5 text-amber-300" />
-                Manage avatars
-              </button>
-            )}
             <button
               type="button"
               onClick={onTryIt}
@@ -300,12 +277,6 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
 
       <ClosingCTA onTryIt={onTryIt} />
 
-      {showUploader && (
-        <AvatarUploader
-          onClose={() => setShowUploader(false)}
-          onUpdated={() => setReloadKey((k) => k + 1)}
-        />
-      )}
     </div>
   );
 }
