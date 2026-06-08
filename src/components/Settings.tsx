@@ -75,6 +75,7 @@ export default function Settings() {
 
   useEffect(() => {
     async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
       const { data } = await supabase.from('settings').select('key, value');
       if (data) {
         const map: Record<string, string> = {};
@@ -116,9 +117,14 @@ export default function Settings() {
 
   async function handleSave() {
     setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
     await Promise.all(
       Object.entries(settings).map(([key, value]) =>
-        supabase.from('settings').upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+        supabase.from('settings').upsert(
+          { key, value, user_id: userId, updated_at: new Date().toISOString() },
+          { onConflict: 'key,user_id' }
+        )
       )
     );
     setSaving(false);
