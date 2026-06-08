@@ -75,28 +75,28 @@ export default function ConversationDemo() {
   }, [language]);
 
   return (
-    <section className="relative text-stone-50 py-32 overflow-hidden">
+    <section className="relative text-stone-50 py-20 sm:py-32 overflow-hidden">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-stone-50/15 to-transparent" />
       <div className="absolute inset-0 bg-radial-amber opacity-50 pointer-events-none" />
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-10">
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-10">
         <div ref={headerRef} className="scroll-reveal max-w-3xl">
           <div className="inline-flex items-center gap-2 bg-stone-50/[0.05] border border-stone-50/10 rounded-full px-3 py-1 text-[11px] tracking-[0.18em] uppercase text-stone-300">
             Live demo
           </div>
-          <h2 className="mt-5 text-[36px] sm:text-[52px] font-semibold tracking-[-0.025em] leading-[1.04]">
+          <h2 className="mt-4 sm:mt-5 text-[28px] sm:text-[42px] lg:text-[52px] font-semibold tracking-[-0.025em] leading-[1.08] sm:leading-[1.04]">
             Hear it answer a call <span className="text-shimmer animate-gradient-shift">in real time.</span>
           </h2>
         </div>
 
-        <div className="mt-10 flex flex-wrap items-center gap-2">
+        <div className="mt-6 sm:mt-10 flex flex-wrap items-center gap-2">
           <Globe className="w-4 h-4 text-stone-500 mr-1" />
           {LANGUAGES.map((lang) => (
             <button
               key={lang}
               type="button"
               onClick={() => setLanguage(lang)}
-              className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium border transition-all ${
+              className={`px-3 sm:px-3.5 py-1.5 rounded-full text-[12px] sm:text-[12.5px] font-medium border transition-colors ${
                 language === lang
                   ? 'bg-amber-400 text-stone-900 border-amber-400 shadow-[0_8px_30px_rgba(251,191,36,0.35)]'
                   : 'bg-stone-50/[0.04] text-stone-300 border-stone-50/10 hover:bg-stone-50/[0.08]'
@@ -107,44 +107,44 @@ export default function ConversationDemo() {
           ))}
         </div>
 
-        <div className="mt-10 grid lg:grid-cols-[1fr_1.6fr] gap-6">
+        <div className="mt-6 sm:mt-10 grid lg:grid-cols-[1fr_1.6fr] gap-4 sm:gap-6">
           <div
             ref={leftRef}
-            className="scroll-reveal bg-stone-50/[0.04] border border-stone-50/10 rounded-3xl p-6 flex flex-col justify-between min-h-[440px] backdrop-blur-sm"
+            className="scroll-reveal bg-stone-50/[0.04] border border-stone-50/10 rounded-2xl sm:rounded-3xl p-5 sm:p-6 flex flex-col justify-between min-h-[320px] sm:min-h-[440px]"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />
-                <span className="text-[11px] uppercase tracking-[0.18em] text-stone-400">Live call</span>
+                <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-stone-400">Live call</span>
               </div>
-              <span className="text-[11px] text-stone-500 tabular-nums">+1 (415) 555-0140</span>
+              <span className="text-[10px] sm:text-[11px] text-stone-500 tabular-nums">+1 (415) 555-0140</span>
             </div>
 
-            <div className="my-8 grid grid-cols-2 gap-6">
+            <div className="my-6 sm:my-8 grid grid-cols-2 gap-4 sm:gap-6">
               <CallerColumn label="Caller" sub={language} icon={<Mic className="w-4 h-4" />} accent="rose" />
               <CallerColumn label="Algoritm" sub="English" icon={<Volume2 className="w-4 h-4" />} accent="amber" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-[11px] text-stone-400">
-              <Stat k="Latency" v="312ms" />
-              <Stat k="Confidence" v="98.4%" />
-              <Stat k="Detected" v={language} />
-              <Stat k="Sentiment" v="Positive" />
+            <div className="grid grid-cols-2 gap-2 sm:gap-4 text-[10px] sm:text-[11px] text-stone-400">
+              <DemoStat k="Latency" v="312ms" />
+              <DemoStat k="Confidence" v="98.4%" />
+              <DemoStat k="Detected" v={language} />
+              <DemoStat k="Sentiment" v="Positive" />
             </div>
           </div>
 
           <div
             ref={rightRef}
-            className="scroll-reveal bg-stone-50/[0.04] border border-stone-50/10 rounded-3xl p-6 min-h-[440px] flex flex-col backdrop-blur-sm"
+            className="scroll-reveal bg-stone-50/[0.04] border border-stone-50/10 rounded-2xl sm:rounded-3xl p-5 sm:p-6 min-h-[320px] sm:min-h-[440px] flex flex-col"
             style={{ transitionDelay: '120ms' }}
           >
-            <div className="flex items-center justify-between text-[11px] text-stone-400 mb-4">
+            <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-stone-400 mb-3 sm:mb-4">
               <span>Transcript</span>
               <span className="tabular-nums">{language} → English</span>
             </div>
-            <div className="flex-1 space-y-3 overflow-hidden">
+            <div className="flex-1 space-y-2.5 sm:space-y-3 overflow-hidden">
               {visible.map((b) => (
-                <Bubble key={`${language}-${b.id}`} bubble={b} />
+                <BubbleItem key={`${language}-${b.id}`} bubble={b} />
               ))}
             </div>
           </div>
@@ -154,19 +154,19 @@ export default function ConversationDemo() {
   );
 }
 
-function Bubble({ bubble }: { bubble: Bubble }) {
+function BubbleItem({ bubble }: { bubble: Bubble }) {
   const isAgent = bubble.role === 'agent';
   return (
     <div className={`flex animate-fade-in-up ${isAgent ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 border ${
+        className={`max-w-[85%] sm:max-w-[80%] rounded-xl sm:rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 border ${
           isAgent
             ? 'bg-amber-400/15 border-amber-300/30 text-stone-100'
             : 'bg-stone-50/[0.05] border-stone-50/10 text-stone-100'
         }`}
       >
-        <div className="text-[12.5px] leading-snug">{bubble.source}</div>
-        <div className="text-[11px] text-stone-400 mt-1.5 italic leading-snug">{bubble.english}</div>
+        <div className="text-[11.5px] sm:text-[12.5px] leading-snug">{bubble.source}</div>
+        <div className="text-[10.5px] sm:text-[11px] text-stone-400 mt-1 sm:mt-1.5 italic leading-snug">{bubble.english}</div>
       </div>
     </div>
   );
@@ -187,18 +187,18 @@ function CallerColumn({
   return (
     <div className="flex flex-col items-center">
       <div
-        className="w-10 h-10 rounded-2xl flex items-center justify-center mb-3"
+        className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center mb-2 sm:mb-3"
         style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
       >
         {icon}
       </div>
-      <div className="text-[12px] font-medium text-stone-100">{label}</div>
-      <div className="text-[10.5px] text-stone-500 mb-3">{sub}</div>
-      <div className="flex items-end gap-[3px] h-12">
-        {Array.from({ length: 16 }).map((_, i) => (
+      <div className="text-[11px] sm:text-[12px] font-medium text-stone-100">{label}</div>
+      <div className="text-[10px] sm:text-[10.5px] text-stone-500 mb-2 sm:mb-3">{sub}</div>
+      <div className="flex items-end gap-[2px] sm:gap-[3px] h-8 sm:h-12">
+        {Array.from({ length: 10 }).map((_, i) => (
           <span
             key={i}
-            className="w-[3px] rounded-full wave-bar"
+            className="w-[2px] sm:w-[3px] rounded-full wave-bar"
             style={{
               height: `${20 + ((i * 11) % 70)}%`,
               background: `linear-gradient(180deg, ${color}, ${color}55)`,
@@ -212,10 +212,10 @@ function CallerColumn({
   );
 }
 
-function Stat({ k, v }: { k: string; v: string }) {
+function DemoStat({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex items-center justify-between bg-stone-50/[0.03] border border-stone-50/10 rounded-xl px-3 py-2">
-      <span className="text-stone-500 uppercase tracking-wider text-[10px]">{k}</span>
+    <div className="flex items-center justify-between bg-stone-50/[0.03] border border-stone-50/10 rounded-lg sm:rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2">
+      <span className="text-stone-500 uppercase tracking-wider text-[9px] sm:text-[10px]">{k}</span>
       <span className="text-stone-100 font-medium tabular-nums">{v}</span>
     </div>
   );

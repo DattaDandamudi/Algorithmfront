@@ -35,9 +35,18 @@ const STAR_POSITIONS = [
 export default function Landing({ onSignIn, onTryIt, onCrafted }: LandingProps) {
   const progress = useScrollProgress();
   const scrollY = useScrollY();
+  const [isMobile, setIsMobile] = useState(false);
   const [cursor, setCursor] = useState({ x: 0.5, y: 0.5 });
 
   useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) return;
     let raf = 0;
     function onMove(e: MouseEvent) {
       if (raf) return;
@@ -51,12 +60,12 @@ export default function Landing({ onSignIn, onTryIt, onCrafted }: LandingProps) 
       window.removeEventListener('mousemove', onMove);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [isMobile]);
 
-  const halo1 = `translate3d(${(cursor.x - 0.5) * 40}px, ${scrollY * 0.18}px, 0)`;
-  const halo2 = `translate3d(${(cursor.x - 0.5) * -50}px, ${scrollY * 0.22}px, 0)`;
-  const beamY = `translate3d(0, ${scrollY * -0.12}px, 0)`;
-  const meshShift = `translate3d(${(cursor.x - 0.5) * -16}px, ${(cursor.y - 0.5) * -16}px, 0)`;
+  const halo1 = isMobile ? undefined : `translate3d(${(cursor.x - 0.5) * 40}px, ${scrollY * 0.18}px, 0)`;
+  const halo2 = isMobile ? undefined : `translate3d(${(cursor.x - 0.5) * -50}px, ${scrollY * 0.22}px, 0)`;
+  const beamY = isMobile ? undefined : `translate3d(0, ${scrollY * -0.12}px, 0)`;
+  const meshShift = isMobile ? undefined : `translate3d(${(cursor.x - 0.5) * -16}px, ${(cursor.y - 0.5) * -16}px, 0)`;
 
   return (
     <div className="relative bg-[#08080a] text-stone-50 min-h-screen overflow-x-hidden">
@@ -72,16 +81,16 @@ export default function Landing({ onSignIn, onTryIt, onCrafted }: LandingProps) 
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden noise-overlay">
         <div
           className="absolute inset-0 bg-mesh-warm"
-          style={{ transform: meshShift, transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+          style={meshShift ? { transform: meshShift, transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)' } : undefined}
         />
         <div className="absolute inset-0 bg-grid-tight opacity-[0.32] mask-fade-y" />
 
-        <div className="absolute inset-0 overflow-hidden" style={{ transform: beamY }}>
+        <div className="absolute inset-0 overflow-hidden" style={beamY ? { transform: beamY } : undefined}>
           <div className="beam-light" />
-          <div className="beam-light" style={{ left: '55%', animationDelay: '5s', filter: 'blur(60px)' }} />
+          <div className="beam-light hidden sm:block" style={{ left: '55%', animationDelay: '5s', filter: 'blur(60px)' }} />
         </div>
 
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 hidden sm:block">
           {STAR_POSITIONS.map((s, i) => (
             <span
               key={i}
@@ -97,14 +106,14 @@ export default function Landing({ onSignIn, onTryIt, onCrafted }: LandingProps) 
         </div>
 
         <div
-          className="absolute -top-[18%] left-[3%] w-[55vw] h-[55vw] rounded-full bg-amber-500/[0.12] blur-[140px] animate-blob-1"
-          style={{ transform: halo1 }}
+          className="absolute -top-[18%] left-[3%] w-[55vw] h-[55vw] rounded-full bg-amber-500/[0.12] mobile-blur-light sm:blur-[140px] animate-blob-1"
+          style={halo1 ? { transform: halo1 } : undefined}
         />
         <div
-          className="absolute top-[35%] -right-[10%] w-[50vw] h-[50vw] rounded-full bg-rose-500/[0.10] blur-[150px] animate-blob-2"
-          style={{ transform: halo2 }}
+          className="absolute top-[35%] -right-[10%] w-[50vw] h-[50vw] rounded-full bg-rose-500/[0.10] mobile-blur-light sm:blur-[150px] animate-blob-2"
+          style={halo2 ? { transform: halo2 } : undefined}
         />
-        <div className="absolute bottom-[0%] left-[20%] w-[42vw] h-[42vw] rounded-full bg-amber-300/[0.07] blur-[140px] animate-blob-3" />
+        <div className="absolute bottom-[0%] left-[20%] w-[42vw] h-[42vw] rounded-full bg-amber-300/[0.07] mobile-blur-light sm:blur-[140px] animate-blob-3" />
         <div className="absolute inset-0 bg-radial-amber animate-aurora" />
         <div className="absolute inset-0 bg-[#08080a]/35" />
       </div>

@@ -44,21 +44,21 @@ export default function MetricsCounter() {
   }, []);
 
   return (
-    <section ref={ref} className="relative text-stone-50 py-28 overflow-hidden">
+    <section ref={ref} className="relative text-stone-50 py-16 sm:py-28 overflow-hidden">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-stone-50/15 to-transparent" />
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-10">
-        <div ref={headerRef} className="scroll-reveal mb-12 max-w-2xl">
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-10">
+        <div ref={headerRef} className="scroll-reveal mb-8 sm:mb-12 max-w-2xl">
           <div className="inline-flex items-center gap-2 bg-stone-50/[0.05] border border-stone-50/10 rounded-full px-3 py-1 text-[11px] tracking-[0.18em] uppercase text-stone-300">
             By the numbers
           </div>
-          <h2 className="mt-5 text-[32px] sm:text-[44px] font-semibold tracking-[-0.025em] leading-[1.05]">
+          <h2 className="mt-4 sm:mt-5 text-[26px] sm:text-[36px] lg:text-[44px] font-semibold tracking-[-0.025em] leading-[1.08] sm:leading-[1.05]">
             Built for <span className="text-shimmer animate-gradient-shift">scale</span>, tuned for hospitality.
           </h2>
         </div>
 
-        <div className="relative grid grid-cols-2 md:grid-cols-4 gap-px bg-stone-50/10 rounded-3xl overflow-hidden border border-stone-50/10 shadow-[0_20px_80px_rgba(0,0,0,0.4)]">
-          <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[60%] h-64 bg-amber-400/10 blur-3xl pointer-events-none" />
+        <div className="relative grid grid-cols-2 md:grid-cols-4 gap-px bg-stone-50/10 rounded-2xl sm:rounded-3xl overflow-hidden border border-stone-50/10 shadow-[0_20px_80px_rgba(0,0,0,0.4)]">
+          <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[60%] h-64 bg-amber-400/10 blur-3xl pointer-events-none hidden sm:block" />
           {METRICS.map((m, i) => (
             <Tile key={m.label} metric={m} active={active} delay={i * 250} index={i} />
           ))}
@@ -100,18 +100,18 @@ function Tile({
   return (
     <div
       ref={tileRef}
-      className="scroll-reveal relative bg-[#0c0c0e]/80 backdrop-blur-sm p-8 sm:p-10 group hover:bg-stone-50/[0.04] transition-colors duration-500"
+      className="scroll-reveal relative bg-[#0c0c0e]/80 p-5 sm:p-8 lg:p-10 group hover:bg-stone-50/[0.04] transition-colors duration-500"
       style={{ transitionDelay: `${index * 100}ms` }}
     >
-      <div className="text-[10px] tracking-[0.3em] uppercase text-stone-600 mb-3">
+      <div className="text-[9px] sm:text-[10px] tracking-[0.3em] uppercase text-stone-600 mb-2 sm:mb-3">
         0{index + 1}
       </div>
-      <div className="text-[36px] sm:text-[48px] font-semibold tracking-[-0.03em] tabular-nums text-stone-50 leading-none">
+      <div className="text-[28px] sm:text-[36px] lg:text-[48px] font-semibold tracking-[-0.03em] tabular-nums text-stone-50 leading-none">
         {metric.prefix ?? ''}
         {formatNumber(value, metric.decimals ?? 0)}
         <span className="text-amber-300">{metric.suffix ?? ''}</span>
       </div>
-      <div className="mt-4 text-[12px] uppercase tracking-[0.18em] text-stone-500">
+      <div className="mt-3 sm:mt-4 text-[10px] sm:text-[12px] uppercase tracking-[0.18em] text-stone-500">
         {metric.label}
       </div>
       <div className="absolute bottom-0 left-0 h-px w-0 group-hover:w-full bg-gradient-to-r from-amber-400 to-transparent transition-all duration-700" />

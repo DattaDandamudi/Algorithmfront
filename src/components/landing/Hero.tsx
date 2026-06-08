@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Phone, Sparkles } from 'lucide-react';
 import VoiceOrb3D from './VoiceOrb3D';
 import { useCursor, useMagnetic, useScrollReveal, useScrollY } from './scroll';
@@ -43,6 +43,11 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
   const orbReveal = useScrollReveal<HTMLDivElement>();
   const magneticBtn = useMagnetic<HTMLButtonElement>(0.3);
 
+  const isMobile = useMemo(
+    () => typeof window !== 'undefined' && (window.innerWidth < 768 || 'ontouchstart' in window),
+    []
+  );
+
   useEffect(() => {
     const target = GREETINGS[index].greet;
     setTyped('');
@@ -59,63 +64,70 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
     };
   }, [index]);
 
-  const headlineY = `translate3d(0, ${scrollY * 0.12}px, 0)`;
-  const orbScale = Math.max(0.78, 1 - scrollY * 0.0005);
-  const orbY = `translate3d(${(cursor.x - 0.5) * 14}px, ${scrollY * -0.08 + (cursor.y - 0.5) * 12}px, 0) scale(${orbScale})`;
-  const meshY = `translate3d(${(cursor.x - 0.5) * -20}px, ${(cursor.y - 0.5) * -20 + scrollY * 0.04}px, 0)`;
-  const fadeOut = Math.max(0, 1 - scrollY / 800);
+  const headlineY = isMobile ? undefined : `translate3d(0, ${scrollY * 0.12}px, 0)`;
+  const orbScale = isMobile ? 1 : Math.max(0.78, 1 - scrollY * 0.0005);
+  const orbY = isMobile
+    ? undefined
+    : `translate3d(${(cursor.x - 0.5) * 14}px, ${scrollY * -0.08 + (cursor.y - 0.5) * 12}px, 0) scale(${orbScale})`;
+  const meshY = isMobile
+    ? undefined
+    : `translate3d(${(cursor.x - 0.5) * -20}px, ${(cursor.y - 0.5) * -20 + scrollY * 0.04}px, 0)`;
+  const fadeOut = isMobile ? 1 : Math.max(0, 1 - scrollY / 800);
 
   return (
     <section className="relative overflow-hidden text-stone-50">
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{ transform: meshY, transition: 'transform 700ms cubic-bezier(0.16, 1, 0.3, 1)', opacity: fadeOut }}
-      >
-        <div className="absolute -left-40 top-24 w-[520px] h-[520px] rounded-full bg-amber-500/[0.10] blur-3xl" />
-        <div className="absolute -right-40 bottom-0 w-[560px] h-[560px] rounded-full bg-cyan-500/[0.07] blur-3xl" />
-        <div className="absolute top-[10%] left-[40%] w-[460px] h-[460px] rounded-full bg-rose-500/[0.08] blur-3xl" />
-      </div>
+      {!isMobile && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ transform: meshY, transition: 'transform 700ms cubic-bezier(0.16, 1, 0.3, 1)', opacity: fadeOut }}
+        >
+          <div className="absolute -left-40 top-24 w-[520px] h-[520px] rounded-full bg-amber-500/[0.10] blur-3xl" />
+          <div className="absolute -right-40 bottom-0 w-[560px] h-[560px] rounded-full bg-cyan-500/[0.07] blur-3xl" />
+          <div className="absolute top-[10%] left-[40%] w-[460px] h-[460px] rounded-full bg-rose-500/[0.08] blur-3xl" />
+        </div>
+      )}
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-10 pt-28 pb-32">
-        <div className="grid lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-6 items-center">
-          <div ref={leftReveal} className="scroll-reveal relative z-10" style={{ transform: headlineY }}>
-            <div className="inline-flex items-center gap-2 bg-stone-50/[0.06] border border-stone-50/10 rounded-full pl-1.5 pr-3 py-1 text-[11.5px] tracking-wide text-stone-300 backdrop-blur-md">
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-10 pt-24 sm:pt-28 pb-20 sm:pb-32">
+        <div className="grid lg:grid-cols-[1.05fr_1fr] gap-10 lg:gap-6 items-center">
+          <div ref={leftReveal} className="scroll-reveal relative z-10" style={headlineY ? { transform: headlineY } : undefined}>
+            <div className="inline-flex items-center gap-2 bg-stone-50/[0.06] border border-stone-50/10 rounded-full pl-1.5 pr-3 py-1 text-[11px] sm:text-[11.5px] tracking-wide text-stone-300 backdrop-blur-md">
               <span className="flex items-center gap-1 bg-amber-400/20 text-amber-200 rounded-full px-2 py-0.5 font-medium">
                 <Sparkles className="w-3 h-3" />
                 New
               </span>
-              Voice agents for restaurants, in 80+ languages
+              <span className="hidden xs:inline">Voice agents for restaurants, in 80+ languages</span>
+              <span className="xs:hidden">80+ language voice agents</span>
             </div>
 
-            <h1 className="mt-7 text-[48px] sm:text-[64px] lg:text-[80px] leading-[0.98] font-semibold tracking-[-0.035em]">
+            <h1 className="mt-6 sm:mt-7 text-[36px] sm:text-[56px] lg:text-[80px] leading-[1.02] sm:leading-[0.98] font-semibold tracking-[-0.035em]">
               <span className="block text-stone-100">Your restaurant,</span>
               <span className="block text-shimmer animate-gradient-shift">fluent in 80+</span>
               <span className="block text-shimmer animate-gradient-shift">languages.</span>
             </h1>
 
-            <p className="mt-7 max-w-[540px] text-[15.5px] leading-[1.7] text-stone-300/90">
+            <p className="mt-5 sm:mt-7 max-w-[540px] text-[14px] sm:text-[15.5px] leading-[1.65] sm:leading-[1.7] text-stone-300/90">
               Algoritm answers every call, takes reservations, manages orders, and speaks to guests
               in their native tongue — 24 hours a day, in real time, with zero wait.
             </p>
 
-            <div className="mt-8 inline-flex items-center gap-3 glass-panel-dark rounded-2xl px-4 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+            <div className="mt-6 sm:mt-8 inline-flex items-center gap-3 glass-panel-dark rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />
-                <span className="text-[11px] uppercase tracking-[0.18em] text-stone-400">Live</span>
+                <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-stone-400">Live</span>
               </div>
-              <div className="text-[13px] text-stone-200 min-w-[260px] sm:min-w-[360px]">
+              <div className="text-[12px] sm:text-[13px] text-stone-200 min-w-0 flex-1 overflow-hidden">
                 <span className="text-stone-500 mr-2">{GREETINGS[index].lang}</span>
-                <span>{typed}</span>
+                <span className="break-words">{typed}</span>
                 <span className="caret">|</span>
               </div>
             </div>
 
-            <div className="mt-9 flex flex-wrap items-center gap-3">
+            <div className="mt-7 sm:mt-9 flex flex-wrap items-center gap-3">
               <button
                 ref={magneticBtn}
                 type="button"
                 onClick={onTryIt}
-                className="magnetic-cta group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-5 pr-4 py-3 text-[13.5px]"
+                className="magnetic-cta group inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-stone-900 font-medium rounded-full pl-5 pr-4 py-3 text-[13px] sm:text-[13.5px]"
               >
                 Try it now
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
@@ -123,20 +135,20 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
               <button
                 type="button"
                 onClick={onSignIn}
-                className="inline-flex items-center gap-2 bg-stone-50/[0.06] hover:bg-stone-50/[0.1] border border-stone-50/10 text-stone-100 rounded-full px-5 py-3 text-[13.5px] font-medium transition-all backdrop-blur"
+                className="inline-flex items-center gap-2 bg-stone-50/[0.06] hover:bg-stone-50/[0.1] border border-stone-50/10 text-stone-100 rounded-full px-5 py-3 text-[13px] sm:text-[13.5px] font-medium transition-all backdrop-blur"
               >
                 <Phone className="w-3.5 h-3.5" />
                 Sign in to studio
               </button>
             </div>
 
-            <div className="mt-12 grid grid-cols-3 gap-6 max-w-md">
-              <Stat value="80+" label="Languages" />
-              <Stat value="<400ms" label="Latency" />
-              <Stat value="24/7" label="Always on" />
+            <div className="mt-10 sm:mt-12 grid grid-cols-3 gap-4 sm:gap-6 max-w-md">
+              <StatItem value="80+" label="Languages" />
+              <StatItem value="<400ms" label="Latency" />
+              <StatItem value="24/7" label="Always on" />
             </div>
 
-            <div className="mt-14 hidden sm:flex items-center gap-3 text-[10.5px] tracking-[0.3em] uppercase text-stone-500 animate-float-soft">
+            <div className="mt-10 sm:mt-14 hidden sm:flex items-center gap-3 text-[10.5px] tracking-[0.3em] uppercase text-stone-500 animate-float-soft">
               <span className="w-8 h-px bg-stone-50/20" />
               Scroll to explore
             </div>
@@ -145,34 +157,38 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
           <div
             ref={orbReveal}
             className="scroll-reveal relative perspective-1200"
-            style={{ transform: orbY, transitionDelay: '120ms' }}
+            style={orbY ? { transform: orbY, transitionDelay: '120ms' } : { transitionDelay: '120ms' }}
           >
-            <div className="absolute inset-0 -z-10">
-              <div className="absolute inset-0 m-auto w-[420px] h-[420px] rounded-full bg-gradient-to-br from-amber-400/20 via-rose-400/10 to-transparent blur-3xl animate-ring-pulse" />
-              <div className="absolute inset-0 m-auto w-[520px] h-[520px] rounded-full conic-sweep opacity-60" />
-            </div>
+            {!isMobile && (
+              <div className="absolute inset-0 -z-10">
+                <div className="absolute inset-0 m-auto w-[420px] h-[420px] rounded-full bg-gradient-to-br from-amber-400/20 via-rose-400/10 to-transparent blur-3xl animate-ring-pulse" />
+                <div className="absolute inset-0 m-auto w-[520px] h-[520px] rounded-full conic-sweep opacity-60" />
+              </div>
+            )}
 
             <VoiceOrb3D />
 
-            <FloatingCard className="absolute -top-2 left-2 sm:left-6 animate-drift-1" tone={FLOATING_CARDS[0].tone}>
-              <div className="text-[12px] font-medium">{FLOATING_CARDS[0].text}</div>
-              <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[0].sub}</div>
-            </FloatingCard>
+            <div className="hidden sm:block">
+              <FloatingCard className="absolute -top-2 left-2 sm:left-6 animate-drift-1" tone={FLOATING_CARDS[0].tone}>
+                <div className="text-[12px] font-medium">{FLOATING_CARDS[0].text}</div>
+                <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[0].sub}</div>
+              </FloatingCard>
 
-            <FloatingCard className="absolute top-24 right-0 animate-drift-2" tone={FLOATING_CARDS[1].tone}>
-              <div className="text-[12px] font-medium">"{FLOATING_CARDS[1].text}"</div>
-              <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[1].sub}</div>
-            </FloatingCard>
+              <FloatingCard className="absolute top-24 right-0 animate-drift-2" tone={FLOATING_CARDS[1].tone}>
+                <div className="text-[12px] font-medium">"{FLOATING_CARDS[1].text}"</div>
+                <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[1].sub}</div>
+              </FloatingCard>
 
-            <FloatingCard className="absolute bottom-12 left-0 animate-drift-3" tone={FLOATING_CARDS[2].tone}>
-              <div className="text-[12px] font-medium">{FLOATING_CARDS[2].text}</div>
-              <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[2].sub}</div>
-            </FloatingCard>
+              <FloatingCard className="absolute bottom-12 left-0 animate-drift-3" tone={FLOATING_CARDS[2].tone}>
+                <div className="text-[12px] font-medium">{FLOATING_CARDS[2].text}</div>
+                <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[2].sub}</div>
+              </FloatingCard>
 
-            <FloatingCard className="absolute -bottom-2 right-6 animate-drift-1" tone={FLOATING_CARDS[3].tone}>
-              <div className="text-[12px] font-medium">{FLOATING_CARDS[3].text}</div>
-              <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[3].sub}</div>
-            </FloatingCard>
+              <FloatingCard className="absolute -bottom-2 right-6 animate-drift-1" tone={FLOATING_CARDS[3].tone}>
+                <div className="text-[12px] font-medium">{FLOATING_CARDS[3].text}</div>
+                <div className="text-[10.5px] opacity-70 mt-0.5">{FLOATING_CARDS[3].sub}</div>
+              </FloatingCard>
+            </div>
           </div>
         </div>
       </div>
@@ -182,23 +198,13 @@ export default function Hero({ onTryIt, onSignIn }: HeroProps) {
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState(false);
+function StatItem({ value, label }: { value: string; label: string }) {
   return (
-    <div
-      ref={ref}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className="relative cursor-default"
-    >
-      <div
-        className="text-[26px] font-semibold tracking-tight tabular-nums transition-colors duration-300"
-        style={{ color: hover ? '#fcd34d' : '#fafaf8' }}
-      >
+    <div className="relative cursor-default">
+      <div className="text-[22px] sm:text-[26px] font-semibold tracking-tight tabular-nums text-stone-50">
         {value}
       </div>
-      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500 mt-1">{label}</div>
+      <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-stone-500 mt-1">{label}</div>
     </div>
   );
 }

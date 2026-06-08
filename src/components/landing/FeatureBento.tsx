@@ -56,34 +56,35 @@ export default function FeatureBento() {
   const headerRef = useScrollReveal<HTMLDivElement>();
 
   return (
-    <section className="relative text-stone-50 py-32 overflow-hidden">
+    <section className="relative text-stone-50 py-20 sm:py-32 overflow-hidden">
       <div className="absolute left-1/2 top-0 -translate-x-1/2 w-[80%] h-px bg-gradient-to-r from-transparent via-stone-50/15 to-transparent" />
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-10">
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-10">
         <div ref={headerRef} className="scroll-reveal">
-          <div className="flex items-end gap-6 flex-wrap">
-            <div className="text-[80px] sm:text-[110px] leading-none font-semibold tracking-[-0.04em] text-stroke select-none">
+          <div className="flex items-end gap-4 sm:gap-6 flex-wrap">
+            <div className="text-[60px] sm:text-[80px] lg:text-[110px] leading-none font-semibold tracking-[-0.04em] text-stroke select-none">
               02
             </div>
-            <div className="pb-3">
+            <div className="pb-2 sm:pb-3">
               <div className="inline-flex items-center gap-2 bg-stone-50/[0.05] border border-stone-50/10 rounded-full px-3 py-1 text-[11px] tracking-[0.18em] uppercase text-stone-300">
                 Capabilities
               </div>
-              <h2 className="mt-4 text-[36px] sm:text-[52px] font-semibold tracking-[-0.025em] leading-[1.04]">
+              <h2 className="mt-3 sm:mt-4 text-[28px] sm:text-[42px] lg:text-[52px] font-semibold tracking-[-0.025em] leading-[1.08] sm:leading-[1.04]">
                 One agent. <span className="text-shimmer animate-gradient-shift">Every shift.</span>
-                <br />
+                <br className="hidden sm:block" />
+                <span className="sm:hidden"> </span>
                 Every language.
               </h2>
             </div>
           </div>
-          <p className="mt-6 text-[15px] text-stone-400 leading-[1.7] max-w-2xl">
+          <p className="mt-4 sm:mt-6 text-[13.5px] sm:text-[15px] text-stone-400 leading-[1.65] sm:leading-[1.7] max-w-2xl">
             Algoritm runs your front-of-house phone like a seasoned host with infinite patience —
             handling everything from a casual table booking to a complex multi-course inquiry.
           </p>
-          <div className="mt-8 h-px w-full bg-gradient-to-r from-stone-50/20 via-stone-50/5 to-transparent" />
+          <div className="mt-6 sm:mt-8 h-px w-full bg-gradient-to-r from-stone-50/20 via-stone-50/5 to-transparent" />
         </div>
 
-        <div className="mt-14 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="mt-10 sm:mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {FEATURES.map((f, i) => (
             <FeatureCard key={f.title} feature={f} index={i} />
           ))}
@@ -114,7 +115,7 @@ function FeatureCard({
         ref={tilt.ref}
         onMouseMove={tilt.onMouseMove}
         onMouseLeave={tilt.onMouseLeave}
-        className="spotlight-card tilt-card group relative overflow-hidden rounded-3xl border border-stone-50/10 bg-gradient-to-b from-stone-50/[0.04] to-stone-50/[0.01] p-6 hover:border-stone-50/25 transition-colors duration-500"
+        className="spotlight-card tilt-card group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-stone-50/10 bg-gradient-to-b from-stone-50/[0.04] to-stone-50/[0.01] p-5 sm:p-6 hover:border-stone-50/25 transition-colors duration-500"
       >
         <div
           className={`pointer-events-none absolute -top-20 -right-20 w-56 h-56 rounded-full bg-gradient-to-br ${ACCENT[feature.accent]} blur-3xl opacity-30 group-hover:opacity-70 transition-opacity duration-700`}

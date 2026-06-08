@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Sparkles, Globe, Heart } from 'lucide-react';
 import { useScrollY, useScrollReveal } from './scroll';
 
@@ -8,17 +9,21 @@ interface LandingFooterProps {
 export default function LandingFooter({ onCrafted }: LandingFooterProps) {
   const scrollY = useScrollY();
   const wordmarkRef = useScrollReveal<HTMLDivElement>();
-  const lift = Math.max(-30, Math.min(30, (scrollY - 2400) * 0.04));
+  const isMobile = useMemo(
+    () => typeof window !== 'undefined' && window.innerWidth < 768,
+    []
+  );
+  const lift = isMobile ? 0 : Math.max(-30, Math.min(30, (scrollY - 2400) * 0.04));
 
   return (
     <footer className="relative bg-[#08080a] text-stone-400 border-t border-stone-50/10 overflow-hidden">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/30 to-transparent" />
-      <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[80%] h-40 bg-amber-500/[0.08] blur-3xl pointer-events-none" />
+      <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[80%] h-40 bg-amber-500/[0.08] mobile-blur-light sm:blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-stone-50/[0.06] to-transparent" />
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-10 py-16 sm:py-20">
-        <div className="grid md:grid-cols-[1.4fr_1fr_1fr_1fr] gap-10 sm:gap-12">
-          <div>
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-10 py-12 sm:py-20">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-[1.4fr_1fr_1fr_1fr] gap-8 sm:gap-12">
+          <div className="col-span-2 sm:col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-[0_6px_24px_rgba(251,113,133,0.35)]">
                 <Sparkles className="w-4 h-4 text-white" />
@@ -78,15 +83,14 @@ export default function LandingFooter({ onCrafted }: LandingFooterProps) {
 
         <div
           ref={wordmarkRef}
-          className="scroll-reveal relative mt-16 sm:mt-20 select-none overflow-hidden"
+          className="scroll-reveal relative mt-12 sm:mt-20 select-none overflow-hidden"
           aria-hidden
         >
           <div
             className="text-center leading-[0.9] text-shimmer animate-gradient-shift font-semibold tracking-[-0.06em] whitespace-nowrap"
             style={{
-              fontSize: 'clamp(64px, 14vw, 184px)',
-              transform: `translate3d(0, ${lift}px, 0)`,
-              willChange: 'transform',
+              fontSize: 'clamp(48px, 14vw, 184px)',
+              transform: lift ? `translate3d(0, ${lift}px, 0)` : undefined,
             }}
           >
             Algoritm
@@ -94,8 +98,8 @@ export default function LandingFooter({ onCrafted }: LandingFooterProps) {
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[#08080a] via-[#08080a]/60 to-transparent" />
         </div>
 
-        <div className="mt-10 sm:mt-12 pt-6 border-t border-stone-50/10 flex flex-wrap items-center justify-between gap-4 text-[12px]">
-          <span>© {new Date().getFullYear()} Algoritm. All rights reserved.</span>
+        <div className="mt-8 sm:mt-12 pt-6 border-t border-stone-50/10 flex flex-wrap items-center justify-between gap-4 text-[11px] sm:text-[12px]">
+          <span>&copy; {new Date().getFullYear()} Algoritm. All rights reserved.</span>
           <span className="inline-flex items-center gap-1.5 text-stone-500">
             Crafted with <Heart className="w-3 h-3 text-rose-300" /> for hospitality
           </span>

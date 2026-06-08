@@ -112,6 +112,11 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
   const scrollY = useScrollY();
   const progress = useScrollProgress();
 
+  const isMobile = useMemo(
+    () => typeof window !== 'undefined' && (window.innerWidth < 768 || 'ontouchstart' in window),
+    []
+  );
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
@@ -165,9 +170,9 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
 
   const allNames = contributors.map((c) => c.name);
 
-  const heroParallax = `translate3d(0, ${scrollY * 0.18}px, 0)`;
-  const orbParallax = `translate3d(0, ${scrollY * -0.06}px, 0) scale(${Math.max(0.7, 1 - scrollY * 0.0006)})`;
-  const haloParallax = `translate3d(0, ${scrollY * 0.32}px, 0)`;
+  const heroParallax = isMobile ? undefined : `translate3d(0, ${scrollY * 0.18}px, 0)`;
+  const orbParallax = isMobile ? undefined : `translate3d(0, ${scrollY * -0.06}px, 0) scale(${Math.max(0.7, 1 - scrollY * 0.0006)})`;
+  const haloParallax = isMobile ? 'none' : `translate3d(0, ${scrollY * 0.32}px, 0)`;
 
   return (
     <div className="relative bg-[#08080a] text-stone-50 min-h-screen overflow-x-hidden">
@@ -218,8 +223,8 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
 
       <section className="relative">
         <div
-          className="relative max-w-7xl mx-auto px-6 sm:px-10 pt-28 sm:pt-36 pb-24"
-          style={{ transform: heroParallax }}
+          className="relative max-w-7xl mx-auto px-5 sm:px-10 pt-20 sm:pt-36 pb-16 sm:pb-24"
+          style={heroParallax ? { transform: heroParallax } : undefined}
         >
           <div className="grid lg:grid-cols-[1.25fr_1fr] gap-12 items-center">
             <div className="relative z-10">
@@ -227,7 +232,7 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
                 <Heart className="w-3 h-3 text-rose-300" />
                 The humans behind it
               </div>
-              <h1 className="mt-7 text-[52px] sm:text-[72px] lg:text-[88px] leading-[0.95] font-semibold tracking-[-0.035em]">
+              <h1 className="mt-5 sm:mt-7 text-[38px] sm:text-[56px] lg:text-[88px] leading-[1.02] sm:leading-[0.95] font-semibold tracking-[-0.035em]">
                 <span className="block text-stone-200/95">The people</span>
                 <span className="block text-stone-200/95">who built</span>
                 <span className="block text-shimmer animate-gradient-shift">Algoritm.</span>
@@ -250,10 +255,10 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
               </div>
             </div>
 
-            <div className="relative h-[420px] flex items-center justify-center">
+            <div className="relative h-[320px] sm:h-[420px] flex items-center justify-center hidden lg:flex">
               <div
                 className="absolute inset-0 flex items-center justify-center"
-                style={{ transform: orbParallax }}
+                style={orbParallax ? { transform: orbParallax } : undefined}
               >
                 <div className="absolute w-[480px] h-[480px] rounded-full bg-gradient-to-br from-amber-400/20 via-rose-400/10 to-transparent blur-3xl animate-ring-pulse" />
                 <div className="relative scale-100 origin-center">
@@ -318,14 +323,14 @@ function BackgroundLayers({ haloTransform }: { haloTransform: string }) {
       <div className="absolute inset-0 bg-[#08080a]" />
       <div className="absolute inset-0 bg-grid-tight opacity-[0.35] mask-fade-y" />
       <div
-        className="absolute -top-[20%] left-[5%] w-[55vw] h-[55vw] rounded-full bg-amber-500/10 blur-[120px] animate-blob-1"
-        style={{ transform: haloTransform }}
+        className="absolute -top-[20%] left-[5%] w-[55vw] h-[55vw] rounded-full bg-amber-500/10 mobile-blur-light sm:blur-[120px] animate-blob-1"
+        style={haloTransform !== 'none' ? { transform: haloTransform } : undefined}
       />
       <div
-        className="absolute top-[40%] -right-[10%] w-[45vw] h-[45vw] rounded-full bg-rose-500/10 blur-[140px] animate-blob-2"
+        className="absolute top-[40%] -right-[10%] w-[45vw] h-[45vw] rounded-full bg-rose-500/10 mobile-blur-light sm:blur-[140px] animate-blob-2"
       />
       <div
-        className="absolute bottom-[5%] left-[20%] w-[40vw] h-[40vw] rounded-full bg-amber-300/[0.07] blur-[120px] animate-blob-3"
+        className="absolute bottom-[5%] left-[20%] w-[40vw] h-[40vw] rounded-full bg-amber-300/[0.07] mobile-blur-light sm:blur-[120px] animate-blob-3"
       />
       <div className="absolute inset-0 bg-radial-amber animate-aurora" />
       <div className="absolute inset-0 bg-[#08080a]/30" />

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
+const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 768;
+const isTouchDevice = () => typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
 export function useScrollReveal<T extends HTMLElement>(threshold = 0.12) {
   const ref = useRef<T | null>(null);
   useEffect(() => {
@@ -25,6 +28,7 @@ export function useScrollReveal<T extends HTMLElement>(threshold = 0.12) {
 export function useScrollY() {
   const [y, setY] = useState(0);
   useEffect(() => {
+    if (isMobile()) return;
     let raf = 0;
     function update() {
       raf = 0;
@@ -46,17 +50,24 @@ export function useScrollY() {
 export function useScrollProgress() {
   const [progress, setProgress] = useState(0);
   useEffect(() => {
+    let raf = 0;
     function update() {
+      raf = 0;
       const h = document.documentElement;
       const max = Math.max(1, h.scrollHeight - window.innerHeight);
       setProgress(window.scrollY / max);
     }
+    function onScroll() {
+      if (raf) return;
+      raf = requestAnimationFrame(update);
+    }
     update();
-    window.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
     return () => {
-      window.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (raf) cancelAnimationFrame(raf);
     };
   }, []);
   return progress;
@@ -64,8 +75,10 @@ export function useScrollProgress() {
 
 export function useTilt<T extends HTMLElement>(strength = 0.05) {
   const ref = useRef<T | null>(null);
+  const mobile = isTouchDevice();
 
   function onMouseMove(e: React.MouseEvent<T>) {
+    if (mobile) return;
     const el = ref.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -78,6 +91,7 @@ export function useTilt<T extends HTMLElement>(strength = 0.05) {
     el.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)`;
   }
   function onMouseLeave() {
+    if (mobile) return;
     const el = ref.current;
     if (!el) return;
     el.style.transform = 'perspective(900px) rotateX(0deg) rotateY(0deg)';
@@ -91,6 +105,7 @@ export function useMagnetic<T extends HTMLElement>(strength = 0.35) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (isTouchDevice()) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     let raf = 0;
@@ -198,6 +213,7 @@ export function useReducedMotion() {
 export function useCursor() {
   const [cursor, setCursor] = useState({ x: 0.5, y: 0.5 });
   useEffect(() => {
+    if (isTouchDevice()) return;
     let raf = 0;
     function onMove(e: MouseEvent) {
       if (raf) return;

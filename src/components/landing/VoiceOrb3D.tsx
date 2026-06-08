@@ -1,17 +1,23 @@
+import { useMemo } from 'react';
+
+const WAVE_COUNT_MOBILE = 14;
+const WAVE_COUNT_DESKTOP = 28;
+
 export default function VoiceOrb3D() {
+  const waveCount = useMemo(
+    () => (typeof window !== 'undefined' && window.innerWidth < 768 ? WAVE_COUNT_MOBILE : WAVE_COUNT_DESKTOP),
+    []
+  );
+
   return (
-    <div className="relative w-[420px] h-[420px] sm:w-[520px] sm:h-[520px] mx-auto">
-      <div className="absolute inset-[-10%] rounded-full bg-gradient-to-br from-amber-500/25 via-rose-500/10 to-transparent blur-3xl animate-ring-pulse" />
+    <div className="relative w-[280px] h-[280px] sm:w-[420px] sm:h-[420px] lg:w-[520px] lg:h-[520px] mx-auto">
+      <div className="absolute inset-[-10%] rounded-full bg-gradient-to-br from-amber-500/25 via-rose-500/10 to-transparent blur-2xl sm:blur-3xl animate-ring-pulse" />
 
       <div className="absolute inset-[-4%] rounded-full border border-amber-400/15 animate-orb-spin-slow" />
       <div className="absolute inset-[6%] rounded-full border border-amber-400/20 animate-orb-spin-med" />
-      <div className="absolute inset-[16%] rounded-full border border-cyan-400/15 animate-orb-spin-fast" />
+      <div className="hidden sm:block absolute inset-[16%] rounded-full border border-cyan-400/15 animate-orb-spin-fast" />
 
-      <div className="absolute inset-[18%] rounded-full" style={{
-        background: 'conic-gradient(from 0deg, rgba(251,191,36,0.0), rgba(251,191,36,0.6), rgba(251,113,133,0.4), rgba(34,211,238,0.4), rgba(251,191,36,0.0))',
-        filter: 'blur(8px)',
-        opacity: 0.55,
-      }}>
+      <div className="absolute inset-[18%] rounded-full orb-conic-gradient">
         <div className="w-full h-full rounded-full animate-orb-spin-slow" />
       </div>
 
@@ -32,14 +38,14 @@ export default function VoiceOrb3D() {
           }}
         />
         <div
-          className="absolute inset-0 animate-orb-spin-med opacity-50"
+          className="absolute inset-0 animate-orb-spin-med opacity-50 hidden sm:block"
           style={{
             background:
               'radial-gradient(circle at 50% 50%, transparent 40%, rgba(34,211,238,0.25) 60%, transparent 80%)',
           }}
         />
         <div
-          className="absolute -inset-[10%] animate-orb-spin-fast opacity-40 mix-blend-screen"
+          className="absolute -inset-[10%] animate-orb-spin-fast opacity-40 mix-blend-screen hidden sm:block"
           style={{
             background:
               'conic-gradient(from 0deg, transparent, rgba(255,255,255,0.3), transparent 30%)',
@@ -49,12 +55,12 @@ export default function VoiceOrb3D() {
 
       <div className="absolute inset-[28%] rounded-full bg-gradient-to-br from-white/40 via-white/10 to-transparent blur-md pointer-events-none" />
 
-      <div className="absolute inset-0 flex items-end justify-center pb-8 pointer-events-none">
-        <div className="flex items-end gap-1 h-12 opacity-80">
-          {Array.from({ length: 28 }).map((_, i) => (
+      <div className="absolute inset-0 flex items-end justify-center pb-4 sm:pb-8 pointer-events-none">
+        <div className="flex items-end gap-[2px] sm:gap-1 h-8 sm:h-12 opacity-80">
+          {Array.from({ length: waveCount }).map((_, i) => (
             <span
               key={i}
-              className="w-[3px] rounded-full bg-gradient-to-t from-amber-400 to-rose-300 wave-bar"
+              className="w-[2px] sm:w-[3px] rounded-full bg-gradient-to-t from-amber-400 to-rose-300 wave-bar"
               style={{
                 height: `${20 + ((i * 13) % 60)}%`,
                 animationDelay: `${(i * 0.07).toFixed(2)}s`,
