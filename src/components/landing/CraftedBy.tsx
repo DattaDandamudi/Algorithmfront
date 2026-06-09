@@ -561,27 +561,19 @@ function CardSkeleton() {
 
 function NameMarquee({ names }: { names: string[] }) {
   if (names.length === 0) return null;
-  const looped = [...names, ...names, ...names];
   const ref = useScrollReveal<HTMLDivElement>();
 
   return (
     <section className="relative py-24 border-y border-stone-50/[0.06]">
-      <div ref={ref} className="scroll-reveal max-w-7xl mx-auto px-6 sm:px-10 mb-10">
+      <div ref={ref} className="scroll-reveal max-w-7xl mx-auto px-6 sm:px-10">
         <div className="text-[11px] tracking-[0.3em] uppercase text-stone-500">Wall of names</div>
         <h2 className="mt-3 text-[28px] sm:text-[36px] font-semibold tracking-[-0.025em] text-stone-100">
           Every name behind the orb.
         </h2>
-      </div>
 
-      <div className="marquee-mask space-y-3 select-none">
-        <div className="flex gap-4 animate-marquee whitespace-nowrap">
-          {looped.map((n, i) => (
-            <NameChip key={`a-${i}`} name={n} accent={i % 4 === 0} />
-          ))}
-        </div>
-        <div className="flex gap-4 animate-marquee-reverse whitespace-nowrap">
-          {looped.map((n, i) => (
-            <NameChip key={`b-${i}`} name={n} accent={i % 5 === 0} />
+        <div className="mt-10 flex flex-wrap gap-3">
+          {names.map((n, i) => (
+            <NameChip key={n} name={n} accent={i % 4 === 0} />
           ))}
         </div>
       </div>
