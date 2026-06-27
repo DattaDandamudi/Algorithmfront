@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Heart, MapPin, ExternalLink, Sparkles, Globe as Globe2, Users, Languages as LanguagesIcon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Heart, MapPin, ExternalLink, Sparkles, Globe as Globe2, Users, Languages as LanguagesIcon, ImagePlus } from 'lucide-react';
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import VoiceOrb3D from './VoiceOrb3D';
+import AvatarUploader from './AvatarUploader';
 import { useMagnetic, useScrollReveal, useScrollY, useScrollProgress } from './scroll';
 
 interface Contributor {
@@ -97,6 +99,8 @@ function initials(name: string): string {
 export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [showUploader, setShowUploader] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [filter, setFilter] = useState<string>('all');
   const scrollY = useScrollY();
@@ -106,6 +110,14 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
     () => typeof window !== 'undefined' && (window.innerWidth < 768 || 'ontouchstart' in window),
     []
   );
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,6 +192,17 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
             Crafted by
           </div>
           <div className="flex items-center gap-2">
+            {session && (
+              <button
+                type="button"
+                onClick={() => setShowUploader(true)}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[12px] font-medium text-stone-300 hover:text-stone-50 bg-stone-50/[0.04] hover:bg-stone-50/[0.08] border border-stone-50/10 transition-colors"
+                title="Upload a contributor avatar"
+              >
+                <ImagePlus className="w-3.5 h-3.5 text-amber-300" />
+                Manage avatars
+              </button>
+            )}
             <button
               type="button"
               onClick={onTryIt}
@@ -277,6 +300,12 @@ export default function CraftedBy({ onBack, onTryIt }: CraftedByProps) {
 
       <ClosingCTA onTryIt={onTryIt} />
 
+      {showUploader && (
+        <AvatarUploader
+          onClose={() => setShowUploader(false)}
+          onUpdated={() => setReloadKey((k) => k + 1)}
+        />
+      )}
     </div>
   );
 }
@@ -561,19 +590,27 @@ function CardSkeleton() {
 
 function NameMarquee({ names }: { names: string[] }) {
   if (names.length === 0) return null;
+  const looped = [...names, ...names, ...names];
   const ref = useScrollReveal<HTMLDivElement>();
 
   return (
     <section className="relative py-24 border-y border-stone-50/[0.06]">
-      <div ref={ref} className="scroll-reveal max-w-7xl mx-auto px-6 sm:px-10">
+      <div ref={ref} className="scroll-reveal max-w-7xl mx-auto px-6 sm:px-10 mb-10">
         <div className="text-[11px] tracking-[0.3em] uppercase text-stone-500">Wall of names</div>
         <h2 className="mt-3 text-[28px] sm:text-[36px] font-semibold tracking-[-0.025em] text-stone-100">
           Every name behind the orb.
         </h2>
+      </div>
 
-        <div className="mt-10 flex flex-wrap gap-3">
-          {names.map((n, i) => (
-            <NameChip key={n} name={n} accent={i % 4 === 0} />
+      <div className="marquee-mask space-y-3 select-none">
+        <div className="flex gap-4 animate-marquee whitespace-nowrap">
+          {looped.map((n, i) => (
+            <NameChip key={`a-${i}`} name={n} accent={i % 4 === 0} />
+          ))}
+        </div>
+        <div className="flex gap-4 animate-marquee-reverse whitespace-nowrap">
+          {looped.map((n, i) => (
+            <NameChip key={`b-${i}`} name={n} accent={i % 5 === 0} />
           ))}
         </div>
       </div>
