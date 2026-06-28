@@ -512,7 +512,7 @@ function ContributorCard({ contributor, index }: { contributor: Contributor; ind
               src={contributor.avatar_url}
               alt={contributor.name}
               loading="lazy"
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1200ms] ease-out group-hover:scale-[1.05]"
+              className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-[1200ms] ease-out group-hover:scale-[1.05]"
             />
           ) : (
             <>
