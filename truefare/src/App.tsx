@@ -1,16 +1,27 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import AppShell from './layout/AppShell';
 import DiscoverPage from './features/discover/DiscoverPage';
 import RestaurantPage from './features/catalog/RestaurantPage';
 import ComparePage from './features/compare/ComparePage';
 import SearchPage from './features/search/SearchPage';
-import CheckoutPage from './features/checkout/CheckoutPage';
-import OrdersPage from './features/orders/OrdersPage';
-import OrderTrackingPage from './features/orders/OrderTrackingPage';
-import ProfilePage from './features/profile/ProfilePage';
-import AuthPage from './features/auth/AuthPage';
 import { AuthProvider } from './features/auth/AuthContext';
 import { MergeModal } from './features/auth/MergeModal';
+
+// Off the critical path — split so the discover/compare core loads lean.
+const CheckoutPage = lazy(() => import('./features/checkout/CheckoutPage'));
+const OrdersPage = lazy(() => import('./features/orders/OrdersPage'));
+const OrderTrackingPage = lazy(() => import('./features/orders/OrderTrackingPage'));
+const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
+const AuthPage = lazy(() => import('./features/auth/AuthPage'));
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="blob blob-breathe h-16 w-16 bg-blush" />
+    </div>
+  );
+}
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -27,20 +38,22 @@ function Placeholder({ title }: { title: string }) {
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<DiscoverPage />} />
-          <Route path="search" element={<SearchPage />} />
-          <Route path="restaurant/:id" element={<RestaurantPage />} />
-          <Route path="compare" element={<ComparePage />} />
-          <Route path="checkout/:platform" element={<CheckoutPage />} />
-          <Route path="orders" element={<OrdersPage />} />
-          <Route path="orders/:id" element={<OrderTrackingPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="auth" element={<AuthPage />} />
-          <Route path="*" element={<Placeholder title="Lost in the kitchen" />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route index element={<DiscoverPage />} />
+            <Route path="search" element={<SearchPage />} />
+            <Route path="restaurant/:id" element={<RestaurantPage />} />
+            <Route path="compare" element={<ComparePage />} />
+            <Route path="checkout/:platform" element={<CheckoutPage />} />
+            <Route path="orders" element={<OrdersPage />} />
+            <Route path="orders/:id" element={<OrderTrackingPage />} />
+            <Route path="profile" element={<ProfilePage />} />
+            <Route path="auth" element={<AuthPage />} />
+            <Route path="*" element={<Placeholder title="Lost in the kitchen" />} />
+          </Route>
+        </Routes>
+      </Suspense>
       <MergeModal />
     </AuthProvider>
   );

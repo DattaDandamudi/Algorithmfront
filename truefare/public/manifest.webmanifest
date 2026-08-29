@@ -1,0 +1,17 @@
+{
+  "name": "TrueFare",
+  "short_name": "TrueFare",
+  "description": "Build one cart, see every delivery app's real all-in checkout total before you order.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF6EF",
+  "theme_color": "#FAF6EF",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
