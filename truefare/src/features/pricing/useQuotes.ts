@@ -36,13 +36,16 @@ export function useQuotes(req: QuoteRequest | null, refreshKey = 0) {
       queryFn: () => provider.quotePlatform(req!, platform),
       enabled: req != null && req.items.length > 0,
       staleTime: 60_000,
+      // Keep the last quote while re-quoting so totals roll (odometer)
+      // instead of flashing back to skeletons on toggle changes.
+      placeholderData: (prev: ProviderQuote | undefined) => prev,
     })),
   });
 
   const states: PlatformQuoteState[] = ALL_PLATFORMS.map((platform, i) => ({
     platform,
     quote: queries[i].data,
-    isLoading: queries[i].isLoading || queries[i].isFetching,
+    isLoading: queries[i].data == null && (queries[i].isLoading || queries[i].isFetching),
     isError: queries[i].isError,
   }));
 

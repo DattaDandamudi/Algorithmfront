@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { TopNav, BottomTabs } from './NavBar';
+import { CartBar } from '../features/cart/CartBar';
+import { ReplaceCartModal } from '../features/cart/ReplaceCartModal';
 import { useProfileStore } from '../features/profile/store';
 
 function useThemeClass() {
@@ -38,6 +40,8 @@ export default function AppShell() {
       <main className="mx-auto max-w-6xl px-4 pb-28 pt-24 sm:px-6 md:pb-16">
         <Outlet />
       </main>
+      <CartBar />
+      <ReplaceCartModal />
       <BottomTabs />
     </div>
   );

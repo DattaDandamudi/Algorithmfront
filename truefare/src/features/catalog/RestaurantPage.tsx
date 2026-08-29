@@ -9,15 +9,19 @@ import { RatingStars } from '../../components/ui/RatingStars';
 import { Chip } from '../../components/ui/Chip';
 import { useCatalog } from './useCatalog';
 import { MenuItemRow } from './components/MenuItemRow';
+import { useCartStore } from '../cart/store';
+import { flyToCart } from '../cart/CartBar';
 import type { MenuItem } from './types';
 
-export default function RestaurantPage({
-  onAdd,
-}: {
-  onAdd?: (item: MenuItem, fromEl: HTMLElement) => void;
-}) {
+export default function RestaurantPage() {
   const { id } = useParams<{ id: string }>();
   const catalog = useCatalog();
+  const addToCart = useCartStore((s) => s.add);
+
+  const onAdd = (item: MenuItem, fromEl: HTMLElement) => {
+    const added = addToCart(item.restaurantId, item.id);
+    if (added) flyToCart(fromEl);
+  };
   const restaurant = id ? catalog.restaurantsById.get(id) : undefined;
   const items = useMemo(
     () => (id ? (catalog.itemsByRestaurant.get(id) ?? []) : []),
