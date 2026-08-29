@@ -12,6 +12,7 @@ import { MenuItemRow } from './components/MenuItemRow';
 import { useCartStore } from '../cart/store';
 import { flyToCart } from '../cart/CartBar';
 import { logEvent } from '../recommendations/events';
+import { useSessionStore } from '../recommendations/sessionStore';
 import type { MenuItem } from './types';
 
 export default function RestaurantPage() {
@@ -27,7 +28,11 @@ export default function RestaurantPage() {
     }
   };
 
-  const onOpen = (item: MenuItem) => logEvent(item.id, item.restaurantId, 'open');
+  const markViewed = useSessionStore((s) => s.markViewed);
+  const onOpen = (item: MenuItem) => {
+    markViewed(item.id);
+    logEvent(item.id, item.restaurantId, 'open');
+  };
   const restaurant = id ? catalog.restaurantsById.get(id) : undefined;
   const items = useMemo(
     () => (id ? (catalog.itemsByRestaurant.get(id) ?? []) : []),
