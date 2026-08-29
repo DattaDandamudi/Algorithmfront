@@ -11,6 +11,7 @@ import { useCatalog } from './useCatalog';
 import { MenuItemRow } from './components/MenuItemRow';
 import { useCartStore } from '../cart/store';
 import { flyToCart } from '../cart/CartBar';
+import { logEvent } from '../recommendations/events';
 import type { MenuItem } from './types';
 
 export default function RestaurantPage() {
@@ -20,8 +21,13 @@ export default function RestaurantPage() {
 
   const onAdd = (item: MenuItem, fromEl: HTMLElement) => {
     const added = addToCart(item.restaurantId, item.id);
-    if (added) flyToCart(fromEl);
+    if (added) {
+      flyToCart(fromEl);
+      logEvent(item.id, item.restaurantId, 'add_to_cart');
+    }
   };
+
+  const onOpen = (item: MenuItem) => logEvent(item.id, item.restaurantId, 'open');
   const restaurant = id ? catalog.restaurantsById.get(id) : undefined;
   const items = useMemo(
     () => (id ? (catalog.itemsByRestaurant.get(id) ?? []) : []),
@@ -115,7 +121,7 @@ export default function RestaurantPage() {
         >
           {featured.map((item) => (
             <motion.div key={item.id} variants={riseChild}>
-              <MenuItemRow item={item} restaurant={restaurant} onAdd={onAdd} />
+              <MenuItemRow item={item} restaurant={restaurant} onAdd={onAdd} onOpen={onOpen} />
             </motion.div>
           ))}
         </motion.div>
@@ -134,7 +140,7 @@ export default function RestaurantPage() {
         >
           {rest.map((item) => (
             <motion.div key={item.id} variants={riseChild}>
-              <MenuItemRow item={item} restaurant={restaurant} onAdd={onAdd} />
+              <MenuItemRow item={item} restaurant={restaurant} onAdd={onAdd} onOpen={onOpen} />
             </motion.div>
           ))}
         </motion.div>

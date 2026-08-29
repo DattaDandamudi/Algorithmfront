@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { MapPin, Minus, Plus, RefreshCw, Trash2 } from 'lucide-react';
@@ -15,6 +15,7 @@ import { useQuotes } from '../pricing/useQuotes';
 import type { QuoteRequest } from '../pricing/types';
 import { effectiveMemberships, useProfileStore } from '../profile/store';
 import { useCartStore } from '../cart/store';
+import { logEvent } from '../recommendations/events';
 import { comparator, okQuotes, savingsSpread, winnerOf, type CompareSort } from './savings';
 import { QuoteCard } from './QuoteCard';
 import { ItemDiffTable } from './ItemDiffTable';
@@ -107,6 +108,16 @@ export default function ComparePage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSettled, sort, states.map((s) => s.quote?.total_cents).join(',')]);
+
+  // Log one compare_view per item per cart signature (a strong taste signal).
+  const loggedRef = useRef('');
+  const cartSig = cartItems.map((i) => i.itemId).join(',');
+  useEffect(() => {
+    if (!allSettled || !restaurant || loggedRef.current === cartSig) return;
+    loggedRef.current = cartSig;
+    cartItems.forEach((i) => logEvent(i.itemId, restaurant.id, 'compare_view'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allSettled, cartSig]);
 
   if (!restaurant || cartItems.length === 0) return <EmptyCompare />;
 
@@ -204,6 +215,9 @@ export default function ComparePage() {
                       state: { expectedTotal: state.quote!.total_cents },
                     })
                 : undefined
+            }
+            onHandoff={() =>
+              cartItems.forEach((i) => logEvent(i.itemId, restaurant.id, 'handoff'))
             }
           />
         ))}

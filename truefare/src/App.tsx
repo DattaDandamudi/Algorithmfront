@@ -3,6 +3,7 @@ import AppShell from './layout/AppShell';
 import DiscoverPage from './features/discover/DiscoverPage';
 import RestaurantPage from './features/catalog/RestaurantPage';
 import ComparePage from './features/compare/ComparePage';
+import SearchPage from './features/search/SearchPage';
 import CheckoutPage from './features/checkout/CheckoutPage';
 import OrdersPage from './features/orders/OrdersPage';
 import OrderTrackingPage from './features/orders/OrderTrackingPage';
@@ -24,7 +25,7 @@ export default function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<DiscoverPage />} />
-        <Route path="search" element={<Placeholder title="Search" />} />
+        <Route path="search" element={<SearchPage />} />
         <Route path="restaurant/:id" element={<RestaurantPage />} />
         <Route path="compare" element={<ComparePage />} />
         <Route path="checkout/:platform" element={<CheckoutPage />} />

@@ -4,6 +4,7 @@ import { Compass, Search, Scale, Package, User, Moon, Sun } from 'lucide-react';
 import clsx from 'clsx';
 import { springs } from '../design/motion';
 import { useProfileStore } from '../features/profile/store';
+import { useSearchStore } from '../features/search/recentStore';
 
 const LINKS = [
   { to: '/', label: 'Discover', icon: Compass, end: true },
@@ -30,6 +31,20 @@ function ThemeToggle() {
     >
       {isDark ? <Sun size={16} /> : <Moon size={16} />}
     </motion.button>
+  );
+}
+
+function PaletteTrigger() {
+  const setPaletteOpen = useSearchStore((s) => s.setPaletteOpen);
+  return (
+    <button
+      onClick={() => setPaletteOpen(true)}
+      className="hidden h-9 items-center gap-2 rounded-pill border border-hairline px-3 text-[13px] text-muted transition-colors hover:text-ink md:inline-flex"
+    >
+      <Search size={14} aria-hidden="true" />
+      <span>Search</span>
+      <kbd className="rounded-md border border-hairline px-1.5 text-[11px]">⌘K</kbd>
+    </button>
   );
 }
 
@@ -75,6 +90,7 @@ export function TopNav() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <PaletteTrigger />
           <ThemeToggle />
           <NavLink
             to="/profile"

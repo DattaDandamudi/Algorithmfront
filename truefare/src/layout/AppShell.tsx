@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { TopNav, BottomTabs } from './NavBar';
 import { CartBar } from '../features/cart/CartBar';
 import { ReplaceCartModal } from '../features/cart/ReplaceCartModal';
+import { CommandPalette } from '../features/search/CommandPalette';
 import { useProfileStore } from '../features/profile/store';
 
 function useThemeClass() {
@@ -42,6 +43,7 @@ export default function AppShell() {
       </main>
       <CartBar />
       <ReplaceCartModal />
+      <CommandPalette />
       <BottomTabs />
     </div>
   );
