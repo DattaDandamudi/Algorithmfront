@@ -20,10 +20,25 @@ export function SegmentedControl<T extends string>({
   layoutId: string;
   ariaLabel: string;
 }) {
+  // Roving tabindex + arrow keys, per the radiogroup pattern.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const idx = options.findIndex((o) => o.value === value);
+    let next = idx;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (idx + 1) % options.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      next = (idx - 1 + options.length) % options.length;
+    else return;
+    e.preventDefault();
+    onChange(options[next].value);
+    const buttons = e.currentTarget.querySelectorAll<HTMLButtonElement>('button');
+    buttons[next]?.focus();
+  };
+
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
+      onKeyDown={onKeyDown}
       className="inline-flex items-center gap-1 rounded-pill border border-hairline bg-surface p-1"
     >
       {options.map((opt) => {
@@ -33,6 +48,7 @@ export function SegmentedControl<T extends string>({
             key={opt.value}
             role="radio"
             aria-checked={active}
+            tabIndex={active ? 0 : -1}
             onClick={() => onChange(opt.value)}
             className={clsx(
               'relative rounded-pill px-4 py-1.5 text-[13px] font-medium transition-colors',

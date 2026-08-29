@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
@@ -12,12 +12,41 @@ interface ModalProps {
   children: ReactNode;
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ open, onClose, title, children }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Focus management: move focus in on open, trap Tab, restore on close.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const previous = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusables = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
+        );
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || active === panelRef.current)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      previous?.focus?.();
+    };
   }, [open, onClose]);
 
   return createPortal(
@@ -33,11 +62,13 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
             onClick={onClose}
           />
           <motion.div
+            ref={panelRef}
             role="dialog"
             aria-modal="true"
             aria-label={title}
+            tabIndex={-1}
             {...popPresence}
-            className="relative w-full max-w-md rounded-cell border border-hairline bg-surface p-6 shadow-cardHover"
+            className="relative w-full max-w-md rounded-cell border border-hairline bg-surface p-6 shadow-cardHover outline-none"
           >
             <div className="flex items-start justify-between gap-4">
               {title && <h2 className="font-display text-2xl font-semibold">{title}</h2>}

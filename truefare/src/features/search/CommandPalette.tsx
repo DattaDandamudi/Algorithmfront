@@ -55,7 +55,13 @@ export function CommandPalette() {
   }, [open, setOpen]);
 
   useEffect(() => {
-    if (!open) setQuery('');
+    if (!open) {
+      setQuery('');
+      return;
+    }
+    // Restore focus to wherever the user was when the palette closes.
+    const previous = document.activeElement as HTMLElement | null;
+    return () => previous?.focus?.();
   }, [open]);
 
   const daypart = currentDaypart();
@@ -107,12 +113,16 @@ export function CommandPalette() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search TrueFare"
             className="relative w-full max-w-xl overflow-hidden rounded-cell border border-hairline bg-surface shadow-cardHover"
           >
             <Command loop shouldFilter={false} label="Search TrueFare">
               <div className="flex items-center gap-2.5 border-b border-hairline px-4">
                 <Search size={17} className="shrink-0 text-muted" aria-hidden="true" />
                 <Command.Input
+                  autoFocus
                   value={query}
                   onValueChange={setQuery}
                   placeholder="Search dishes, restaurants, cravings…"

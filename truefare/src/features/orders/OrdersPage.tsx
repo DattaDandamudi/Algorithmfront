@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
@@ -64,9 +65,15 @@ export default function OrdersPage() {
   const setCart = useCartStore((s) => s.setCart);
   const navigate = useNavigate();
 
-  const now = Date.now();
+  // Tick while anything is in flight so orders migrate to "past" live.
+  const [now, setNow] = useState(() => Date.now());
   const active = orders.filter((o) => !orderProgressOf(o, now).delivered);
   const past = orders.filter((o) => orderProgressOf(o, now).delivered);
+  useEffect(() => {
+    if (active.length === 0) return;
+    const t = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, [active.length]);
 
   const spendByPlatform = ALL_PLATFORMS.map((p) => ({
     platform: p,

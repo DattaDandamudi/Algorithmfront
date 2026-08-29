@@ -24,6 +24,8 @@ export function flyToCart(fromEl: HTMLElement) {
 interface Dot {
   id: number;
   from: FlyDetail;
+  /** Captured once at spawn so mid-flight re-renders never retarget. */
+  to: FlyDetail;
 }
 
 let dotId = 0;
@@ -42,7 +44,21 @@ export function CartBar() {
   useEffect(() => {
     const onFly = (e: Event) => {
       const detail = (e as CustomEvent<FlyDetail>).detail;
-      setDots((d) => [...d, { id: ++dotId, from: detail }]);
+      // Double rAF: on a first-ever add the bar mounts in this same
+      // commit — wait two frames so the anchor has a real position, then
+      // freeze the target into the dot.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const el = anchorRef.current;
+          const to = el
+            ? (() => {
+                const r = el.getBoundingClientRect();
+                return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+              })()
+            : { x: window.innerWidth / 2, y: window.innerHeight - 96 };
+          setDots((d) => [...d, { id: ++dotId, from: detail, to }]);
+        })
+      );
     };
     window.addEventListener('tf:fly', onFly);
     return () => window.removeEventListener('tf:fly', onFly);
@@ -53,20 +69,13 @@ export function CartBar() {
   const hidden =
     count === 0 || pathname.startsWith('/compare') || pathname.startsWith('/checkout');
 
-  const target = () => {
-    const el = anchorRef.current;
-    if (!el) return { x: window.innerWidth / 2, y: window.innerHeight - 80 };
-    const r = el.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  };
-
   return (
     <>
       {/* flying dots layer */}
       <div className="pointer-events-none fixed inset-0 z-[65]" aria-hidden="true">
         <AnimatePresence>
           {dots.map((dot) => {
-            const t = target();
+            const t = dot.to;
             return (
               <motion.span
                 key={dot.id}
@@ -99,7 +108,7 @@ export function CartBar() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 96, opacity: 0 }}
             transition={springs.layout}
-            className="fixed inset-x-0 bottom-16 z-[64] px-4 md:bottom-6"
+            className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[64] px-4 md:bottom-6"
           >
             <div className="glass-bottom mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-cell border border-hairline px-4 py-3 shadow-cardHover md:rounded-pill md:px-5">
               <motion.div animate={gulp} ref={anchorRef} className="relative">

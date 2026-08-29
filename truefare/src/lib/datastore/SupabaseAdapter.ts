@@ -35,7 +35,7 @@ export class SupabaseAdapter implements DataStore {
   }
 
   async saveProfile(p: ProfileRecord): Promise<void> {
-    await this.client.from('fd_profiles').upsert({
+    const { error } = await this.client.from('fd_profiles').upsert({
       id: this.userId,
       display_name: p.displayName,
       metro_id: p.metroId,
@@ -43,6 +43,7 @@ export class SupabaseAdapter implements DataStore {
       memberships: p.memberships,
       updated_at: new Date().toISOString(),
     });
+    if (error) throw new Error(`Saving profile failed: ${error.message}`);
   }
 
   async listOrders(): Promise<OrderRecord[]> {
@@ -66,7 +67,7 @@ export class SupabaseAdapter implements DataStore {
   }
 
   async recordOrder(o: OrderRecord): Promise<void> {
-    await this.client.from('fd_orders').insert({
+    const { error } = await this.client.from('fd_orders').insert({
       id: o.id,
       user_id: this.userId,
       restaurant_id: o.restaurantId,
@@ -79,16 +80,18 @@ export class SupabaseAdapter implements DataStore {
       placed_at: o.placedAt,
       address: o.address,
     });
+    if (error) throw new Error(`Recording the order failed: ${error.message}`);
   }
 
   async logEvent(e: TrackedEvent): Promise<void> {
-    await this.client.from('fd_events').insert({
+    const { error } = await this.client.from('fd_events').insert({
       user_id: this.userId,
       item_id: e.itemId,
       restaurant_id: e.restaurantId,
       event_type: e.type,
       created_at: e.at,
     });
+    if (error) throw new Error(`Logging event failed: ${error.message}`);
   }
 
   async listRecentEvents(limit: number): Promise<TrackedEvent[]> {

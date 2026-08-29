@@ -10,13 +10,13 @@
   --tf-surface: 255 253 248; /* paper #FFFDF8 */
   --tf-raised: 255 255 255;
   --tf-ink: 43 33 25; /* espresso #2B2119 */
-  --tf-muted: 138 122 106; /* #8A7A6A */
+  --tf-muted: 117 99 81; /* #756351 — AA on cream grounds */
   --tf-hairline: rgba(60, 42, 26, 0.08);
   --tf-terracotta: 196 80 47; /* #C4502F */
   --tf-terracotta-hover: 226 114 91; /* #E2725B */
   --tf-terracotta-press: 160 61 34; /* #A03D22 */
   --tf-sage: 122 132 80; /* #7A8450 */
-  --tf-savings: 61 122 74; /* #3D7A4A */
+  --tf-savings: 47 99 58; /* #2F633A — AA on pistachio */
   --tf-saffron: 232 163 61; /* #E8A33D */
   --tf-blush: 243 224 211; /* #F3E0D3 */
   --tf-pistachio: 231 234 217; /* #E7EAD9 */
@@ -41,7 +41,7 @@
   --tf-terracotta-hover: 236 139 102;
   --tf-terracotta-press: 196 99 63;
   --tf-sage: 155 168 109; /* #9BA86D */
-  --tf-savings: 95 163 108;
+  --tf-savings: 127 191 141; /* AA on dark pistachio */
   --tf-saffron: 240 180 92; /* #F0B45C */
   --tf-blush: 58 46 36;
   --tf-pistachio: 51 56 40;

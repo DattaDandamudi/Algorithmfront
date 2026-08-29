@@ -47,7 +47,8 @@ function merchantDeliveryBase(
 ): number {
   const { minCents, maxCents, stepCents } = platformRules.deliveryFee;
   const rng = createRng(`${rules.version}:${restaurantId}:${platform}:delivery`);
-  return to99(rng.range(minCents, maxCents, stepCents));
+  // range() has an exclusive upper bound; +step makes maxCents attainable.
+  return to99(Math.min(maxCents, rng.range(minCents, maxCents + stepCents, stepCents)));
 }
 
 export function computeQuote(
@@ -111,9 +112,13 @@ export function computeQuote(
     deliveryNote = 'Fees waived on $50+ orders';
   }
 
+  // Membership benefits share one eligibility gate: below the platform's
+  // order minimum, a membership does NOTHING (delivery, service, discount).
+  const membershipEligible = isMember && subtotal >= membership.deliveryWaiverMinCents;
+
   // 5 — membership delivery waiver
   let membershipApplied = false;
-  if (!feeWaiverApplies && isMember && subtotal >= membership.deliveryWaiverMinCents) {
+  if (!feeWaiverApplies && membershipEligible) {
     deliveryFee = 0;
     deliveryNote = `$0 with ${membership.label}`;
     membershipApplied = true;
@@ -126,10 +131,11 @@ export function computeQuote(
     const sf = platformRules.serviceFee;
     let bps: number;
     let minCents = sf.minCents;
-    if (isMember && membership.serviceBpsOverride) {
+    if (membershipEligible && membership.serviceBpsOverride) {
       bps = membership.serviceBpsOverride.bps;
       minCents = membership.serviceBpsOverride.minCents;
-      serviceNote = `${bps / 100}% with ${membership.label}`;
+      bps += metro.serviceBumpBps?.[platform] ?? 0;
+      serviceNote = `${membership.serviceBpsOverride.bps / 100}% with ${membership.label}`;
       membershipApplied = true;
     } else {
       bps = sf.bps;
@@ -137,10 +143,11 @@ export function computeQuote(
         bps += sf.distanceBump.bps;
       }
       bps += sf.surgeBpsByDaypart?.[daypart] ?? 0;
+      bps += metro.serviceBumpBps?.[platform] ?? 0;
+      // The note states the pct actually charged, metro bumps included.
       serviceNote = `${(bps / 100).toFixed(bps % 100 === 0 ? 0 : 1)}% of subtotal`;
     }
-    bps += metro.serviceBumpBps?.[platform] ?? 0;
-    if (isMember && membership.serviceMultiplier) {
+    if (membershipEligible && membership.serviceMultiplier) {
       bps = Math.round(bps * membership.serviceMultiplier);
       serviceNote = `Reduced with ${membership.label}`;
       membershipApplied = true;
@@ -184,7 +191,7 @@ export function computeQuote(
 
   // 9 — membership subtotal discount (Uber One)
   let discount = 0;
-  if (isMember && membership.subtotalDiscount && subtotal >= membership.deliveryWaiverMinCents) {
+  if (membershipEligible && membership.subtotalDiscount) {
     discount = Math.min(
       applyBps(subtotal, membership.subtotalDiscount.bps),
       membership.subtotalDiscount.capCents

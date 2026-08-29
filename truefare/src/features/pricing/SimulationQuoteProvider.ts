@@ -2,7 +2,7 @@ import { createRng } from '../../lib/rng';
 import { getCatalog } from '../catalog/data/buildCatalog';
 import { ALL_PLATFORMS, type Platform } from '../catalog/types';
 import { computeQuote } from './engine';
-import { FEE_RULES_V1 } from './rules/v1';
+import { FEE_RULES_V1, resolveMetro } from './rules/v1';
 import type { QuoteProvider } from './QuoteProvider';
 import type { ProviderQuote, QuoteInput, QuoteRequest } from './types';
 
@@ -15,7 +15,7 @@ function resolveInput(req: QuoteRequest): QuoteInput {
     if (!item) throw new Error(`Unknown item ${itemId}`);
     return { item, qty };
   });
-  const metro = FEE_RULES_V1.metros[req.metroId];
+  const metro = resolveMetro(req.metroId);
   return {
     restaurant,
     lines,

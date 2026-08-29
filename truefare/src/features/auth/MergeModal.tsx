@@ -7,6 +7,7 @@ import { useAuth } from './AuthContext';
 export function MergeModal() {
   const { mergeAvailable, runMerge, dismissMerge } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(0);
 
   return (
     <Modal open={mergeAvailable} onClose={dismissMerge} title="Bring your guest activity?">
@@ -15,6 +16,11 @@ export function MergeModal() {
         Import them into your account so your recommendations and history come
         with you. Your local copy stays untouched either way.
       </p>
+      {failed > 0 && (
+        <p role="alert" className="mt-3 text-[13px] font-medium text-terracotta">
+          {failed} record{failed > 1 ? 's' : ''} didn't import — you can try again.
+        </p>
+      )}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={dismissMerge} disabled={busy}>
           Start fresh
@@ -23,11 +29,11 @@ export function MergeModal() {
           disabled={busy}
           onClick={async () => {
             setBusy(true);
-            await runMerge();
+            setFailed(await runMerge());
             setBusy(false);
           }}
         >
-          {busy ? 'Importing…' : 'Import my activity'}
+          {busy ? 'Importing…' : failed > 0 ? 'Retry import' : 'Import my activity'}
         </Button>
       </div>
     </Modal>

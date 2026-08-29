@@ -10,7 +10,7 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { platformColors } from '../../design/tokens';
 import { ALL_PLATFORMS } from '../catalog/types';
 import { useCatalog } from '../catalog/useCatalog';
-import { FEE_RULES_V1 } from '../pricing/rules/v1';
+import { FEE_RULES_V1, resolveMetro } from '../pricing/rules/v1';
 import { useQuotes } from '../pricing/useQuotes';
 import type { QuoteRequest } from '../pricing/types';
 import { effectiveMemberships, useProfileStore } from '../profile/store';
@@ -74,17 +74,24 @@ export default function ComparePage() {
 
   const restaurant = restaurantId ? catalog.restaurantsById.get(restaurantId) : null;
 
+  // A persisted cart can reference items that no longer exist in the
+  // catalog — drop them instead of letting the quote pipeline throw.
+  const validItems = useMemo(
+    () => cartItems.filter((i) => catalog.itemsById.has(i.itemId)),
+    [cartItems, catalog]
+  );
+
   const req: QuoteRequest | null = useMemo(() => {
-    if (!restaurant || cartItems.length === 0) return null;
+    if (!restaurant || validItems.length === 0) return null;
     return {
       restaurantId: restaurant.id,
-      items: cartItems,
+      items: validItems,
       metroId,
       memberships,
       tipPercent,
       daypart,
     };
-  }, [restaurant, cartItems, metroId, memberships, tipPercent, daypart]);
+  }, [restaurant, validItems, metroId, memberships, tipPercent, daypart]);
 
   const { states, allSettled } = useQuotes(req, refreshKey);
 
@@ -107,7 +114,15 @@ export default function ComparePage() {
       return cmp(qa, qb);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allSettled, sort, states.map((s) => s.quote?.total_cents).join(',')]);
+  }, [
+    allSettled,
+    sort,
+    // Re-sort whenever any quote object is replaced, not just when totals move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    states.map((s) => s.quote?.meta.generatedAt ?? '').join('|'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    states.map((s) => s.quote?.total_cents ?? -1).join(','),
+  ]);
 
   // Log one compare_view per item per cart signature (a strong taste signal).
   const loggedRef = useRef('');
@@ -119,9 +134,9 @@ export default function ComparePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSettled, cartSig]);
 
-  if (!restaurant || cartItems.length === 0) return <EmptyCompare />;
+  if (!restaurant || validItems.length === 0) return <EmptyCompare />;
 
-  const metro = FEE_RULES_V1.metros[metroId];
+  const metro = resolveMetro(metroId);
 
   const refresh = () => {
     setRefreshKey((k) => k + 1);
@@ -212,13 +227,14 @@ export default function ComparePage() {
               state.quote?.status === 'ok'
                 ? () =>
                     navigate(`/checkout/${state.platform}`, {
-                      state: { expectedTotal: state.quote!.total_cents },
+                      state: { expectedTotal: state.quote!.total_cents, tipPercent },
                     })
                 : undefined
             }
             onHandoff={() =>
               cartItems.forEach((i) => logEvent(i.itemId, restaurant.id, 'handoff'))
             }
+            onRetry={refresh}
           />
         ))}
       </div>

@@ -11,7 +11,7 @@ import { platformColors, platformAccentVar } from '../../design/tokens';
 import { ALL_PLATFORMS } from '../catalog/types';
 import { getCatalog } from '../catalog/data/buildCatalog';
 import { computeQuote } from '../pricing/engine';
-import { FEE_RULES_V1 } from '../pricing/rules/v1';
+import { FEE_RULES_V1, resolveMetro } from '../pricing/rules/v1';
 import { useProfileStore } from '../profile/store';
 
 /** Curated demo carts the hero cycles through — priced live by the engine. */
@@ -37,10 +37,13 @@ export function BentoHero() {
   const metroId = useProfileStore((s) => s.metroId);
   const [idx, setIdx] = useState(0);
 
+  const [paused, setPaused] = useState(false);
+
   useEffect(() => {
+    if (paused) return;
     const t = setInterval(() => setIdx((i) => (i + 1) % SAMPLE_CARTS.length), 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [paused]);
 
   const sample = SAMPLE_CARTS[idx];
 
@@ -53,7 +56,7 @@ export function BentoHero() {
       .filter((i): i is NonNullable<typeof i> => i != null)
       .map((item) => ({ item, qty: 1 }));
     if (!lines.length) return [];
-    const metro = FEE_RULES_V1.metros[metroId];
+    const metro = resolveMetro(metroId);
     return ALL_PLATFORMS.map((p) =>
       computeQuote(
         FEE_RULES_V1,
@@ -116,13 +119,15 @@ export function BentoHero() {
                     className="flex h-full items-center justify-end rounded-pill pr-3"
                     style={{
                       backgroundColor: isWinner
-                        ? 'rgb(var(--tf-sage))'
+                        ? 'rgb(var(--tf-savings))'
                         : platformAccentVar(q.platform, 0.33),
                     }}
                   >
                     <span
                       className="tabular whitespace-nowrap text-[12px] font-bold"
-                      style={{ color: isWinner ? '#FFF8EC' : 'rgb(var(--tf-ink))' }}
+                      style={{
+                        color: isWinner ? 'rgb(var(--tf-ground))' : 'rgb(var(--tf-ink))',
+                      }}
                     >
                       {formatCents(q.total_cents)}
                     </span>
@@ -138,7 +143,15 @@ export function BentoHero() {
           })}
         </div>
         <div className="mt-5 flex items-center justify-between">
-          <div className="flex gap-1.5" aria-hidden="true">
+          <div
+            className="flex gap-1.5"
+            role="group"
+            aria-label="Sample carts"
+            onMouseEnter={() => setPaused(true)}
+            onMouseLeave={() => setPaused(false)}
+            onFocus={() => setPaused(true)}
+            onBlur={() => setPaused(false)}
+          >
             {SAMPLE_CARTS.map((_, i) => (
               <button
                 key={i}

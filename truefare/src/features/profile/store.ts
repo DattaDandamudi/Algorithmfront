@@ -17,6 +17,13 @@ interface ProfileState {
   toggleDietary: (d: Dietary) => void;
   setTheme: (t: Theme) => void;
   setDisplayName: (name: string) => void;
+  /** Bulk-apply the account's remote profile after sign-in hydration. */
+  hydrateFromRemote: (p: {
+    displayName: string;
+    metroId: MetroId;
+    dietary: Dietary[];
+    memberships: MembershipId[];
+  }) => void;
 }
 
 export const useProfileStore = create<ProfileState>()(
@@ -52,6 +59,13 @@ export const useProfileStore = create<ProfileState>()(
         })),
       setTheme: (theme) => set({ theme }),
       setDisplayName: (displayName) => set({ displayName }),
+      hydrateFromRemote: (p) =>
+        set({
+          displayName: p.displayName,
+          metroId: p.metroId,
+          dietary: p.dietary,
+          memberships: p.memberships,
+        }),
     }),
     { name: 'tf:v1:profile' }
   )

@@ -36,19 +36,24 @@ export function AnimatedPrice({
 }) {
   const text = formatCents(cents);
   return (
+    // role="img" + label reads as one price; the rolling digits are
+    // hidden from AT so they never announce as digit soup.
     <span
-      className={clsx('tabular inline-flex items-baseline leading-none', className)}
+      role="img"
       aria-label={text}
+      className={clsx('tabular inline-flex items-baseline leading-none', className)}
     >
-      {text.split('').map((ch, i) =>
-        /\d/.test(ch) ? (
-          <Digit key={`${text.length}-${i}`} d={Number(ch)} />
-        ) : (
-          <span key={`${text.length}-${i}`} className="inline-block leading-none">
-            {ch}
-          </span>
-        )
-      )}
+      <span aria-hidden="true" className="inline-flex items-baseline leading-none">
+        {text.split('').map((ch, i) =>
+          /\d/.test(ch) ? (
+            <Digit key={`${text.length}-${i}`} d={Number(ch)} />
+          ) : (
+            <span key={`${text.length}-${i}`} className="inline-block leading-none">
+              {ch}
+            </span>
+          )
+        )}
+      </span>
     </span>
   );
 }

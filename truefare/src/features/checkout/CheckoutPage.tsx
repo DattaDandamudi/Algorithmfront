@@ -39,7 +39,11 @@ export default function CheckoutPage() {
     ? (platformParam as Platform)
     : null;
   const location = useLocation();
-  const expectedTotal = (location.state as { expectedTotal?: number } | null)?.expectedTotal;
+  const navState = location.state as { expectedTotal?: number; tipPercent?: number } | null;
+  const expectedTotal = navState?.expectedTotal;
+  // The tip chosen on Compare travels with the navigation; 15% only as
+  // the fallback for direct URL entry.
+  const tipPercent = navState?.tipPercent ?? 15;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -69,22 +73,29 @@ export default function CheckoutPage() {
   const [editingCard, setEditingCard] = useState(savedPayment == null);
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState<{ id: string; total: number } | null>(null);
+  const [placeError, setPlaceError] = useState<string | null>(null);
 
   const restaurant = restaurantId ? catalog.restaurantsById.get(restaurantId) : null;
   const daypart = useMemo(() => currentDaypart(), []);
 
+  // Drop cart entries that no longer resolve against the catalog.
+  const validItems = useMemo(
+    () => cartItems.filter((i) => catalog.itemsById.has(i.itemId)),
+    [cartItems, catalog]
+  );
+
   // Price-lock: re-quote on entry; the frozen quote is what gets placed.
   const req: QuoteRequest | null = useMemo(() => {
-    if (!restaurant || cartItems.length === 0 || !platform) return null;
+    if (!restaurant || validItems.length === 0 || !platform) return null;
     return {
       restaurantId: restaurant.id,
-      items: cartItems,
+      items: validItems,
       metroId,
       memberships,
-      tipPercent: 15,
+      tipPercent,
       daypart,
     };
-  }, [restaurant, cartItems, metroId, memberships, platform, daypart]);
+  }, [restaurant, validItems, metroId, memberships, platform, tipPercent, daypart]);
 
   const { states } = useQuotes(req);
   const quote = states.find((s) => s.platform === platform)?.quote;
@@ -103,7 +114,7 @@ export default function CheckoutPage() {
     );
   }
 
-  if (!platform || !restaurant || cartItems.length === 0) {
+  if (!platform || !restaurant || validItems.length === 0) {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
         <div className="blob blob-breathe h-16 w-16 bg-blush" />
@@ -125,22 +136,32 @@ export default function CheckoutPage() {
   const placeOrder = async () => {
     if (!canPlace || !quote) return;
     setPlacing(true);
+    setPlaceError(null);
     const address = { label, line1: line1.trim(), city: city.trim() };
     setAddress(address);
     if (editingCard) {
       setPayment({ masked: maskCard(cardNumber), brand: brandOf(cardNumber) });
     }
-    const order = await getOrderProvider().placeOrder({
-      restaurantId: restaurant.id,
-      platform,
-      items: cartItems,
-      quote,
-      metroId,
-      address,
-    });
-    await queryClient.invalidateQueries({ queryKey: ['orders'] });
-    clearCart();
-    setPlaced({ id: order.id, total: order.totalCents });
+    try {
+      const order = await getOrderProvider().placeOrder({
+        restaurantId: restaurant.id,
+        platform,
+        items: validItems,
+        quote,
+        metroId,
+        address,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['events'] });
+      clearCart();
+      setPlaced({ id: order.id, total: order.totalCents });
+    } catch (err) {
+      // Never fake success: keep the cart, show what happened, allow retry.
+      setPlaceError(
+        err instanceof Error ? err.message : 'Placing the order failed — please try again.'
+      );
+      setPlacing(false);
+    }
   };
 
   return (
@@ -304,6 +325,11 @@ export default function CheckoutPage() {
               )}
             </AnimatePresence>
           </motion.button>
+          {placeError && (
+            <p role="alert" className="text-center text-[13px] font-medium text-terracotta">
+              {placeError}
+            </p>
+          )}
           <p className="text-center text-[12px] text-muted">
             Estimated total on {colors.label} · rules {quote?.meta.rulesVersion ?? '—'} · no
             real order is placed
@@ -314,7 +340,7 @@ export default function CheckoutPage() {
         <aside className="h-fit rounded-cell border border-hairline bg-surface p-6 shadow-card">
           <h2 className="font-display text-xl font-semibold">{restaurant.name}</h2>
           <ul className="mt-3 space-y-2 border-b border-hairline pb-3">
-            {cartItems.map(({ itemId, qty }) => {
+            {validItems.map(({ itemId, qty }) => {
               const item = catalog.itemsById.get(itemId);
               return item ? (
                 <li key={itemId} className="flex justify-between gap-3 text-[13px]">

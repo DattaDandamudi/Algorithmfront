@@ -179,3 +179,14 @@ export const FEE_RULES_V1: FeeRuleSet = {
 
 /** Seattle-only: DoorDash long-distance add-on past 6 miles. */
 export const SEATTLE_DD_LONG_DISTANCE = { thresholdMiles: 6, feeCents: 199 };
+
+/**
+ * Guarded metro lookup: a stale persisted metroId (e.g. from an older
+ * rules version) must degrade to the default, never white-screen the app.
+ */
+export function resolveMetro(metroId: string): (typeof FEE_RULES_V1.metros)[keyof typeof FEE_RULES_V1.metros] {
+  return (
+    FEE_RULES_V1.metros[metroId as keyof typeof FEE_RULES_V1.metros] ??
+    FEE_RULES_V1.metros.sf
+  );
+}

@@ -39,6 +39,14 @@ export default function SearchPage() {
     return () => clearTimeout(t);
   }, [query, params, setParams]);
 
+  // …and adopt EXTERNAL ?q= changes (palette "See all", back/forward) —
+  // but never while the user is mid-keystroke in the input.
+  const urlQ = params.get('q') ?? '';
+  useEffect(() => {
+    if (document.activeElement === inputRef.current) return;
+    setQuery((prev) => (prev === urlQ ? prev : urlQ));
+  }, [urlQ]);
+
   const results = useSearch(query, 60);
   const daypart = currentDaypart();
 

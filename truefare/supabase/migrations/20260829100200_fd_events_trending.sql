@@ -69,7 +69,9 @@ AS $$
         WHEN 'search_click' THEN 2
         ELSE 1
       END
-    ) / POWER(EXTRACT(EPOCH FROM (now() - MIN(e.created_at))) / 3600 + 2, 1.8) AS score
+    -- created_at is client-supplied: clamp to ≥0 so a future timestamp can
+    -- never feed POWER a negative base (a hard Postgres error for everyone).
+    ) / POWER(GREATEST(EXTRACT(EPOCH FROM (now() - MIN(e.created_at))) / 3600, 0) + 2, 1.8) AS score
   FROM fd_events e
   WHERE e.created_at > now() - interval '72 hours'
   GROUP BY e.item_id

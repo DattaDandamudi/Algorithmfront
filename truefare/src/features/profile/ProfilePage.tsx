@@ -33,12 +33,14 @@ export default function ProfilePage() {
   const theme = useProfileStore((s) => s.theme);
   const setTheme = useProfileStore((s) => s.setTheme);
   const displayName = useProfileStore((s) => s.displayName);
-  const { configured, session } = useAuth();
+  const { configured, session, profileReady } = useAuth();
 
-  // Mirror preferences to the account when signed in (debounced).
+  // Mirror preferences to the account when signed in (debounced) — but
+  // only after the remote profile has been hydrated into the store, so
+  // this device's defaults never clobber the account.
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
-    if (!session) return;
+    if (!session || !profileReady) return;
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       void getDataStore()
@@ -46,7 +48,7 @@ export default function ProfilePage() {
         .catch(() => {});
     }, 800);
     return () => clearTimeout(timer.current);
-  }, [session, displayName, metroId, dietary, memberships]);
+  }, [session, profileReady, displayName, metroId, dietary, memberships]);
 
   return (
     <motion.div {...pageEnter} className="mx-auto max-w-3xl">

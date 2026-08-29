@@ -31,38 +31,14 @@ function FeedCard({ item }: { item: MenuItem }) {
       variants={riseChild}
       whileHover={{ y: -4 }}
       transition={springs.standard}
-      className="w-[188px] shrink-0 snap-start"
+      className="relative w-[188px] shrink-0 snap-start"
     >
+      {/* Two sibling buttons — never nested interactives. */}
       <button
         onClick={open}
         className="group block w-full overflow-hidden rounded-card border border-hairline bg-surface text-left shadow-card transition-shadow hover:shadow-cardHover"
       >
-        <div className="relative">
-          <FoodImage glyph={item.glyph} seed={item.id} className="aspect-square w-full" still />
-          <motion.span
-            whileTap={{ scale: 0.9 }}
-            transition={springs.snappy}
-            role="button"
-            aria-label={`Add ${item.name} to cart`}
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (addToCart(item.restaurantId, item.id)) {
-                flyToCart(e.currentTarget as HTMLElement);
-                logEvent(item.id, item.restaurantId, 'add_to_cart');
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                (e.currentTarget as HTMLElement).click();
-              }
-            }}
-            className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-pill bg-terracotta text-[#FFF8EC] opacity-90 shadow-card transition-colors hover:bg-terracotta-hover"
-          >
-            <Plus size={15} />
-          </motion.span>
-        </div>
+        <FoodImage glyph={item.glyph} seed={item.id} className="aspect-square w-full" still />
         <div className="p-3">
           <p className="truncate text-[14px] font-semibold text-ink">{item.name}</p>
           <p className="mt-0.5 truncate text-[12px] text-muted">{restaurant.name}</p>
@@ -71,6 +47,20 @@ function FeedCard({ item }: { item: MenuItem }) {
           </p>
         </div>
       </button>
+      <motion.button
+        whileTap={{ scale: 0.9 }}
+        transition={springs.snappy}
+        aria-label={`Add ${item.name} to cart`}
+        onClick={(e) => {
+          if (addToCart(item.restaurantId, item.id)) {
+            flyToCart(e.currentTarget);
+            logEvent(item.id, item.restaurantId, 'add_to_cart');
+          }
+        }}
+        className="absolute right-2 top-[132px] flex h-8 w-8 items-center justify-center rounded-pill bg-terracotta text-[#FFF8EC] opacity-90 shadow-card transition-colors hover:bg-terracotta-hover"
+      >
+        <Plus size={15} />
+      </motion.button>
     </motion.div>
   );
 }

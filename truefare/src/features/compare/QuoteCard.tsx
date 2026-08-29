@@ -22,6 +22,7 @@ interface QuoteCardProps {
   deltaCents: number | null; // vs winner total; null while loading
   onCheckout?: () => void;
   onHandoff?: () => void;
+  onRetry?: () => void;
 }
 
 function MembershipToggle({ state }: { state: PlatformQuoteState }) {
@@ -86,10 +87,30 @@ export function QuoteCard({
   deltaCents,
   onCheckout,
   onHandoff,
+  onRetry,
 }: QuoteCardProps) {
   const [open, setOpen] = useState(false);
   const { quote, isLoading } = state;
   const colors = platformColors[state.platform];
+
+  if (state.isError && !quote) {
+    return (
+      <div className="rounded-cell border border-hairline bg-surface p-5 shadow-card">
+        <PlatformBadge platform={state.platform} size="md" />
+        <p className="mt-3 text-[13px] text-muted">
+          Couldn't price this cart on {colors.label} just now.
+        </p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="mt-3 rounded-pill border border-hairline px-4 py-2 text-[13px] font-medium text-terracotta transition-colors hover:bg-blush"
+          >
+            Try again
+          </button>
+        )}
+      </div>
+    );
+  }
 
   if (quote && quote.status === 'unavailable') {
     return (
@@ -121,7 +142,7 @@ export function QuoteCard({
       <div className="flex items-start justify-between gap-2">
         <PlatformBadge platform={state.platform} size="md" />
         {winner && (
-          <span className="rounded-pill bg-sage px-2.5 py-1 text-[11px] font-bold uppercase tracking-label text-[#FFF8EC]">
+          <span className="rounded-pill bg-savings px-2.5 py-1 text-[11px] font-bold uppercase tracking-label text-ground">
             {winnerLabel}
           </span>
         )}
@@ -151,7 +172,7 @@ export function QuoteCard({
                 </span>
               </span>
               {deltaCents != null && deltaCents > 0 && (
-                <p className="tabular mt-1 text-[12px] font-medium text-[#8B5E3C]">
+                <p className="tabular mt-1 text-[12px] font-medium text-muted">
                   {formatCents(deltaCents, { sign: true })} vs best
                 </p>
               )}

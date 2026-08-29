@@ -224,12 +224,15 @@ describe('memberships', () => {
   });
 
   it('memberships below the eligibility minimum do nothing', () => {
-    const small = mkInput({
-      lines: [{ item: mkItem({ doordash: 1100, ubereats: 1100, grubhub: 1100 }), qty: 1 }],
-      memberships: ['dashpass'],
-    });
-    const quote = q(small, 'doordash');
-    expect(quote.delivery_fee_cents).toBeGreaterThan(0); // $11 < $12 DashPass minimum
+    const lines = [{ item: mkItem({ doordash: 1100, ubereats: 1100, grubhub: 1100 }), qty: 1 }];
+    const member = q(mkInput({ lines, memberships: ['dashpass'] }), 'doordash');
+    const nonMember = q(mkInput({ lines }), 'doordash');
+    // $11 < $12 DashPass minimum: identical quote, no badge, no savings
+    expect(member.delivery_fee_cents).toBe(nonMember.delivery_fee_cents);
+    expect(member.service_fee_cents).toBe(nonMember.service_fee_cents);
+    expect(member.total_cents).toBe(nonMember.total_cents);
+    expect(member.membershipApplied).toBeNull();
+    expect(member.membershipSavingsCents).toBe(0);
   });
 });
 

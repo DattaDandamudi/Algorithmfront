@@ -15,12 +15,14 @@ interface MenuItemRowProps {
 export function MenuItemRow({ item, restaurant, onAdd, onOpen }: MenuItemRowProps) {
   const plantBased = item.dietary.includes('vegan') || item.dietary.includes('vegetarian');
   return (
-    <div
-      className="group flex gap-4 rounded-card border border-hairline bg-surface p-4 shadow-card transition-shadow hover:shadow-cardHover"
-      onClick={() => onOpen?.(item)}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
+    <div className="group flex gap-4 rounded-card border border-hairline bg-surface p-4 shadow-card transition-shadow hover:shadow-cardHover">
+      {/* The open action is a real button — keyboard and AT reachable. */}
+      <button
+        onClick={() => onOpen?.(item)}
+        disabled={!onOpen}
+        className="min-w-0 flex-1 text-left"
+      >
+        <span className="flex items-center gap-1.5">
           <h4 className="truncate text-[15px] font-semibold text-ink">{item.name}</h4>
           {plantBased && (
             <Leaf
@@ -29,14 +31,14 @@ export function MenuItemRow({ item, restaurant, onAdd, onOpen }: MenuItemRowProp
               aria-label={item.dietary.includes('vegan') ? 'Vegan' : 'Vegetarian'}
             />
           )}
-        </div>
-        <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-muted">
+        </span>
+        <span className="mt-1 line-clamp-2 block text-[13px] leading-snug text-muted">
           {item.description}
-        </p>
-        <div className="mt-2.5">
+        </span>
+        <span className="mt-2.5 block">
           <PriceVectorChips item={item} restaurant={restaurant} />
-        </div>
-      </div>
+        </span>
+      </button>
       <div className="relative shrink-0 self-center">
         <FoodImage
           glyph={item.glyph}
