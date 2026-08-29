@@ -203,6 +203,21 @@ export const RESTAURANT_SEED: Restaurant[] = [
     markupBps: { doordash: 2100, ubereats: 2200, grubhub: 2000 },
   },
   {
+    // Catalog extension example: a real-world-style restaurant that lives
+    // on only two platforms — the compare screen shows the gaps honestly.
+    id: 'godavari',
+    name: 'Godavari',
+    cuisine: 'South Indian',
+    tagline: 'Dosas wider than the table',
+    glyph: 'wrap',
+    rating: 4.6,
+    priceLevel: 2,
+    distanceMiles: 2.6,
+    baseEtaMinutes: 29,
+    platforms: ['doordash', 'ubereats'], // not on Grubhub or Postmates
+    markupBps: { doordash: 2100, ubereats: 2200, grubhub: 2000 },
+  },
+  {
     id: 'night-owl-wings',
     name: 'Night Owl Wings',
     cuisine: 'Wings',

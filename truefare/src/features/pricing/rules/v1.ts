@@ -104,6 +104,13 @@ export const FEE_RULES_V1: FeeRuleSet = {
       },
       note: 'On the real apps in NYC, tips are prompted after checkout — totals here include your tip for comparability.',
     },
+    jersey_city: {
+      id: 'jersey_city',
+      label: 'Jersey City',
+      taxRate: 0.06625, // NJ uniform state rate, prepared food taxable
+      feesTaxable: true, // NJ taxes delivery charges on taxable sales
+      regulatory: {},
+    },
     la: {
       id: 'la',
       label: 'Los Angeles',

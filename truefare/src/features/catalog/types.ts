@@ -41,7 +41,15 @@ export type GlyphKey =
   | 'boba'
   | 'egg';
 
-export type MetroId = 'nyc' | 'la' | 'sf' | 'seattle' | 'chicago' | 'austin' | 'denver';
+export type MetroId =
+  | 'nyc'
+  | 'jersey_city'
+  | 'la'
+  | 'sf'
+  | 'seattle'
+  | 'chicago'
+  | 'austin'
+  | 'denver';
 
 export type MembershipId = 'dashpass' | 'uber_one' | 'grubhub_plus';
 

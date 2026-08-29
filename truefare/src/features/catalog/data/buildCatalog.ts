@@ -1,7 +1,11 @@
 import { psychRound } from '../../../lib/money';
 import type { Catalog, CorePlatform, MenuItem, Restaurant } from '../types';
 import { MENU_SEED } from './menu.seed';
+import { GODAVARI_SEED } from './godavari.seed';
 import { RESTAURANT_SEED } from './restaurants.seed';
+
+/** The full item seed: base catalog plus modular extensions. */
+const ALL_MENU_SEEDS = [...MENU_SEED, ...GODAVARI_SEED];
 
 const CORE_PLATFORMS: CorePlatform[] = ['doordash', 'ubereats', 'grubhub'];
 
@@ -24,7 +28,7 @@ export function buildCatalog(): Catalog {
     RESTAURANT_SEED.map((r) => [r.id, r])
   );
 
-  const items: MenuItem[] = MENU_SEED.map((seed) => {
+  const items: MenuItem[] = ALL_MENU_SEEDS.map((seed) => {
     const restaurant = restaurantsById.get(seed.restaurantId);
     if (!restaurant) {
       throw new Error(`Menu item ${seed.id} references unknown restaurant`);
