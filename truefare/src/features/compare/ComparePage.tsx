@@ -199,7 +199,10 @@ export default function ComparePage() {
             }
             onCheckout={
               state.quote?.status === 'ok'
-                ? () => navigate(`/checkout/${state.platform}`)
+                ? () =>
+                    navigate(`/checkout/${state.platform}`, {
+                      state: { expectedTotal: state.quote!.total_cents },
+                    })
                 : undefined
             }
           />

@@ -3,6 +3,9 @@ import AppShell from './layout/AppShell';
 import DiscoverPage from './features/discover/DiscoverPage';
 import RestaurantPage from './features/catalog/RestaurantPage';
 import ComparePage from './features/compare/ComparePage';
+import CheckoutPage from './features/checkout/CheckoutPage';
+import OrdersPage from './features/orders/OrdersPage';
+import OrderTrackingPage from './features/orders/OrderTrackingPage';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -24,9 +27,9 @@ export default function App() {
         <Route path="search" element={<Placeholder title="Search" />} />
         <Route path="restaurant/:id" element={<RestaurantPage />} />
         <Route path="compare" element={<ComparePage />} />
-        <Route path="checkout/:platform" element={<Placeholder title="Checkout" />} />
-        <Route path="orders" element={<Placeholder title="Orders" />} />
-        <Route path="orders/:id" element={<Placeholder title="Order tracking" />} />
+        <Route path="checkout/:platform" element={<CheckoutPage />} />
+        <Route path="orders" element={<OrdersPage />} />
+        <Route path="orders/:id" element={<OrderTrackingPage />} />
         <Route path="profile" element={<Placeholder title="Profile" />} />
         <Route path="auth" element={<Placeholder title="Sign in" />} />
         <Route path="*" element={<Placeholder title="Lost in the kitchen" />} />

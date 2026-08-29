@@ -19,6 +19,8 @@ interface CartState {
   decrement: (itemId: string) => void;
   remove: (itemId: string) => void;
   clear: () => void;
+  /** Replace the whole cart (reorder flow). */
+  setCart: (restaurantId: string, items: CartItem[]) => void;
 }
 
 export const useCartStore = create<CartState>()(
@@ -80,6 +82,9 @@ export const useCartStore = create<CartState>()(
         }),
 
       clear: () => set({ restaurantId: null, items: [] }),
+
+      setCart: (restaurantId, items) =>
+        set({ restaurantId: items.length ? restaurantId : null, items }),
     }),
     { name: 'tf:v1:cart', partialize: (s) => ({ restaurantId: s.restaurantId, items: s.items }) }
   )
