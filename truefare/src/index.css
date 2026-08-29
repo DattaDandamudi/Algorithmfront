@@ -1,0 +1,259 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Design tokens — warm organic system. RGB triplets for TW alpha.    */
+/* ------------------------------------------------------------------ */
+:root {
+  --tf-ground: 250 246 239; /* cream #FAF6EF */
+  --tf-surface: 255 253 248; /* paper #FFFDF8 */
+  --tf-raised: 255 255 255;
+  --tf-ink: 43 33 25; /* espresso #2B2119 */
+  --tf-muted: 138 122 106; /* #8A7A6A */
+  --tf-hairline: rgba(60, 42, 26, 0.08);
+  --tf-terracotta: 196 80 47; /* #C4502F */
+  --tf-terracotta-hover: 226 114 91; /* #E2725B */
+  --tf-terracotta-press: 160 61 34; /* #A03D22 */
+  --tf-sage: 122 132 80; /* #7A8450 */
+  --tf-savings: 61 122 74; /* #3D7A4A */
+  --tf-saffron: 232 163 61; /* #E8A33D */
+  --tf-blush: 243 224 211; /* #F3E0D3 */
+  --tf-pistachio: 231 234 217; /* #E7EAD9 */
+  --tf-plat-doordash: 232 69 44; /* desat #E8452C */
+  --tf-plat-ubereats: 18 166 94; /* desat #12A65E */
+  --tf-plat-grubhub: 230 122 23; /* desat #E67A17 */
+  --tf-plat-postmates: 58 52 48; /* warm near-black */
+  --tf-skeleton: 239 231 219; /* #EFE7DB */
+  --tf-skeleton-sheen: rgba(255, 253, 248, 0.55);
+  --tf-grain-blend: overlay;
+  color-scheme: light;
+}
+
+.dark {
+  --tf-ground: 25 20 16; /* espresso-black #191410 */
+  --tf-surface: 36 29 23; /* #241D17 */
+  --tf-raised: 46 37 29; /* #2E251D */
+  --tf-ink: 242 234 224; /* #F2EAE0 */
+  --tf-muted: 166 148 127; /* #A6947F */
+  --tf-hairline: rgba(242, 234, 224, 0.09);
+  --tf-terracotta: 224 122 82; /* #E07A52 */
+  --tf-terracotta-hover: 236 139 102;
+  --tf-terracotta-press: 196 99 63;
+  --tf-sage: 155 168 109; /* #9BA86D */
+  --tf-savings: 95 163 108;
+  --tf-saffron: 240 180 92; /* #F0B45C */
+  --tf-blush: 58 46 36;
+  --tf-pistachio: 51 56 40;
+  --tf-plat-doordash: 240 86 60;
+  --tf-plat-ubereats: 30 191 112;
+  --tf-plat-grubhub: 240 138 40;
+  --tf-plat-postmates: 201 192 184;
+  --tf-skeleton: 46 37 29;
+  --tf-skeleton-sheen: rgba(242, 234, 224, 0.08);
+  --tf-grain-blend: soft-light;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-ground text-ink font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+    font-variation-settings: 'opsz' 144;
+    letter-spacing: -0.02em;
+    line-height: 1.08;
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--tf-terracotta));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: rgba(196, 80, 47, 0.2);
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .label-caps {
+    @apply text-[11px] font-semibold uppercase tracking-label text-muted;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Grain — feTurbulence paper texture over the whole page             */
+/* ------------------------------------------------------------------ */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: var(--tf-grain-blend);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------------ */
+/* Glass surfaces — nav + mobile compare bar only                     */
+/* ------------------------------------------------------------------ */
+.glass {
+  background: rgba(250, 246, 239, 0.72);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border-bottom: 1px solid var(--tf-hairline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.dark .glass {
+  background: rgba(25, 20, 16, 0.65);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.glass-bottom {
+  background: rgba(250, 246, 239, 0.78);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border-top: 1px solid var(--tf-hairline);
+}
+.dark .glass-bottom {
+  background: rgba(25, 20, 16, 0.72);
+}
+
+/* ------------------------------------------------------------------ */
+/* Bento cell spotlight (cursor-tracked radial, hover pointers only)  */
+/* ------------------------------------------------------------------ */
+.spotlight-cell {
+  position: relative;
+}
+.spotlight-cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+  background: radial-gradient(
+    240px circle at var(--x, 50%) var(--y, 50%),
+    rgba(196, 80, 47, 0.07),
+    transparent
+  );
+}
+@media (hover: hover) {
+  .spotlight-cell:hover::after {
+    opacity: 1;
+  }
+}
+.dark .spotlight-cell::after {
+  background: radial-gradient(
+    240px circle at var(--x, 50%) var(--y, 50%),
+    rgba(224, 122, 82, 0.09),
+    transparent
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Skeleton shimmer — warm, layout-exact                              */
+/* ------------------------------------------------------------------ */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgb(var(--tf-skeleton));
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    var(--tf-skeleton-sheen) 50%,
+    transparent 70%
+  );
+  animation: tf-shimmer 1.7s infinite;
+}
+@keyframes tf-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Organic blob + gentle ambient motion                               */
+/* ------------------------------------------------------------------ */
+.blob {
+  border-radius: 42% 58% 63% 37% / 45% 38% 62% 55%;
+}
+.blob-breathe {
+  animation: tf-breathe 6s ease-in-out infinite alternate;
+}
+@keyframes tf-breathe {
+  from {
+    transform: scale(1);
+    border-radius: 42% 58% 63% 37% / 45% 38% 62% 55%;
+  }
+  to {
+    transform: scale(1.04);
+    border-radius: 55% 45% 40% 60% / 55% 60% 40% 45%;
+  }
+}
+
+/* Image settle-in ("Ken Burns settle") */
+.img-settle {
+  animation: tf-settle 0.5s ease-out both;
+}
+@keyframes tf-settle {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion — hard gate on CSS animation                        */
+/* ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: tf-pulse 1.5s ease-in-out infinite;
+    transform: none;
+    background: var(--tf-skeleton-sheen);
+  }
+  .blob-breathe,
+  .img-settle {
+    animation: none;
+  }
+  @keyframes tf-pulse {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+}
