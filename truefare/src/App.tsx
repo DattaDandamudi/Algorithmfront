@@ -1,5 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import AppShell from './layout/AppShell';
+import DiscoverPage from './features/discover/DiscoverPage';
+import RestaurantPage from './features/catalog/RestaurantPage';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -17,9 +19,9 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Placeholder title="Discover" />} />
+        <Route index element={<DiscoverPage />} />
         <Route path="search" element={<Placeholder title="Search" />} />
-        <Route path="restaurant/:id" element={<Placeholder title="Restaurant" />} />
+        <Route path="restaurant/:id" element={<RestaurantPage />} />
         <Route path="compare" element={<Placeholder title="Compare" />} />
         <Route path="checkout/:platform" element={<Placeholder title="Checkout" />} />
         <Route path="orders" element={<Placeholder title="Orders" />} />

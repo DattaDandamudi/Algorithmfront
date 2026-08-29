@@ -8,6 +8,39 @@ export const ALL_PLATFORMS: Platform[] = ['doordash', 'ubereats', 'grubhub', 'po
 
 export type Dietary = 'vegetarian' | 'vegan' | 'gluten-free' | 'halal' | 'dairy-free';
 
+/** Keys into the hand-drawn food illustration set (components/food/FoodGlyphs). */
+export type GlyphKey =
+  | 'bowl'
+  | 'burger'
+  | 'pizza'
+  | 'sushi'
+  | 'ramen'
+  | 'taco'
+  | 'burrito'
+  | 'coffee'
+  | 'pancakes'
+  | 'croissant'
+  | 'sandwich'
+  | 'salad'
+  | 'curry'
+  | 'drumstick'
+  | 'wings'
+  | 'icecream'
+  | 'cake'
+  | 'dumpling'
+  | 'noodles'
+  | 'skewer'
+  | 'toast'
+  | 'soup'
+  | 'fries'
+  | 'donut'
+  | 'fish'
+  | 'wrap'
+  | 'cookie'
+  | 'pie'
+  | 'boba'
+  | 'egg';
+
 export type MetroId = 'nyc' | 'la' | 'sf' | 'seattle' | 'chicago' | 'austin' | 'denver';
 
 export type MembershipId = 'dashpass' | 'uber_one' | 'grubhub_plus';
@@ -17,7 +50,7 @@ export interface Restaurant {
   name: string;
   cuisine: string;
   tagline: string;
-  imageUrl: string;
+  glyph: GlyphKey;
   rating: number; // 3.6–4.9
   priceLevel: 1 | 2 | 3;
   distanceMiles: number; // 0.6–9.5; drives delivery / long-range fees
@@ -32,7 +65,7 @@ export interface MenuItem {
   restaurantId: string;
   name: string;
   description: string;
-  imageUrl: string;
+  glyph: GlyphKey;
   /** "In-store" reference price. */
   basePriceCents: number;
   /** Materialized by buildCatalog: psychRound(base × (1 + markup)). */
