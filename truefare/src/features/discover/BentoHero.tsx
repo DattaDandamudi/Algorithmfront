@@ -7,7 +7,7 @@ import { formatCents } from '../../lib/money';
 import { currentDaypart } from '../../lib/time';
 import { AnimatedPrice } from '../../components/ui/AnimatedPrice';
 import { BentoCell } from '../../components/ui/BentoCell';
-import { platformColors } from '../../design/tokens';
+import { platformColors, platformAccentVar } from '../../design/tokens';
 import { ALL_PLATFORMS } from '../catalog/types';
 import { getCatalog } from '../catalog/data/buildCatalog';
 import { computeQuote } from '../pricing/engine';
@@ -114,7 +114,11 @@ export function BentoHero() {
                     animate={{ width: `${(q.total_cents / maxTotal) * 100}%` }}
                     transition={{ type: 'spring', stiffness: 140, damping: 22 }}
                     className="flex h-full items-center justify-end rounded-pill pr-3"
-                    style={{ backgroundColor: isWinner ? 'rgb(var(--tf-sage))' : `${c.accent}55` }}
+                    style={{
+                      backgroundColor: isWinner
+                        ? 'rgb(var(--tf-sage))'
+                        : platformAccentVar(q.platform, 0.33),
+                    }}
                   >
                     <span
                       className="tabular whitespace-nowrap text-[12px] font-bold"
@@ -181,7 +185,10 @@ export function BentoHero() {
         return (
           <BentoCell key={p} className="lg:col-span-3" interactive={false}>
             <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c.logo }} />
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: platformAccentVar(p) }}
+              />
               <span className="text-[14px] font-semibold text-ink">{c.label}</span>
             </div>
             <p className="tabular mt-2.5 text-[13px] leading-relaxed text-muted">

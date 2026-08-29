@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Clock, MapPin } from 'lucide-react';
 import { springs } from '../../../design/motion';
-import { platformColors } from '../../../design/tokens';
+import { platformColors, platformAccentVar } from '../../../design/tokens';
 import { FoodImage } from '../../../components/food/FoodImage';
 import { RatingStars } from '../../../components/ui/RatingStars';
 import type { Restaurant } from '../types';
@@ -50,7 +50,7 @@ export function RestaurantCard({ restaurant }: { restaurant: Restaurant }) {
                   key={p}
                   title={platformColors[p].label}
                   className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: platformColors[p].accent }}
+                  style={{ backgroundColor: platformAccentVar(p) }}
                 />
               ))}
             </div>

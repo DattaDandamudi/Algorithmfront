@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { formatCents } from '../../lib/money';
-import { platformColors } from '../../design/tokens';
+import { platformColors, platformAccentVar } from '../../design/tokens';
 import { corePlatformOf, type CartItem, type Catalog, type Platform, type Restaurant } from '../catalog/types';
 
 /**
@@ -30,7 +30,7 @@ export function ItemDiffTable({
                   <span
                     aria-hidden="true"
                     className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: platformColors[p].accent }}
+                    style={{ backgroundColor: platformAccentVar(p) }}
                   />
                   {platformColors[p].short}
                 </span>

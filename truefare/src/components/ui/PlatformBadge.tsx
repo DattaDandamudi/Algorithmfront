@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { platformColors } from '../../design/tokens';
+import { platformColors, platformAccentVar } from '../../design/tokens';
 import type { Platform } from '../../features/catalog/types';
 
 interface PlatformBadgeProps {
@@ -36,7 +36,10 @@ export function PlatformBadge({ platform, size = 'md', compact, className }: Pla
           size === 'md' && 'h-2.5 w-2.5',
           size === 'lg' && 'h-3 w-3'
         )}
-        style={{ backgroundColor: c.logo, boxShadow: `0 0 0 3px ${c.accent}22` }}
+        style={{
+          backgroundColor: c.logo,
+          boxShadow: `0 0 0 3px ${platformAccentVar(platform, 0.25)}`,
+        }}
       />
       {compact ? c.short : c.label}
     </span>

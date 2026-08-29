@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ArrowLeft, Clock, MapPin } from 'lucide-react';
 import { staggerParent, riseChild, pageEnter } from '../../design/motion';
-import { platformColors } from '../../design/tokens';
+import { platformColors, platformAccentVar } from '../../design/tokens';
 import { FoodImage } from '../../components/food/FoodImage';
 import { RatingStars } from '../../components/ui/RatingStars';
 import { Chip } from '../../components/ui/Chip';
@@ -107,7 +107,7 @@ export default function RestaurantPage() {
             <span
               aria-hidden="true"
               className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: platformColors[p].accent }}
+              style={{ backgroundColor: platformAccentVar(p) }}
             />
             {platformColors[p].label}
           </span>

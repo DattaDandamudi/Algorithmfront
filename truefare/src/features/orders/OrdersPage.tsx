@@ -6,7 +6,7 @@ import { formatCents } from '../../lib/money';
 import { FoodImage } from '../../components/food/FoodImage';
 import { PlatformBadge } from '../../components/ui/PlatformBadge';
 import { Button } from '../../components/ui/Button';
-import { platformColors } from '../../design/tokens';
+import { platformColors, platformAccentVar } from '../../design/tokens';
 import type { OrderRecord } from '../../lib/datastore/types';
 import { ALL_PLATFORMS } from '../catalog/types';
 import { useCatalog } from '../catalog/useCatalog';
@@ -192,7 +192,7 @@ export default function OrdersPage() {
                       animate={{ width: `${(total / maxSpend) * 100}%` }}
                       transition={{ duration: 0.7, ease: 'easeOut' }}
                       className="h-full rounded-pill"
-                      style={{ backgroundColor: platformColors[platform].accent }}
+                      style={{ backgroundColor: platformAccentVar(platform) }}
                     />
                   </div>
                 </div>

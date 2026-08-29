@@ -40,3 +40,14 @@ export const platformColors = {
 } as const;
 
 export type PlatformColorKey = keyof typeof platformColors;
+
+/**
+ * Theme-aware accent for inline styles: resolves through the CSS variable
+ * so dark mode gets its brightened variants (fixed hexes go invisible on
+ * espresso — Postmates especially).
+ */
+export function platformAccentVar(platform: PlatformColorKey, alpha?: number): string {
+  return alpha != null
+    ? `rgb(var(--tf-plat-${platform}) / ${alpha})`
+    : `rgb(var(--tf-plat-${platform}))`;
+}

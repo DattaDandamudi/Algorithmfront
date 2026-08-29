@@ -1,5 +1,5 @@
 import { formatCents } from '../../../lib/money';
-import { platformColors } from '../../../design/tokens';
+import { platformColors, platformAccentVar } from '../../../design/tokens';
 import type { CorePlatform, MenuItem, Restaurant } from '../types';
 
 const CORE: CorePlatform[] = ['doordash', 'ubereats', 'grubhub'];
@@ -34,7 +34,7 @@ export function PriceVectorChips({
             <span
               aria-hidden="true"
               className="h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: c.accent }}
+              style={{ backgroundColor: platformAccentVar(p) }}
             />
             <span className="tabular">{formatCents(item.platformPrices[p])}</span>
           </span>
