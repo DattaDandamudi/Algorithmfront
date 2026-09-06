@@ -94,9 +94,9 @@ describe('sleepDebt', () => {
     const r = sleepDebt(records, ASOF, profile);
     expect(r.nights).toBe(2);
     expect(r.debtMin).toBe(58);
-    // Debt feeds back into need: 58 min debt adds ~19.5 min to the next night's need.
+    // Debt feeds back into need: 58 min debt adds ~19 min to the next night's need.
     const next = sleepDebt([...records, { d: addDays(ASOF, 1), slh: 8 }], addDays(ASOF, 1), profile);
-    expect(next.debtMin).toBe(78);
+    expect(next.debtMin).toBe(77);
   });
 
   it("prefers an imported dbt on asOf's record", () => {

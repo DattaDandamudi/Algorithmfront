@@ -157,7 +157,7 @@ export default function TimeSeriesChart({
   if (rawMin >= 0 && ticks[0] < 0) ticks = niceTicks(0, ext[1], 4);
   const domain: [number, number] = [ticks[0], ticks[ticks.length - 1]];
   const tickDp = tickDecimals(ticks);
-  const valueDp = autoDecimals(domain);
+  const valueDp = autoDecimals([...values, ...lineVals]);
   const fmtNum = (v: number) => (valueFormat ? valueFormat(v) : fmt(v, valueDp));
   const suffix = unit ? ` ${unit}` : '';
   const display = (v: number) => `${fmtNum(v)}${suffix}`;
@@ -187,6 +187,7 @@ export default function TimeSeriesChart({
   const drawDots = showDots && !dense;
 
   const clampY = (v: number) => Math.min(top + plotH, Math.max(top, y(v)));
+  const px = (v: number) => Math.round(v * 100) / 100;
 
   // --- interaction
   const setFromPointer = (e: PointerEvent<SVGSVGElement>) => {
@@ -289,8 +290,8 @@ export default function TimeSeriesChart({
         {/* hairline grid + y ticks */}
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={left} x2={left + plotW} y1={y(t)} y2={y(t)} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
-            <text x={left - 6} y={y(t)} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
+            <line x1={left} x2={left + plotW} y1={px(y(t))} y2={px(y(t))} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
+            <text x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
               {formatTick(t, tickDp)}
             </text>
           </g>
@@ -321,7 +322,7 @@ export default function TimeSeriesChart({
         {drawDots
           ? values.map((v, i) =>
               v === null ? null : (
-                <circle key={i} cx={xs[i]} cy={y(v)} r={4} fill={dotColor ?? color} stroke={TOKEN.card} strokeWidth={4} style={{ paintOrder: 'stroke' }} />
+                <circle key={i} cx={px(xs[i])} cy={px(y(v))} r={4} fill={dotColor ?? color} stroke={TOKEN.card} strokeWidth={4} style={{ paintOrder: 'stroke' }} />
               ),
             )
           : null}
@@ -332,7 +333,7 @@ export default function TimeSeriesChart({
               const a = annAt.get(d);
               if (!a) return null;
               return (
-                <path key={d} d={`M${xs[i] - 4} ${top - 12}L${xs[i] + 4} ${top - 12}L${xs[i]} ${top - 5}Z`} fill={TOKEN.text2}>
+                <path key={d} d={`M${px(xs[i] - 4)} ${top - 12}L${px(xs[i] + 4)} ${top - 12}L${px(xs[i])} ${top - 5}Z`} fill={TOKEN.text2}>
                   <title>{a}</title>
                 </path>
               );
@@ -342,15 +343,15 @@ export default function TimeSeriesChart({
         {/* crosshair + active marks */}
         {active !== null ? (
           <g pointerEvents="none">
-            <line x1={xs[active]} x2={xs[active]} y1={top} y2={top + plotH} stroke={TOKEN.text2} strokeWidth={1} />
-            {values[active] !== null ? <circle cx={xs[active]} cy={y(values[active] as number)} r={7} fill="none" stroke={dotColor ?? color} strokeWidth={1.5} /> : null}
-            {lineVals[active] !== null ? <circle cx={xs[active]} cy={y(lineVals[active] as number)} r={3} fill={color} stroke={TOKEN.card} strokeWidth={2} style={{ paintOrder: 'stroke' }} /> : null}
+            <line x1={px(xs[active])} x2={px(xs[active])} y1={top} y2={top + plotH} stroke={TOKEN.text2} strokeWidth={1} />
+            {values[active] !== null ? <circle cx={px(xs[active])} cy={px(y(values[active] as number))} r={7} fill="none" stroke={dotColor ?? color} strokeWidth={1.5} /> : null}
+            {lineVals[active] !== null ? <circle cx={px(xs[active])} cy={px(y(lineVals[active] as number))} r={3} fill={color} stroke={TOKEN.card} strokeWidth={2} style={{ paintOrder: 'stroke' }} /> : null}
           </g>
         ) : null}
 
         {/* selective direct label: last value only */}
         {last ? (
-          <text x={xs[last.index] + 8} y={clampY(last.value)} dominantBaseline="middle" fontSize={FONT.label} fontWeight={600} fill={TOKEN.text}>
+          <text x={px(xs[last.index] + 8)} y={px(clampY(last.value))} dominantBaseline="middle" fontSize={FONT.label} fontWeight={600} fill={TOKEN.text}>
             {lastText}
           </text>
         ) : null}
@@ -359,7 +360,7 @@ export default function TimeSeriesChart({
         {xLabels.map((i) => {
           const t = formatTickDate(dates[i], range);
           const half = textWidth(t, FONT.tick) / 2;
-          const cx = Math.min(width - half, Math.max(half, xs[i]));
+          const cx = px(Math.min(width - half, Math.max(half, xs[i])));
           return (
             <text key={i} x={cx} y={height - 6} textAnchor="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
               {t}

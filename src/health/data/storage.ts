@@ -49,16 +49,42 @@ export class StorageWriteError extends Error {
   }
 }
 
+let lsCache: Storage | null | undefined;
+
+/**
+ * Resolve localStorage once. A SecurityError (blocked storage, some private
+ * modes) means "unavailable"; a QuotaExceededError on the probe means the
+ * origin is *full*, which is still "available" — safeSet reports the quota
+ * error properly instead of masquerading as unavailable.
+ */
 function getLS(): Storage | null {
+  if (lsCache !== undefined) return lsCache;
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return null;
-    const probe = '__hx_probe__';
-    window.localStorage.setItem(probe, '1');
-    window.localStorage.removeItem(probe);
-    return window.localStorage;
+    if (typeof window === 'undefined' || !window.localStorage) {
+      lsCache = null;
+      return lsCache;
+    }
+    const ls = window.localStorage;
+    try {
+      const probe = '__hx_probe__';
+      ls.setItem(probe, '1');
+      ls.removeItem(probe);
+    } catch (e) {
+      if (!isQuotaError(e)) {
+        lsCache = null;
+        return lsCache;
+      }
+    }
+    lsCache = ls;
   } catch {
-    return null;
+    lsCache = null;
   }
+  return lsCache;
+}
+
+/** Test hook: forget the cached localStorage handle. */
+export function resetStorageCache(): void {
+  lsCache = undefined;
 }
 
 export function storageAvailable(): boolean {
@@ -144,7 +170,7 @@ export function readIndex(): ShardIndex | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as ShardIndex;
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.shards !== 'object') return null;
+    if (!parsed || typeof parsed !== 'object' || !parsed.shards || typeof parsed.shards !== 'object' || Array.isArray(parsed.shards)) return null;
     return parsed;
   } catch {
     return null;
@@ -235,18 +261,26 @@ export function loadAll(): LoadResult {
   if (available && !index && discovered.length) problems.push('Shard index missing — rebuilt from stored months.');
 
   for (const ym of months) {
+    try {
+      loadShardInto(ym);
+    } catch (e) {
+      problems.push(`Shard ${ym} could not be read (${e instanceof Error ? e.message : 'error'}).`);
+    }
+  }
+
+  function loadShardInto(ym: string): void {
     const { shard, raw, error } = readShard(ym);
     const entry = index?.shards[ym];
     if (!raw) {
       if (entry) problems.push(`Shard ${ym} listed in index (${entry.count} days) but missing from storage.`);
-      continue;
+      return;
     }
     if (!entry) problems.push(`Shard ${ym} present in storage but not in index.`);
     if (error || !shard) {
       problems.push(error ?? `Shard ${ym} unreadable.`);
-      continue;
+      return;
     }
-    if (entry && entry.sum !== checksum(raw)) problems.push(`Shard ${ym} checksum mismatch — contents changed outside the app or were truncated.`);
+    if (entry && entry.sum !== checksum(raw)) problems.push(`Shard ${ym} does not match its index entry (an interrupted save or an edit outside the app). Data was loaded; the index is rebuilt on the next save.`);
     const keys = Object.keys(shard.days);
     if (entry && entry.count !== keys.length) problems.push(`Shard ${ym} has ${keys.length} days, index expected ${entry.count}.`);
     for (const dd of keys) {

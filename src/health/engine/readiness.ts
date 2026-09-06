@@ -136,6 +136,8 @@ export function readiness(
     verdict: VERDICT_COPY[band],
     training: TRAINING_COPY[band],
     detail: buildDetail(today, hrv, rhr, source, forcedByRec, forcedByHrv),
+    // Only present when the forcing rule changed the band the score alone would give.
+    ...((forcedByRec || forcedByHrv) && bandOf(score) !== 'red' ? { forced: true } : {}),
   };
 }
 

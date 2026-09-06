@@ -40,6 +40,45 @@ export interface ParsedImport {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+function isFoodItem(x: unknown): boolean {
+  if (!x || typeof x !== 'object') return false;
+  const f = x as { id?: unknown; name?: unknown; per100?: unknown; defaultGrams?: unknown };
+  return typeof f.id === 'string' && typeof f.name === 'string' && !!f.per100 && typeof f.per100 === 'object' && typeof f.defaultGrams === 'number';
+}
+
+/** Drop malformed collections so a hand-edited file can't crash favourites/recents/bloodwork code paths. */
+function sanitizeSettings(raw: Record<string, unknown>, errors: string[]): Partial<AppSettings> {
+  const out: Record<string, unknown> = { ...raw };
+  for (const key of ['favorites', 'recents'] as const) {
+    const v = out[key];
+    if (v === undefined) continue;
+    if (!Array.isArray(v)) {
+      errors.push(`Settings.${key} was not a list and was ignored.`);
+      delete out[key];
+      continue;
+    }
+    const kept = v.filter(isFoodItem);
+    if (kept.length !== v.length) errors.push(`${v.length - kept.length} malformed ${key} entr(ies) were skipped.`);
+    out[key] = kept;
+  }
+  const profile = out.profile;
+  if (profile && typeof profile === 'object') {
+    const p = { ...(profile as Record<string, unknown>) };
+    if (p.bloodwork !== undefined && !Array.isArray(p.bloodwork)) {
+      errors.push('Settings.profile.bloodwork was not a list and was ignored.');
+      delete p.bloodwork;
+    }
+    if (p.split !== undefined && (typeof p.split !== 'object' || p.split === null)) delete p.split;
+    out.profile = p;
+  } else if (profile !== undefined) {
+    delete out.profile;
+  }
+  for (const key of ['targets', 'ai', 'whoop'] as const) {
+    if (out[key] !== undefined && (typeof out[key] !== 'object' || out[key] === null)) delete out[key];
+  }
+  return out as Partial<AppSettings>;
+}
+
 function isRecord(x: unknown): x is DailyRecord {
   return !!x && typeof x === 'object' && typeof (x as DailyRecord).d === 'string' && DATE_RE.test((x as DailyRecord).d);
 }
@@ -73,7 +112,7 @@ export function parseImport(json: string): ParsedImport {
     else errors.push('No `days` array found in file.');
     if (obj.settings && typeof obj.settings === 'object') {
       try {
-        settings = mergeSettings(obj.settings as Partial<AppSettings>);
+        settings = mergeSettings(sanitizeSettings(obj.settings as unknown as Record<string, unknown>, errors));
       } catch {
         errors.push('Settings block could not be read; skipped.');
       }

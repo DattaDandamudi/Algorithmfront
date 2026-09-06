@@ -343,6 +343,8 @@ export interface Readiness {
   training: string;
   /** Short explanation of contributors. */
   detail: string;
+  /** True when the red band was forced (recovery < 34 or HRV below lower SWC) although the score alone would be higher. */
+  forced?: boolean;
 }
 
 export interface BaselineDelta {

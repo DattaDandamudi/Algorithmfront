@@ -146,6 +146,42 @@ export function minutesUntilBed(now: HHMM, bed: HHMM): number | null {
 }
 
 /** Latest meal on the eating-day axis (null when no meals). */
+/** Entries below this are drinks/condiments (black coffee, a splash of milk) and don't count as a meal slot. */
+export const OCCASION_MIN_KCAL = 50;
+
+export interface MealOccasion {
+  t: HHMM;
+  /** Summed macros of every entry logged at that clock time. */
+  p: number;
+  kc: number;
+  /** Number of entries in the occasion. */
+  n: number;
+}
+
+/**
+ * Group meal entries into eating occasions. The NL logger and the demo data
+ * store one entry per food ("chicken tikka" + "roti" at 13:00), so counting
+ * entries would exhaust the day's meal slots by lunch; §6.5's "≥4 meals" means
+ * occasions. Entries sharing a clock time are one occasion; trivial entries
+ * (< OCCASION_MIN_KCAL) are ignored. Sorted on the eating-day axis (times
+ * before 04:00 belong to the previous evening).
+ */
+export function mealOccasions(meals: Meal[] | undefined): MealOccasion[] {
+  if (!meals || meals.length === 0) return [];
+  const map = new Map<HHMM, MealOccasion>();
+  for (const m of meals) {
+    if (num(m.kc) < OCCASION_MIN_KCAL) continue;
+    const cur = map.get(m.t) ?? { t: m.t, p: 0, kc: 0, n: 0 };
+    cur.p += num(m.p);
+    cur.kc += num(m.kc);
+    cur.n += 1;
+    map.set(m.t, cur);
+  }
+  return [...map.values()]
+    .map((o) => ({ ...o, p: round(o.p), kc: round(o.kc) }))
+    .sort((a, b) => (mealClockMinutes(a.t) ?? 0) - (mealClockMinutes(b.t) ?? 0));
+}
+
 function lastMeal(meals: Meal[] | undefined): Meal | null {
   if (!meals || meals.length === 0) return null;
   let best: Meal | null = null;
@@ -199,15 +235,17 @@ export function proteinPacing(input: {
 
   const soFar = dayTotals(record).p;
   const remaining = round(targets.protein - soFar);
-  const mealsLogged = record?.meals?.length ?? 0;
+  const occasions = mealOccasions(record?.meals);
+  const mealsLogged = occasions.length;
 
   const untilBed = minutesUntilBed(nowHHMM, bedTarget);
   const tooLate = untilBed !== null && untilBed <= LAST_MEAL_CUTOFF_MIN;
   const mealsLeft = tooLate ? 0 : Math.max(targets.mealsPerDay - mealsLogged, remaining > 0 ? 1 : 0);
 
   const perMealNeeded = mealsLeft > 0 ? round(Math.max(0, remaining) / mealsLeft) : null;
-  const last = lastMeal(record?.meals);
-  const lastMealBelowMin = last !== null && num(last.p) < minPerMeal;
+  // Judge the last *occasion* (all items eaten together), not the last entry.
+  const lastOcc = occasions.length ? occasions[occasions.length - 1] : null;
+  const lastMealBelowMin = lastOcc !== null && lastOcc.p < minPerMeal;
   const onPace = perMealNeeded === null ? remaining <= 0 : perMealNeeded <= maxPerMeal;
 
   return { soFar, remaining, mealsLogged, mealsLeft, perMealNeeded, minPerMeal, maxPerMeal, lastMealBelowMin, onPace };

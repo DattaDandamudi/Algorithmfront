@@ -209,6 +209,16 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
   const writer = useMemo(() => createDebouncedWriter(persist, 500, 2000), [persist]);
   useEffect(() => () => writer.cancel(), [writer]);
 
+  // Self-heal: when the load found index/checksum problems but the data itself
+  // was readable, rewrite every month shard + the index once so they agree.
+  useEffect(() => {
+    const s = stateRef.current;
+    if (!s.storage.available || !s.storage.integrity?.problems.length) return;
+    for (const d of Object.keys(s.days)) dirty.current.months.add(yearMonthOf(d));
+    if (dirty.current.months.size) writer.schedule();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /** Core mutation: compute next days, keep totals + trend in sync, mark dirty shards. */
   const mutateDays = useCallback(
     (fn: (days: Days, settings: AppSettings) => Days) => {
@@ -396,7 +406,9 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
         mutateSettings((st) => ({ ...st, demoLoaded: true, onboarded: true, whoop: { ...st.whoop, connected: true, source: 'manual', lastImportAt: Date.now() } }));
       },
       clearAllData: () => {
-        writer.cancel();
+        // Don't cancel the writer: that would also detach the flush-on-hide
+        // listeners for the rest of the session. A pending timer is harmless
+        // (persist() no-ops when nothing is dirty).
         clearAllStorage();
         indexRef.current = { version: SCHEMA_VERSION, shards: {}, updatedAt: 0 };
         dirty.current = { months: new Set(), settings: false, chat: false };

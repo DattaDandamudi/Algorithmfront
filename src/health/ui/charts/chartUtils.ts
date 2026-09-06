@@ -56,11 +56,14 @@ export function niceStep(raw: number): number {
   return nice * base;
 }
 
-/** Decimal places needed to print a step without float noise (0.5 → 1, 25 → 0). */
+/** Decimal places needed to print a step exactly (0.5 → 1, 0.25 → 2, 25 → 0). */
 function stepDecimals(step: number): number {
   if (!isNum(step) || step <= 0) return 0;
-  const exp = Math.floor(Math.log10(step));
-  return exp >= 0 ? 0 : Math.min(6, -exp);
+  for (let dp = 0; dp < 6; dp++) {
+    const scaled = step * 10 ** dp;
+    if (Math.abs(scaled - Math.round(scaled)) < 1e-9) return dp;
+  }
+  return 6;
 }
 
 /**
@@ -320,8 +323,13 @@ export function textWidth(s: string, fontSize: number): number {
   return Math.ceil(s.length * fontSize * 0.6);
 }
 
-/** Default value formatter: 1 decimal when the axis spans < 10 units, else whole numbers. */
-export function autoDecimals(domain: [number, number]): number {
-  const span = Math.abs(domain[1] - domain[0]);
-  return span < 10 ? 1 : 0;
+/**
+ * Decimals for displayed values: 0 when every reading is an integer (HRV ms,
+ * RHR bpm, steps), otherwise 1 while the data spans < 20 units (weight in lb,
+ * sleep hours) and 0 beyond that (kcal, a year of weight).
+ */
+export function autoDecimals(values: Array<number | null | undefined>): number {
+  const xs = values.filter(isNum);
+  if (!xs.length || xs.every((v) => Number.isInteger(v))) return 0;
+  return Math.max(...xs) - Math.min(...xs) < 20 ? 1 : 0;
 }

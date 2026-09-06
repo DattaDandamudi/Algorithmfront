@@ -4,6 +4,7 @@ import './health.css';
 import { HealthStoreProvider, useHealth } from './data/store';
 import { NavProvider, TABS, useNav, type Tab } from './nav';
 import Onboarding from './screens/Onboarding';
+import { ToastHost } from './ui/Toast';
 
 const Today = lazy(() => import('./screens/Today'));
 const Log = lazy(() => import('./screens/Log'));
@@ -108,6 +109,7 @@ function Frame() {
           </main>
         </Suspense>
         <TabBar />
+        <ToastHost />
       </div>
     </div>
   );

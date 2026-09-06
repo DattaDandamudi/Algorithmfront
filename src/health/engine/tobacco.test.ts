@@ -138,7 +138,7 @@ describe('tobaccoHrvComparison', () => {
     const cmp = tobaccoHrvComparison(records, ASOF);
     expect(cmp?.nSmoke).toBe(3);
     expect(cmp?.nFree).toBe(4);
-    expect(tobaccoHrvComparison(alternating(8), ASOF, 4)?.nFree).toBe(2 - 2 + 2);
+    // A 4-day window holds only 2 free / 2 smoking pairs → below the minimum.
     expect(tobaccoHrvComparison(alternating(8), ASOF, 4)).toBeNull();
   });
 
@@ -148,6 +148,7 @@ describe('tobaccoHrvComparison', () => {
       return copy;
     });
     const cmp = tobaccoHrvComparison(records, ASOF);
+    expect(cmp?.nFree).toBe(3); // day(6), day(4), day(2) — today's 0 is not scored
     expect(cmp?.rhrSmokeFree).toBeNull();
     expect(cmp?.recSmoking).toBeNull();
     expect(cmp?.hrvDelta).toBe(10);

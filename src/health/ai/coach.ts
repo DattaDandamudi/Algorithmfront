@@ -72,7 +72,8 @@ export function describeBloodwork(markers: BloodMarker[]): string {
   return markers
     .map((m) => {
       const hasValue = Number.isFinite(m.value) && (m.value !== 0 || m.unit);
-      const value = hasValue ? ` ${m.value}${m.unit ? ` ${m.unit}` : ''}` : '';
+      const unit = m.unit === '%' ? '%' : m.unit ? ` ${m.unit}` : '';
+      const value = hasValue ? ` ${m.value}${unit}` : '';
       const retest = m.retestOn ? `, retest ${m.retestOn}` : '';
       return `${m.label}${value} (${m.status}${retest})`;
     })
@@ -258,6 +259,9 @@ export class CoachError extends Error {
   }
 }
 
+/** The SDK prefixes messages with the HTTP status ("400 …"); we already show it. */
+const stripStatus = (m: string) => m.replace(/^\d{3}\s+/, '');
+
 /** Map SDK errors (most specific first) to something the chat can display. */
 export function toCoachError(err: unknown): CoachError {
   if (err instanceof CoachError) return err;
@@ -275,7 +279,7 @@ export function toCoachError(err: unknown): CoachError {
     return new CoachError('rate_limit', 'Rate limited (429) — wait a moment and try again.', err.status);
   }
   if (err instanceof Anthropic.BadRequestError) {
-    return new CoachError('bad_request', `Request rejected (400): ${err.message}`, err.status);
+    return new CoachError('bad_request', `Request rejected (400): ${stripStatus(err.message)}`, err.status);
   }
   if (err instanceof Anthropic.InternalServerError) {
     return new CoachError('server', `Anthropic is having trouble (${err.status ?? '5xx'}) — try again shortly.`, err.status);

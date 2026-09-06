@@ -197,11 +197,16 @@ describe('weeklyExpenditure — smoothing', () => {
   });
 
   it('skips invalid weeks in the EWMA instead of resetting it', () => {
-    // Knock out week index 4 (the one before the spike); the spike still lands on a 2400 baseline.
+    // Invalidate week index 4 via intake days (weights stay, so the trend is
+    // unchanged); the spike must still land on the 2400 baseline carried from
+    // week 3 — not re-seed at its own raw 3000.
     const spike = ramp(100).map((r) => (r.d >= day(LAST - 6) ? { ...r, kc: 2500 } : r));
-    const recs = without(spike, 'w', [LAST - 13, LAST - 12, LAST - 11, LAST - 10]);
+    const recs = without(spike, 'kc', [LAST - 13, LAST - 12, LAST - 11, LAST - 10]);
     const r = weeklyExpenditure(recs, ASOF);
     expect(r.weeks[4].valid).toBe(false);
+    expect(r.weeks[4].reason).toBe('Only 3 of 5 intake days');
+    expect(r.weeks[4].smoothedTdee).toBeNull();
+    expect(Math.abs(r.weeks[3].smoothedTdee! - 2400)).toBeLessThanOrEqual(6);
     expect(Math.abs(r.smoothedTdee! - 2580)).toBeLessThanOrEqual(8);
     expect(r.reason).toMatch(/Calibrated from 5 valid weeks/);
   });

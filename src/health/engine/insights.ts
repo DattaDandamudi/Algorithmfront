@@ -36,7 +36,7 @@ export const COACH_CHIPS: string[] = [
  * calorie cut (Nedeltcheva 2010: short sleep turns the deficit into lean loss).
  */
 export const INSIGHT_PRIORITY = {
-  recovery: 90, sleepDebt: 80, sleepDebtStall: 92, consistency: 70, consistencyPromoted: 95, protein: 75, fatFloor: 72, 
+  recovery: 90, sleepDebt: 80, sleepDebtStall: 92, consistency: 70, consistencyPromoted: 95, protein: 75, fatFloor: 72,
   weight: 65, weightStall: 45, calories: 60, caloriesStall: 40, caffeine: 58, tobacco: 55, steps: 50, carbs: 45, lab: 40,
 } as const;
 

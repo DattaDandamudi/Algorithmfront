@@ -95,7 +95,7 @@ export default function BarSeries({
   const ticks = niceTicks(lo < 0 ? lo * 1.08 : 0, hi === 0 ? 1 : hi * 1.08, 3);
   const domain: [number, number] = [ticks[0], ticks[ticks.length - 1]];
   const tickDp = tickDecimals(ticks);
-  const valueDp = autoDecimals(domain);
+  const valueDp = autoDecimals(values);
   const fmtNum = (v: number) => (valueFormat ? valueFormat(v) : fmt(v, valueDp));
   const suffix = unit ? ` ${unit}` : '';
   const display = (v: number) => `${fmtNum(v)}${suffix}`;
@@ -112,6 +112,7 @@ export default function BarSeries({
   const slot = plotW / n;
   const barW = Math.min(24, Math.max(2, slot - 2)); // 2 px surface gap
   const centers = Array.from({ length: n }, (_, i) => left + slot * i + slot / 2);
+  const px = (v: number) => Math.round(v * 100) / 100;
 
   // --- interaction: nearest slot (the slot, not the painted bar, is the hit target)
   const setFromPointer = (e: PointerEvent<SVGSVGElement>) => {
@@ -174,8 +175,8 @@ export default function BarSeries({
       >
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={left} x2={left + plotW} y1={y(t)} y2={y(t)} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
-            <text x={left - 6} y={y(t)} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
+            <line x1={left} x2={left + plotW} y1={px(y(t))} y2={px(y(t))} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
+            <text x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
               {formatTick(t, tickDp)}
             </text>
           </g>
@@ -188,7 +189,7 @@ export default function BarSeries({
         })}
 
         {/* baseline: square, solid */}
-        <line x1={left} x2={left + plotW} y1={yBase} y2={yBase} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
+        <line x1={left} x2={left + plotW} y1={px(yBase)} y2={px(yBase)} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
 
         {isNum(target) ? (
           <g>
@@ -202,8 +203,8 @@ export default function BarSeries({
         {/* selective direct label: last column's value on its cap */}
         {last ? (
           <text
-            x={centers[last.index]}
-            y={last.value >= 0 ? y(last.value) - 4 : y(last.value) + FONT.tick + 2}
+            x={px(centers[last.index])}
+            y={px(last.value >= 0 ? y(last.value) - 4 : y(last.value) + FONT.tick + 2)}
             textAnchor="middle"
             fontSize={FONT.tick}
             fontWeight={600}
@@ -216,7 +217,7 @@ export default function BarSeries({
         {xLabels.map((i) => {
           const t = data[i].label;
           const half = textWidth(t, FONT.tick) / 2;
-          const cx = Math.min(width - half, Math.max(half, centers[i]));
+          const cx = px(Math.min(width - half, Math.max(half, centers[i])));
           return (
             <text key={i} x={cx} y={height - 6} textAnchor="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
               {t}
