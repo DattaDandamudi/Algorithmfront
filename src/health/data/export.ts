@@ -461,6 +461,13 @@ export const CSV_COLUMNS = [
   'srss_recovery',
   'srss_stress',
   'pss4',
+  // A weigh-in the outlier gate rejected must not export as an ordinary
+  // weight: a spreadsheet built from this file would otherwise disagree with
+  // the app's own trend and never say why.
+  'weight_suspect',
+  'kalman_var',
+  'menstruating',
+  'checkin_skipped',
   'meal_count',
   'meals',
   'note',
@@ -525,6 +532,10 @@ export function buildCSV(days: DailyRecord[]): string {
       r.srssR,
       r.srssS,
       r.pss4,
+      r.ws ? 1 : '',
+      r.kv,
+      r.mens ? 1 : '',
+      r.qsk ? 1 : '',
       r.meals?.length ?? '',
       meals,
       r.note,
@@ -557,7 +568,9 @@ export const WORKOUT_CSV_COLUMNS = [
   'max_hr',
   'elevation_m',
   'kcal',
-  'note',
+  'superset',
+  'exercise_note',
+  'session_note',
 ] as const;
 
 /**
@@ -573,18 +586,24 @@ export function buildWorkoutsCSV(workouts: Workout[]): string {
     const c = w.cardio;
     const cardioCells = [c?.sport ?? '', c?.distanceKm, c?.avgHr, c?.maxHr, c?.elevM, c?.kcal];
     const exercises = w.exercises ?? [];
+    // Session and exercise notes are different things, so they get their own
+    // columns. Folding them into one lost the session note entirely on any
+    // strength workout that had sets, which is nearly all of them.
     if (!exercises.length) {
-      rows.push([...head, '', '', '', '', '', '', '', ...cardioCells, w.note].map(csvCell).join(','));
+      rows.push([...head, '', '', '', '', '', '', '', ...cardioCells, '', w.note].map(csvCell).join(','));
       continue;
     }
     for (const ex of exercises) {
+      const supersetCell = ex.superset ?? '';
       if (!ex.sets.length) {
-        rows.push([...head, ex.exerciseId, '', '', '', '', '', '', ...cardioCells, ex.note ?? w.note].map(csvCell).join(','));
+        rows.push([...head, ex.exerciseId, '', '', '', '', '', '', ...cardioCells, supersetCell, ex.note, w.note].map(csvCell).join(','));
         continue;
       }
       ex.sets.forEach((s, i) => {
         const kind = s.k === 'wu' ? 'warmup' : s.k === 'dr' ? 'drop' : s.k === 'am' ? 'amrap' : s.x ? 'skipped' : 'working';
-        rows.push([...head, ex.exerciseId, i + 1, kind, s.w, s.r, s.rpe, s.rir, ...cardioCells, ex.note ?? ''].map(csvCell).join(','));
+        rows.push(
+          [...head, ex.exerciseId, i + 1, kind, s.w, s.r, s.rpe, s.rir, ...cardioCells, supersetCell, ex.note, w.note].map(csvCell).join(','),
+        );
       });
     }
   }

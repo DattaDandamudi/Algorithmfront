@@ -862,18 +862,39 @@ function lastPerformance(workouts: Workout[], exerciseId: string, asOf: ISODate)
       const all = we.sets ?? [];
       const working = all.filter((s) => s && isWorking(s) && finite(s.w) && finite(s.r));
       if (working.length === 0) continue;
-      let top = working[0];
-      for (const s of working) if (s.w > top.w || (s.w === top.w && s.r > top.r)) top = s;
-      let rpe: number | null = null;
+      // The working load is the one the session was actually built on — the
+      // load carried by the most sets, heavier wins a tie — not simply the
+      // heaviest set logged. Taking the heaviest let a top single or double
+      // define the next session while the rep list still described the
+      // straight sets: 120 kg x 2 then 3 x 100 kg x 8 suggested "4 x 8 at
+      // 120 kg", a load the user had shown they could hold for two reps.
+      // Logging more evidence of strength made the instruction less safe.
+      const byLoad = new Map<number, SetEntry[]>();
       for (const s of working) {
+        const group = byLoad.get(s.w);
+        if (group) group.push(s);
+        else byLoad.set(s.w, [s]);
+      }
+      let mainLoad = working[0].w;
+      let mainSets = byLoad.get(mainLoad) as SetEntry[];
+      for (const [wgt, group] of byLoad) {
+        if (group.length > mainSets.length || (group.length === mainSets.length && wgt > mainLoad)) {
+          mainLoad = wgt;
+          mainSets = group;
+        }
+      }
+      // RPE from the sets that define the load, so a hard top single does not
+      // read as "the whole session was at RPE 9.5".
+      let rpe: number | null = null;
+      for (const s of mainSets) {
         const v = rpeOf(s);
         if (v !== null && (rpe === null || v > rpe)) rpe = v;
       }
       const skipped = all.filter((s) => s && s.k !== 'wu' && s.x === true).length;
       return {
         d: w.d,
-        loadKg: top.w,
-        reps: working.map((s) => s.r),
+        loadKg: mainLoad,
+        reps: mainSets.map((s) => s.r),
         rpe,
         missed: skipped,
         sets: working.length,

@@ -330,8 +330,6 @@ describe('verdict — forcing, unbalanced and modifiers', () => {
     expect(readiness(recs, ASOF, P).band).toBe('green');
     for (const opts of [
       { formBand: 'overreached' as const },
-      { acwr: 1.8 },
-      { acwrBand: 'spike' as const },
       { stressBand: 'major' as const },
       { illness: true },
     ]) {
@@ -421,5 +419,40 @@ describe('detail sentence', () => {
     const r = readiness([{ d: ASOF, hrv: 55, rhr: 52 }], ASOF, P);
     expect(r.detail).toMatch(/HRV 55 ms \(7-day avg 55\)/);
     expect(r.detail).not.toMatch(/\(baseline/);
+  });
+});
+
+describe('the acute:chronic ratio never moves the verdict on its own', () => {
+  // Impellizzeri 2020: the ratio has no causal identification, and the app's
+  // own copy ("nothing in this app changes a recommendation on ACWR alone")
+  // is printed on the Train and Trends cards. Before this rule existed, a user
+  // returning from three weeks off at their usual load — Banister form fresh,
+  // stress none, illness false — was told to take a light day and cut 7.5% and
+  // a set, citing fatigue nothing had measured.
+  const recs = build(() => ({ rec: 85 }));
+
+  it('leaves the band alone and says so when the ratio is the only signal', () => {
+    for (const opts of [{ acwr: 1.8 }, { acwrBand: 'spike' as const }, { acwr: 2.4, formBand: 'fresh' as const }]) {
+      const r = readiness(recs, ASOF, P, opts);
+      expect(r.band).toBe('green');
+      const m = r.modifiers?.find((x) => x.key === 'acwrSpike');
+      expect(m?.effect).toBe('note');
+      expect(m?.reason).toMatch(/has not changed today/i);
+    }
+  });
+
+  it('still contributes when something else has already fired', () => {
+    const r = readiness(recs, ASOF, P, { acwr: 1.8, stressBand: 'major' });
+    expect(r.band).toBe('yellow');
+    const m = r.modifiers?.find((x) => x.key === 'acwrSpike');
+    expect(m?.effect).toBe('downgrade');
+    expect(r.modifiers?.filter((x) => x.effect === 'downgrade').length).toBe(2);
+  });
+
+  it('a ratio spike alone cannot turn a green day into a light day', () => {
+    const calm = readiness(recs, ASOF, P);
+    const spiked = readiness(recs, ASOF, P, { acwr: 2.5, acwrBand: 'spike' });
+    expect(spiked.band).toBe(calm.band);
+    expect(spiked.training).toBe(calm.training);
   });
 });

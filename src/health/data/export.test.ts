@@ -370,3 +370,66 @@ describe('new day fields in the CSV', () => {
     expect(at('vo2max')).toBe('44.1');
   });
 });
+
+describe('CSV completeness — no field is silently dropped', () => {
+  it('exports a rejected weigh-in as suspect rather than as an ordinary weight', () => {
+    const csv = buildCSV([{ d: '2026-09-06', w: 210.4, ws: true, kv: 0.31, mens: true, qsk: true }]);
+    const row = csv.slice(1).split('\r\n')[1].split(',');
+    const at = (name: string) => row[CSV_COLUMNS.indexOf(name as (typeof CSV_COLUMNS)[number])];
+    expect(at('weight_lb')).toBe('210.4');
+    // Without this the spreadsheet disagrees with the app's own trend and
+    // never says why.
+    expect(at('weight_suspect')).toBe('1');
+    expect(at('kalman_var')).toBe('0.31');
+    expect(at('menstruating')).toBe('1');
+    expect(at('checkin_skipped')).toBe('1');
+  });
+
+  it('leaves the boolean columns empty rather than writing 0 for an ordinary day', () => {
+    const csv = buildCSV([{ d: '2026-09-06', w: 210.4 }]);
+    const row = csv.slice(1).split('\r\n')[1].split(',');
+    const at = (name: string) => row[CSV_COLUMNS.indexOf(name as (typeof CSV_COLUMNS)[number])];
+    expect(at('weight_suspect')).toBe('');
+    expect(at('menstruating')).toBe('');
+  });
+
+  it('every numeric day field reaches a populated CSV cell', () => {
+    // A field in the type with no column is silent data loss on export, and a
+    // column that never gets written is the same bug wearing a header.
+    const numeric = ['w', 'wt', 'kc', 'p', 'f', 'c', 'fi', 'st', 'rec', 'hrv', 'rhr', 'slh', 'sln', 'dbt', 'strn', 'nap', 'tob', 'h2o', 'kl', 'ks', 'kv', 'ld', 'wko', 'qs', 'qf', 'qt', 'qo', 'rr', 'skt', 'spo', 'alc', 'osi', 'vo2', 'srssR', 'srssS', 'pss4'];
+    const rec: Record<string, number> = {};
+    for (const k of numeric) rec[k] = 1;
+    const row = buildCSV([{ ...(rec as unknown as DailyRecord), d: '2026-09-06' }]).slice(1).split('\r\n')[1].split(',');
+    const populated = row.filter((c) => c !== '').length;
+    // date + all 36 numeric values. Only the text and boolean columns are empty
+    // on this record: bedtime, wake, caffeine, lift_day, the three flags, and
+    // the two meal columns.
+    expect(populated).toBe(1 + numeric.length);
+  });
+
+  it('keeps the session note on a strength workout that has sets', () => {
+    const w: Workout = {
+      id: 'w1',
+      d: '2026-09-05',
+      start: '18:10',
+      durationMin: 62,
+      kind: 'strength',
+      source: 'manual',
+      note: 'left shoulder twinged on set 3, dropped the load',
+      exercises: [{ exerciseId: 'bench-press', sets: [{ w: 80, r: 5, rpe: 9 }], note: 'felt heavy', superset: 'A' }],
+    };
+    const csv = buildWorkoutsCSV([w]);
+    // The note carries a comma, so it is quoted — assert on the file, not on a
+    // naive comma split.
+    expect(csv).toContain('"left shoulder twinged on set 3, dropped the load"');
+    expect(csv).toContain(',A,felt heavy,');
+    expect(WORKOUT_CSV_COLUMNS).toContain('session_note');
+    expect(WORKOUT_CSV_COLUMNS).toContain('exercise_note');
+    expect(WORKOUT_CSV_COLUMNS).toContain('superset');
+  });
+
+  it('still carries the session note when the workout has no exercises', () => {
+    const csv = buildWorkoutsCSV([{ id: 'w2', d: '2026-09-06', start: '07:20', durationMin: 35, kind: 'cardio', source: 'whoop', note: 'easy shakeout' }]);
+    expect(csv).toContain('easy shakeout');
+  });
+});

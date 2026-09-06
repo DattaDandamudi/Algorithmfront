@@ -409,6 +409,41 @@ describe('suggestProgression', () => {
     expect(p.last).toMatchObject({ loadKg: 60, reps: [8, 8, 8], rpe: 7, d: '2026-09-04' });
   });
 
+  it('a heavy top single does not become the next session\'s working load', () => {
+    // Logging 120 kg x 2 on top of 3 x 100 kg x 8 used to suggest "4 x 8 at
+    // 120 kg" — a load the lifter had just shown they could hold for two reps.
+    // Adding evidence of strength made the instruction less safe.
+    const straightOnly = suggestProgression({
+      ...base,
+      workouts: [wk('2026-09-04', 'bench-press', [
+        { w: 100, r: 8, rpe: 8 },
+        { w: 100, r: 8, rpe: 8 },
+        { w: 100, r: 8, rpe: 8 },
+      ])],
+      program: programFor('upper', 'bench-press'),
+      session: 'upper',
+    })[0];
+    const withTopSingle = suggestProgression({
+      ...base,
+      workouts: [wk('2026-09-04', 'bench-press', [
+        { w: 120, r: 2, rpe: 8 },
+        { w: 100, r: 8, rpe: 8 },
+        { w: 100, r: 8, rpe: 8 },
+        { w: 100, r: 8, rpe: 8 },
+      ])],
+      program: programFor('upper', 'bench-press'),
+      session: 'upper',
+    })[0];
+
+    expect(straightOnly.last?.loadKg).toBe(100);
+    // The heavy double is an outlier, not the session's working load.
+    expect(withTopSingle.last?.loadKg).toBe(100);
+    expect(withTopSingle.last?.reps).toEqual([8, 8, 8]);
+    expect(withTopSingle.loadKg).toBe(straightOnly.loadKg);
+    expect(withTopSingle.mode).toBe(straightOnly.mode);
+    expect(withTopSingle.loadKg as number).toBeLessThan(120);
+  });
+
   it('takes the bigger +5% step on lower body', () => {
     const [p] = suggestProgression({
       ...base,

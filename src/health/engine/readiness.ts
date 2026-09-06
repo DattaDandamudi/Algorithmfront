@@ -572,15 +572,6 @@ export function readiness(
     }
     const acwrHigh =
       (isNum(opts.acwr) && opts.acwr > ACWR_SPIKE) || opts.acwrBand === 'spike';
-    if (acwrHigh) {
-      pending.push({
-        key: 'acwrSpike',
-        label: 'Acute:chronic load spike',
-        effect: 'downgrade',
-        reason:
-          'Your last week of load is well above your last month. ACWR is descriptive, not a causal injury predictor (Impellizzeri 2020), so it only ever contributes alongside another signal.',
-      });
-    }
     if (opts.stressBand === 'major') {
       pending.push({
         key: 'stressMajor',
@@ -592,14 +583,44 @@ export function readiness(
     if (opts.illness === true) {
       pending.push({
         key: 'illness',
-        label: 'Possible illness',
+        label: 'Possible illness or heavy overload',
         effect: 'downgrade',
-        reason: 'Several overnight markers moved together the way an infection moves them.',
+        // Describes the data, never a condition and never a mechanism. The old
+        // wording ("the way an infection moves them") named a condition class
+        // and asserted the pattern was its signature, which every other surface
+        // in the stack is careful not to do.
+        reason: 'Several overnight signals moved outside your normal range together, for more than a day. This is not a diagnosis — if you feel unwell or it persists, check with your doctor.',
+      });
+    }
+    // The acute:chronic ratio joins the others ONLY when something else already
+    // fired. On its own it is descriptive and must not move the verdict
+    // (Impellizzeri 2020), which is also what `LOAD_NOTES.acwrDescriptive`
+    // promises the user on the Train and Trends cards. Before this guard, a
+    // user coming back from three weeks off at their normal load — Banister
+    // form fresh, stress none, illness false — was told to take a light day and
+    // drop 7.5% and a set, for a reason that asserted fatigue nothing had
+    // measured.
+    if (acwrHigh && pending.length > 0) {
+      pending.push({
+        key: 'acwrSpike',
+        label: 'Acute:chronic load spike',
+        effect: 'downgrade',
+        reason:
+          'Your last week of load is well above your last month. ACWR is descriptive, not a causal injury predictor (Impellizzeri 2020), so it only ever contributes alongside another signal — as it is doing here.',
       });
     }
     if (pending.length > 0) {
       modifiers.push(...pending);
       band = downgrade(band); // one step in total, however many fired
+    } else if (acwrHigh) {
+      // Worth saying, without changing anything.
+      modifiers.push({
+        key: 'acwrSpike',
+        label: 'Acute:chronic load spike',
+        effect: 'note',
+        reason:
+          'Your last week of load is well above your last month. That is descriptive only (Impellizzeri 2020) and has not changed today’s verdict — nothing here moves on the ratio alone.',
+      });
     }
   }
 

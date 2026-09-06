@@ -89,7 +89,7 @@ import type {
   Workout,
 } from '../data/types';
 import { addDays, formatClock, hhmmToMinutes, minutesSinceNoon } from '../lib/dates';
-import { lateEatingCheck } from './nutrition';
+import { habitualWakeWindow, lateEatingCheck } from './nutrition';
 import { benjaminiHochberg, quantile, tCdf } from './stats';
 
 /** Lookback for both the yes- and no-day counts, days. */
@@ -328,9 +328,18 @@ function buildBehaviours(
   byDate: Map<ISODate, DailyRecord>,
   loadByDate: Map<ISODate, number>,
   profile: Profile | undefined,
+  records: DailyRecord[],
+  asOf: ISODate,
 ): Behaviour[] {
   const cutoff = profile?.caffeineCutoff ?? '14:00';
   const bedTarget = profile?.bedTarget ?? '23:00';
+  // The late-eating behaviour has to be defined on the same axis the rest of
+  // the app judges it on — the user's habitual wake window, not the clock
+  // (McHill 2017). Without it a 10:00–02:00 sleeper's 21:00 dinner counts as a
+  // "yes" day here while the nutrition engine correctly calls it fine, so the
+  // group split is drawn on the wrong axis and the sentence the user reads
+  // claims "within 3 h of bed" about meals that are five hours clear of it.
+  const wakeWindow = profile ? habitualWakeWindow(records, asOf, profile) : undefined;
   const logged = days.filter((d) => {
     const r = byDate.get(d);
     return !!r && isLogged(r);
@@ -382,9 +391,10 @@ function buildBehaviours(
     });
   });
 
-  // Vujović 2022, via nutrition.lateEatingCheck: ≥ 400 kcal within 3 h of bed.
-  push('lateEating', '3 h', (r) =>
-    r.meals && r.meals.length > 0 ? lateEatingCheck(r.meals, bedTarget).late : null,
+  // Vujović 2022, via nutrition.lateEatingCheck, anchored to the habitual wake
+  // window rather than the clock.
+  push('lateEating', wakeWindow?.source === 'observed' ? 'late in your own day' : '3 h', (r) =>
+    r.meals && r.meals.length > 0 ? lateEatingCheck(r.meals, bedTarget, undefined, wakeWindow).late : null,
   );
 
   push('highLoad', loadP75 === null ? '' : `${Math.round(loadP75)} load units`, (_r, d) => {
@@ -494,7 +504,7 @@ export function behaviourImpact(
     return isNum(v) ? v : null;
   };
 
-  const behaviours = buildBehaviours(days, byDate, loadByDate, opts?.profile);
+  const behaviours = buildBehaviours(days, byDate, loadByDate, opts?.profile, records, asOf);
 
   const candidates: Candidate[] = [];
   const seen = new Set<BehaviourKey>();

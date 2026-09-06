@@ -74,6 +74,20 @@ export default function Train() {
     writeDraft(draft);
   }, [draft]);
 
+  // "Clear all data" and a replace-import wipe storage while this tab stays
+  // mounted behind Settings. Without dropping the draft, the effect above would
+  // write the live session straight back into the storage just erased, and
+  // finishing it would file a workout into the data the user deleted.
+  const generation = useHealth().state.generation;
+  const seenGeneration = useRef(generation);
+  useEffect(() => {
+    if (seenGeneration.current === generation) return;
+    seenGeneration.current = generation;
+    setDraft(null);
+    setDetailId(null);
+    setView('today');
+  }, [generation]);
+
   // Deep link from Today / Trends / Coach.
   useEffect(() => {
     if (!trainTarget || handledNonce.current === trainTarget.nonce) return;

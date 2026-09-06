@@ -352,7 +352,7 @@ function initialState(): { state: HealthState; index: ShardIndex; corruptMonths:
     lastError: loaded.available ? undefined : 'localStorage is unavailable — data will not persist in this browser.',
   };
   return {
-    state: { ready: true, settings, days, workouts: loaded.workouts, chat: loaded.chat.slice(-CHAT_CAP), storage },
+    state: { ready: true, generation: 0, settings, days, workouts: loaded.workouts, chat: loaded.chat.slice(-CHAT_CAP), storage },
     index: loaded.index,
     corruptMonths: loaded.corruptMonths,
     corruptWorkoutMonths: loaded.corruptWorkoutMonths,
@@ -831,6 +831,11 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
           });
         }
         if (mode === 'replace') {
+          // Same reason as clearAllData: the dataset was swapped out, so any
+          // screen holding a draft of the old data must drop it.
+          setState((prev) => ({ ...prev, generation: prev.generation + 1 }));
+        }
+        if (mode === 'replace') {
           // R4-6: replace really replaces. Without a settings block the file
           // resets settings to defaults — keeping the local API key / proxy and
           // the onboarded flag (the user is clearly past onboarding) — and
@@ -963,7 +968,11 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
         healPending.current = false;
         const fresh = initialState();
         indexRef.current = fresh.index;
-        setState(fresh.state);
+        // Bump the generation so a screen holding a draft of user data — the
+        // live training session — drops it. Without this the Train tab, which
+        // stays mounted while the user is in Settings, would write its draft
+        // straight back into the storage that was just wiped.
+        setState((prev) => ({ ...fresh.state, generation: prev.generation + 1 }));
       },
       flush: () => writer.flush(),
       checkIntegrity: (): IntegrityReport => {

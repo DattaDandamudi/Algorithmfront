@@ -580,6 +580,13 @@ export interface StorageStatus {
 
 export interface HealthState {
   ready: boolean;
+  /**
+   * Bumped whenever the whole dataset is replaced out from under the UI —
+   * "clear all data", or a replace-import. Screens holding local drafts of
+   * user data (the live training session) watch this and drop them, otherwise
+   * a draft that outlived the wipe would write itself straight back.
+   */
+  generation: number;
   settings: AppSettings;
   /** All loaded daily records keyed by ISO date. */
   days: Record<ISODate, DailyRecord>;

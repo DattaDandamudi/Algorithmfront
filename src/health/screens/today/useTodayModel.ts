@@ -29,6 +29,7 @@ import {
   computeKalmanTrend,
   emptyStates,
   kalmanRate,
+  habitualWakeWindow,
   lateEatingCheck,
   metricSeries,
   smoothKalman,
@@ -182,7 +183,11 @@ export function useTodayModel(): TodayModel & {
       tobaccoToday: tobaccoOf(todayRecord),
       smoothedTdee: exp.smoothedTdee,
       countdown: bedtimeCountdown(now, profile.bedTarget, profile.wakeTarget),
-      late: lateEatingCheck(todayRecord?.meals, profile.bedTarget, ctx.nowHHMM),
+      // Anchored to the user's own habitual wake window, exactly as the engine
+      // does it. Calling this without the window silently reverts to the
+      // fixed-clock rule, which told a 10:00–02:00 sleeper to finish eating by
+      // 20:00 when their own late window does not start until 22:48.
+      late: lateEatingCheck(todayRecord?.meals, profile.bedTarget, ctx.nowHHMM, habitualWakeWindow(records, today, profile)),
       nutritionBaseline: {
         protein: baselineDelta(records, 'p', today, NUTRITION_BASELINE_DAYS),
         kcal: baselineDelta(records, 'kc', today, NUTRITION_BASELINE_DAYS),
