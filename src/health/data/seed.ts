@@ -19,19 +19,54 @@
  *    'caffeine' and mirrored into `caf` so the §6.4 cutoff nudge can fire.
  *  - Today (endDate) is a partial day: weigh-in, WHOOP morning data, coffee,
  *    breakfast + lunch (~85 g protein), ~4,200 steps, no tobacco yet.
+ *  - The stress stack (§1h): Hooper check-in items on ~80 % of past days,
+ *    correlated with that day's recovery (r ≈ −0.75 on the Hooper sum) but not
+ *    a re-labelling of it: about a quarter of days the two land on opposite
+ *    sides of their medians, which is the whole reason to collect both;
+ *    respiratory rate, skin temperature and SpO₂ around plausible means;
+ *    ~2 drinking evenings a week whose *next* morning carries the published
+ *    alcohol effect (−7 ms HRV, +3 bpm RHR per two drinks, PLOS Digital Health
+ *    2024); and a seeded 4-day illness episode 15 days back (RR +3, skin temp
+ *    +0.5 °C, HRV −20 %, RHR +6, recovery held under 30) so the strain index,
+ *    the illness flag and the behaviour-impact engine all have something real
+ *    on first launch.
  *
- * Determinism: three independent mulberry32 streams (physiology, food plan,
- * scheduling). The physiology stream draws the same number of values every
- * day (all draws happen up front, before any branch) so the sequence is
+ * Determinism: four independent mulberry32 streams (physiology, food plan,
+ * scheduling, workouts). The physiology stream draws the same number of values
+ * every day (all draws happen up front, before any branch) so the sequence is
  * identical for any endDate; only weekday-dependent *branches* (lift days,
  * weekend late nights) change what those values become. Day-to-day size is
  * ~1.5 KB because every food item is its own meal entry (45 days ≈ 70 KB).
+ *
+ * `generateDemoWorkouts` runs on its own stream (`DEMO_SEED + 303`) and is a
+ * separate export, so adding it cannot shift a single physiology or food
+ * value: the `DailyRecord[]` is byte-identical whether or not workouts are
+ * generated (asserted in seed.test.ts).
  */
-import type { AppSettings, DailyRecord, FoodTag, HHMM, ISODate, Macros, Meal, MealSource } from './types';
+import type {
+  AppSettings,
+  CardioDetail,
+  DailyRecord,
+  FoodTag,
+  HHMM,
+  ISODate,
+  Macros,
+  Meal,
+  MealSource,
+  Program,
+  SessionType,
+  SetEntry,
+  TrainingSplit,
+  Weekday,
+  Workout,
+  WorkoutExercise,
+} from './types';
 import { DEFAULT_FAVORITES, DEFAULT_SPLIT } from './defaults';
 import { lastNDates, minutesSinceNoonToHHMM, minutesToHHMM, weekdayOf } from '../lib/dates';
 import { clamp, round } from '../lib/format';
 import { createRng, DEMO_SEED, type Rng } from './prng';
+import { DEFAULT_PROGRAMS, exerciseById } from '../engine/exerciseDb';
+import { LOAD_INCREMENT_KG } from '../engine/strength';
 
 // ---------------------------------------------------------------------------
 // Food library: favorites from defaults.ts + a few home basics
@@ -391,6 +426,37 @@ const LN58 = Math.log(58);
 /** Logistic strain → extra sleep need (h), 0.4 h asymptote centred on strain 12 (§6.4). */
 const strainNeed = (strn: number) => 0.4 / (1 + Math.exp(-(strn - 12) / 2));
 
+/** Hooper items are integers 1–7 with 1 = best. */
+const hooper = (x: number) => clamp(Math.round(x), 1, 7);
+
+/** First day of the seeded illness episode, counted back from `endDate`. */
+const ILLNESS_START_BACK = 15;
+/** Length of the episode, days. Four is long enough for a 3-day run rule to fire. */
+const ILLNESS_DAYS = 4;
+/**
+ * HRV suppression during the episode, in ln-space: 0.75 of the untroubled
+ * baseline, which lands the four days ≈ 20 % under the persona's own 60-day
+ * mean (that mean sits below the baseline because ordinary smoking and
+ * short-sleep nights drag it down). The 20 % is what the illness flag reads.
+ */
+const ILL_LN_HRV = Math.log(0.75);
+/**
+ * Alcohol's next-morning effect at two drinks: −7 ms HRV (in ln-space on the
+ * 58 ms baseline, ln(51/58) ≈ −0.128) and +3 bpm RHR — PLOS Digital Health
+ * 2024, 20,968 users. Scaled linearly by `drinks / 2`, capped at three drinks
+ * — the same prior `engine/impact.BEHAVIOUR_PRIORS` carries, so the behaviour
+ * engine is looking for an effect that is genuinely in the data. An evening is
+ * 2–3 drinks, so the realised next-morning contrast runs a little past the
+ * two-drink figure; that is the dose, not a different effect size.
+ */
+const ALC_LN_HRV = -0.128;
+const ALC_RHR_BPM = 3;
+/** Skewed to Friday / Saturday, ≈ 2 evenings a week overall. */
+const ALC_P_WEEKEND = 0.45;
+const ALC_P_WEEKDAY = 0.18;
+/** Share of logged days he answers the four check-in questions on. */
+const CHECKIN_P = 0.9;
+
 export function generateDemoData(settings: AppSettings, endDate: ISODate, days = 45): DailyRecord[] {
   const n = Math.max(0, Math.floor(days));
   if (n === 0) return [];
@@ -435,8 +501,13 @@ export function generateDemoData(settings: AppSettings, endDate: ISODate, days =
   }
   const lowFatDays = new Set<number>(plan.sample(Array.from({ length: Math.max(0, n - 1) }, (_, i) => i).filter((i) => !missedLog.has(i) && !redDays.has(i)), plan.int(2, 3)));
 
+  // The seeded illness episode: a fixed 4-day window, so it lands in the same
+  // place for any endDate and the flag is demonstrable on first launch.
+  const illStart = last - ILLNESS_START_BACK;
+  const isIll = (i: number) => n >= ILLNESS_START_BACK + ILLNESS_DAYS && i >= illStart && i < illStart + ILLNESS_DAYS;
+
   const out: DailyRecord[] = [];
-  let prev: { tob: number; strn: number; dbt: number; nap: number; bump: number; biryani: boolean; heavyRestaurant: boolean } = {
+  let prev: { tob: number; strn: number; dbt: number; nap: number; bump: number; biryani: boolean; heavyRestaurant: boolean; alc: number } = {
     tob: 5,
     strn: 9,
     dbt: 45,
@@ -444,6 +515,7 @@ export function generateDemoData(settings: AppSettings, endDate: ISODate, days =
     bump: 0,
     biryani: false,
     heavyRestaurant: false,
+    alc: 0,
   };
 
   for (let i = 0; i < n; i++) {
@@ -451,9 +523,10 @@ export function generateDemoData(settings: AppSettings, endDate: ISODate, days =
     const lift = isLift(i);
     const isToday = i === last;
     const progress = n > 1 ? i / (n - 1) : 1;
+    const ill = isIll(i);
     const rec: DailyRecord = { d };
 
-    // --- Physiology stream: the same 26 draws every day (normal() = 2), before any branch ---
+    // --- Physiology stream: the same 45 draws every day (normal() = 2), before any branch ---
     const eTob = phys.normal(0, 0.9);
     const eBt = phys.normal(0, 20);
     const eWk = phys.normal(0, 11);
@@ -471,6 +544,20 @@ export function generateDemoData(settings: AppSettings, endDate: ISODate, days =
     const eW = phys.normal(0, 0.9);
     const bumpAmt = phys.uniform(1.5, 2.0);
     const uBump = phys.next();
+    const uChk = phys.next();
+    const eQm = phys.normal(0, 1);
+    const eQs = phys.normal(0, 1);
+    const eQf = phys.normal(0, 1);
+    const eQt = phys.normal(0, 1);
+    const eQo = phys.normal(0, 1);
+    const eRr = phys.normal(0, 0.5);
+    const eSkt = phys.normal(0, 0.18);
+    const eSpo = phys.normal(0, 0.8);
+    const uAlc = phys.next();
+    const alcAmt = phys.int(2, 3);
+
+    // Last night's drinking, scaled so two drinks carry the published effect.
+    const alcLoad = Math.min(prev.alc, 3) / 2;
 
     // Tobacco (counts/day). Today is partial → not logged yet.
     const tobBase = 5 - 3 * progress;
@@ -500,16 +587,31 @@ export function generateDemoData(settings: AppSettings, endDate: ISODate, days =
     rec.dbt = dbt;
     if (nap) rec.nap = nap;
 
-    // HRV / RHR / recovery — personal baseline 58 ms, dips after heavy smoking or short sleep.
+    // HRV / RHR / recovery — personal baseline 58 ms, dips after heavy smoking,
+    // short sleep, a drinking night, or inside the seeded illness window.
     const heavy = prev.tob >= 5;
     const smokeFree = prev.tob === 0 && i > 0;
     const shortSleep = slh < 6.6;
-    const lnHrv = LN58 + eHrv - (heavy ? 0.13 : 0) - (shortSleep ? 0.15 : 0) + (smokeFree ? 0.05 : 0) + (greatNights.has(i) ? 0.12 : 0) + 0.04 * progress;
+    // Inside the episode the infection dominates: the ordinary day-to-day
+    // spread shrinks (the same draws, scaled) so the ~20 % HRV suppression and
+    // the +6 bpm are visible on all four days rather than on the lucky ones.
+    const illNoise = ill ? 0.4 : 1;
+    const lnHrv =
+      LN58 + eHrv * illNoise - (heavy ? 0.13 : 0) - (shortSleep ? 0.15 : 0) + (smokeFree ? 0.05 : 0) +
+      (greatNights.has(i) ? 0.12 : 0) + 0.04 * progress + ALC_LN_HRV * alcLoad + (ill ? ILL_LN_HRV : 0);
     const hrv = Math.round(clamp(Math.exp(lnHrv), 35, 95));
-    const rhr = Math.round(clamp(52 + eRhr + (shortSleep ? 2 : 0) + (heavy ? 1.5 : 0) - (smokeFree ? 0.7 : 0) - 0.6 * progress, 46, 60));
+    const rhr = Math.round(clamp(52 + eRhr * illNoise + (shortSleep ? 2 : 0) + (heavy ? 1.5 : 0) - (smokeFree ? 0.7 : 0) - 0.6 * progress + ALC_RHR_BPM * alcLoad + (ill ? 6 : 0), 46, 60));
     rec.hrv = hrv;
     rec.rhr = rhr;
-    rec.rec = Math.round(clamp(58 + 90 * (Math.log(hrv) - LN58) + 9 * (slh - 7.2) - 2 * (rhr - 52) + eRec, 5, 99));
+    const recScore = Math.round(clamp(58 + 90 * (Math.log(hrv) - LN58) + 9 * (slh - 7.2) - 2 * (rhr - 52) + eRec, 5, 99));
+    // The episode is seeded, not emergent: hold recovery in the red for all
+    // four days so the illness flag and the strain index have a clean case.
+    rec.rec = ill ? Math.min(recScore, 30) : recScore;
+
+    // Overnight signals the strain index fuses (WHOOP reports all three).
+    rec.rr = round(clamp(14.6 + eRr + (ill ? 3 : 0) + 0.4 * alcLoad + (shortSleep ? 0.3 : 0), 10, 24), 1);
+    rec.skt = round(clamp(33.6 + eSkt + (ill ? 0.5 : 0) + 0.08 * alcLoad, 31.5, 36), 1);
+    rec.spo = Math.round(clamp(97.4 + eSpo - (ill ? 1.2 : 0), 95, 99));
 
     // Strain, steps, water. Today is mid-afternoon: no day strain yet, ~4,200 steps.
     const strn = round(lift ? clamp(13 + eStrn, 9.5, 16) : clamp(8 + 0.9 * eStrn, 6, 11), 1);
@@ -518,6 +620,28 @@ export function generateDemoData(settings: AppSettings, endDate: ISODate, days =
     const steps = isToday ? 4200 + Math.round(eSteps / 20) : Math.round(clamp(8300 + eSteps + (wd === 0 || wd === 6 ? 500 : 0), 5500, 11500) / 10) * 10;
     rec.st = steps;
     rec.h2o = isToday ? 3 : clamp(6 + Math.round((steps - 5500) / 1500) + eH2o, 6, 11);
+
+    // Alcohol: 2–3 drinks, skewed to Friday / Saturday. Today's evening has not
+    // happened yet (like tobacco), and he does not drink while ill.
+    if (!isToday && !ill && uAlc < (wd === 5 || wd === 6 ? ALC_P_WEEKEND : ALC_P_WEEKDAY)) rec.alc = alcAmt;
+
+    // Hooper check-in, 1 = best. Skipped on days he never opened the app, and
+    // on today so Today still has something to ask for.
+    if (!isToday && !missedLog.has(i) && uChk < CHECKIN_P) {
+      const z = ((rec.rec as number) - 58) / 16;
+      // Two things stop the Hooper sum being a re-labelled recovery score:
+      // `mood`, the shared subjective factor every self-report carries (the
+      // reason four questions asked the same morning move together whatever
+      // the wearable says), and the slow life-stress cycle `qt` rides. Both
+      // are why the two signals disagree on about a quarter of days.
+      const mood = 0.6 * eQm;
+      const wave = Math.sin(i / 4.7 + 1.1);
+      const soreYesterday = i > 0 && isLift(i - 1);
+      rec.qs = hooper(3.9 - 0.8 * z - 0.5 * (slh - 7.2) + mood + 1.25 * eQs + (ill ? 1.5 : 0));
+      rec.qf = hooper(3.9 - 0.85 * z + 0.3 * (prev.strn - 10) + mood + 1.25 * eQf + (ill ? 1.8 : 0));
+      rec.qt = hooper(3.8 - 0.3 * z + 0.95 * wave + mood + 1.25 * eQt + (ill ? 0.6 : 0));
+      rec.qo = hooper(3.4 - 0.55 * z + (soreYesterday ? 1.0 : -0.2) + mood + 1.25 * eQo + (ill ? 0.8 : 0));
+    }
 
     // Meals (food stream). Missed-logging days have no meals / caffeine at all.
     let biryani = false;
@@ -561,9 +685,275 @@ export function generateDemoData(settings: AppSettings, endDate: ISODate, days =
     if (greatNights.has(i) && i === last - 6) rec.note = 'Best sleep in weeks.';
 
     out.push(rec);
-    prev = { tob: isToday ? 0 : tob, strn, dbt, nap, bump, biryani, heavyRestaurant };
+    prev = { tob: isToday ? 0 : tob, strn, dbt, nap, bump, biryani, heavyRestaurant, alc: rec.alc ?? 0 };
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Demo workouts — a fourth, independent stream
+// ---------------------------------------------------------------------------
+
+/**
+ * Working loads the persona is on at the top of the block, KILOGRAMS (that is
+ * what `SetEntry.w` stores; display converts). One entry per exercise in
+ * `DEFAULT_PROGRAMS`; a zero means the movement is bodyweight and progresses
+ * in reps instead. Numbers are an ordinary 78 kg lifter two years in — nothing
+ * here is measured, it is a plausible starting point for a demo.
+ */
+const BASE_LOAD_KG: Record<string, number> = {
+  // Program A — upper
+  'bench-press': 72.5,
+  'barbell-row': 60,
+  'overhead-press': 45,
+  'lat-pulldown': 60,
+  'lateral-raise': 10,
+  'triceps-pushdown': 27.5,
+  'barbell-curl': 30,
+  // Program A — lower
+  'back-squat': 100,
+  'romanian-deadlift': 85,
+  'leg-press': 145,
+  'lying-leg-curl': 40,
+  'standing-calf-raise': 65,
+  'hanging-leg-raise': 0,
+  // Program B — upper
+  'pull-up': 0,
+  'incline-dumbbell-press': 26,
+  'seated-cable-row': 62.5,
+  'dumbbell-shoulder-press': 20,
+  'face-pull': 25,
+  'hammer-curl': 14,
+  'overhead-triceps-extension': 25,
+  // Program B — lower
+  deadlift: 130,
+  'bulgarian-split-squat': 18,
+  'hip-thrust': 90,
+  'seated-leg-curl': 40,
+  'seated-calf-raise': 50,
+  'cable-crunch': 35,
+};
+
+/** Top-set reps for the bodyweight movements, which progress in reps, not load. */
+const BASE_REPS_BODYWEIGHT: Record<string, number> = { 'pull-up': 9, 'hanging-leg-raise': 12 };
+
+/**
+ * The block, indexed by whole weeks back from `endDate` (0 = the last seven
+ * days). Read oldest → newest it is an ordinary double-progression block:
+ * two weeks at one load working reps up, a load step, a deload, another rep
+ * build, a second load step, then a peak week where only the session's main
+ * lift goes up — which is what makes the PR count 3–5 rather than one per
+ * exercise. Accessories repeat week 1 exactly in the peak week, so the only
+ * new records in the "PRs this week" window are the main lifts.
+ */
+const WEEK_LOAD_FACTOR: readonly number[] = [1, 1, 0.965, 0.9, 0.965, 0.93, 0.93];
+/** Where the top set sits in the program's rep range: 0 = the bottom, 1 = the top. */
+const WEEK_REP_POS: readonly number[] = [0, 0, 1, 0.6, 0, 1, 0];
+/** Week's offset from the program's target RPE. The deload is the −1.5. */
+const WEEK_RPE_DELTA: readonly number[] = [0.5, 0, 0, -1.5, 0, -0.5, -0.5];
+/** The peak week's main lift, as a fraction of the block's top load. */
+const PEAK_FACTOR = 1.04;
+
+/** Monday-first week order, so "which lift day of the week is this" is stable. */
+const WEEK_ORDER: readonly Weekday[] = [1, 2, 3, 4, 5, 6, 0];
+
+/** Which program slot a split day fills; `null` days get no strength session. */
+const SESSION_SLOT: Record<SessionType, 'upper' | 'lower' | null> = {
+  upper: 'upper',
+  push: 'upper',
+  pull: 'upper',
+  full: 'upper',
+  lower: 'lower',
+  legs: 'lower',
+  cardio: null,
+  rest: null,
+};
+
+/** Saturday, on the JS `Date` convention `weekdayOf` uses. */
+const RUN_WEEKDAY: Weekday = 6;
+
+/** How many non-rest days come before `wd` in the training week. */
+function liftIndexInWeek(split: TrainingSplit, wd: Weekday): number {
+  let k = 0;
+  for (const day of WEEK_ORDER) {
+    if (day === wd) break;
+    if (split[day] !== 'rest') k += 1;
+  }
+  return k;
+}
+
+/** Round to a load somebody can actually load, using the equipment's real step. */
+function roundToStep(kg: number, exerciseId: string): number {
+  const equipment = exerciseById(exerciseId)?.equipment ?? 'other';
+  const step = LOAD_INCREMENT_KG[equipment] ?? LOAD_INCREMENT_KG.other;
+  return round(Math.max(step, Math.round(kg / step) * step), 2);
+}
+
+/** RPE is logged in half steps. */
+const halfStep = (x: number) => Math.round(x * 2) / 2;
+
+interface WeekPlan {
+  load: number;
+  repPos: number;
+  rpeDelta: number;
+  peak: boolean;
+}
+
+function weekPlan(weeksBack: number): WeekPlan {
+  const k = clamp(weeksBack, 0, WEEK_LOAD_FACTOR.length - 1);
+  return { load: WEEK_LOAD_FACTOR[k], repPos: WEEK_REP_POS[k], rpeDelta: WEEK_RPE_DELTA[k], peak: k === 0 };
+}
+
+/**
+ * One exercise's sets for one session.
+ *
+ * The top set is a pure function of the week and the program row — no random
+ * draw touches it. That is deliberate: `strength.detectPRs` compares the best
+ * set at a given load across sessions, so any upward jitter on the top set
+ * would manufacture a personal record out of noise. The back-off sets carry
+ * all the randomness, and only downward (fewer reps, higher RPE), so they can
+ * never out-rank the top set either.
+ */
+function buildExercise(
+  rng: Rng,
+  row: { exerciseId: string; sets: number; reps: [number, number]; rpe?: number },
+  plan: WeekPlan,
+  isMain: boolean,
+): WorkoutExercise {
+  const [lo, hi] = row.reps;
+  const base = BASE_LOAD_KG[row.exerciseId] ?? 0;
+  const factor = isMain && plan.peak ? PEAK_FACTOR : plan.load;
+  const bodyweight = base <= 0;
+  const load = bodyweight ? 0 : roundToStep(base * factor, row.exerciseId);
+  const topReps = bodyweight
+    ? clamp(Math.round((BASE_REPS_BODYWEIGHT[row.exerciseId] ?? hi) * factor), lo, hi)
+    : clamp(Math.round(hi - (hi - lo) * (1 - plan.repPos)), lo, hi);
+  const topRpe = clamp(halfStep((row.rpe ?? 8) + plan.rpeDelta), 6, 10);
+
+  const sets: SetEntry[] = [];
+  // Two ramping warm-ups on the session's main lift; `k: 'wu'` keeps them out
+  // of volume, e1RM and PR detection.
+  if (isMain && load > 0) {
+    sets.push({ w: roundToStep(load * 0.5, row.exerciseId), r: 8, k: 'wu' });
+    sets.push({ w: roundToStep(load * 0.75, row.exerciseId), r: 5, k: 'wu' });
+  }
+  for (let j = 0; j < row.sets; j++) {
+    const fade = j === 0 ? 0 : Math.min(j, 2) + (rng.chance(0.3) ? 1 : 0);
+    const rpeFade = j === 0 ? 0 : 0.5 * Math.min(j, 2) + (rng.chance(0.3) ? 0.5 : 0);
+    sets.push({
+      w: load,
+      r: Math.max(1, topReps - fade),
+      rpe: clamp(halfStep(topRpe + rpeFade), 6, 10),
+    });
+  }
+  return { exerciseId: row.exerciseId, sets };
+}
+
+/** Foster sRPE load, the same `srpe × minutes` `engine/load.sessionLoad` computes. */
+const fosterLoad = (srpe: number, durationMin: number) => round(srpe * durationMin, 1);
+
+/** Edwards summated heart-rate zones: Σ minutes in zone i × i (`sessionLoad` again). */
+function edwardsLoad(zoneMin: readonly number[]): number {
+  let total = 0;
+  for (let i = 0; i < zoneMin.length && i < 6; i++) total += zoneMin[i] * i;
+  return round(total, 1);
+}
+
+/** Minutes in HR zones 0–5 for a steady run, summing exactly to `durationMin`. */
+function runZones(rng: Rng, durationMin: number): CardioDetail['zoneMin'] {
+  const shares = [0, 0.12, 0.26, 0.38, 0.19, 0.05];
+  const mins = shares.map((s, i) => (i === 0 ? 0 : Math.max(0, Math.round(durationMin * s + rng.uniform(-1.5, 1.5)))));
+  const spent = mins.reduce((a, m) => a + m, 0);
+  mins[3] = Math.max(0, mins[3] + (durationMin - spent));
+  return [mins[0], mins[1], mins[2], mins[3], mins[4], mins[5]];
+}
+
+/**
+ * A deterministic 45 days of training for the demo persona: one session on
+ * every lift day of `settings.profile.split`, plus a Saturday run.
+ *
+ * Sessions come from `DEFAULT_PROGRAMS` (the built-in A/B upper-lower split
+ * the Train screen falls back to), alternating A → B across the training week,
+ * so what History shows lines up with what Train plans. `endDate` itself is
+ * left empty on purpose: `generateDemoData` makes it a partial day, and a
+ * finished session on it would leave Train with nothing to suggest.
+ *
+ * Runs on `DEMO_SEED + 303` — its own stream — so the `DailyRecord[]` from
+ * `generateDemoData` is byte-identical whether or not this is called. Ids are
+ * derived from the date (`w_demo_<date>_s`), never drawn, so re-generating
+ * cannot duplicate or re-key a session.
+ */
+export function generateDemoWorkouts(settings: AppSettings, endDate: ISODate, days = 45): Workout[] {
+  const n = Math.max(0, Math.floor(days));
+  if (n === 0) return [];
+  const dates = lastNDates(endDate, n);
+  const split = settings.profile?.split ?? DEFAULT_SPLIT;
+  const rng = createRng(DEMO_SEED + 303);
+  const last = n - 1;
+  const out: Workout[] = [];
+
+  for (let i = 0; i < last; i++) {
+    const d = dates[i];
+    const wd = weekdayOf(d);
+    const type = split[wd] ?? 'rest';
+    const slot = SESSION_SLOT[type] ?? null;
+    const plan = weekPlan(Math.floor((last - i) / 7));
+
+    if (slot) {
+      const programIdx = Math.floor(liftIndexInWeek(split, wd) / 2) % DEFAULT_PROGRAMS.length;
+      const program: Program = DEFAULT_PROGRAMS[programIdx];
+      const rows = program.sessions[slot] ?? [];
+      // The main lift is the first *loaded* row — a bodyweight opener (pull-ups)
+      // cannot carry a weight PR, so the press behind it does.
+      const mainId = rows.find((r) => (BASE_LOAD_KG[r.exerciseId] ?? 0) > 0)?.exerciseId;
+      const exercises = rows.map((r) => buildExercise(rng, r, plan, r.exerciseId === mainId));
+      const setCount = exercises.reduce((a, e) => a + e.sets.length, 0);
+      const durationMin = Math.max(30, Math.round(12 + 2.4 * setCount) + rng.int(-4, 5));
+      const srpe = clamp(halfStep(7.5 + 0.6 * plan.rpeDelta + 0.5 * rng.int(-1, 1)), 5, 9.5);
+      out.push({
+        id: `w_demo_${d}_s`,
+        d,
+        start: minutesToHHMM(17 * 60 + 45 + rng.int(0, 45)),
+        durationMin,
+        kind: 'strength',
+        session: type,
+        title: `${slot === 'upper' ? 'Upper' : 'Lower'} ${String.fromCharCode(65 + programIdx)}`,
+        exercises,
+        srpe,
+        load: fosterLoad(srpe, durationMin),
+        source: 'demo',
+        programId: program.id,
+      });
+    }
+
+    if (wd === RUN_WEEKDAY || type === 'cardio') {
+      const durationMin = 38 + rng.int(0, 16);
+      const zoneMin = runZones(rng, durationMin);
+      const paceMinPerKm = rng.uniform(5.5, 6.4);
+      out.push({
+        id: `w_demo_${d}_c`,
+        d,
+        start: minutesToHHMM(7 * 60 + 45 + rng.int(0, 50)),
+        durationMin,
+        kind: 'cardio',
+        session: 'cardio',
+        title: 'Easy run',
+        cardio: {
+          sport: 'run',
+          distanceKm: round(durationMin / paceMinPerKm, 1),
+          avgHr: 148 + rng.int(-6, 8),
+          maxHr: 168 + rng.int(0, 9),
+          zoneMin,
+          kcal: Math.round(durationMin * (10.5 + rng.uniform(0, 1.5))),
+        },
+        srpe: clamp(halfStep(6.5 + 0.5 * rng.int(-1, 1)), 5, 8),
+        load: edwardsLoad(zoneMin ?? []),
+        source: 'demo',
+      });
+    }
+  }
+
+  return out.sort((a, b) => (a.d !== b.d ? (a.d < b.d ? -1 : 1) : a.id < b.id ? -1 : 1));
 }
 
 /** Caption for Settings → "Demo data: 45 days · 38 weigh-ins · 240 meals". */

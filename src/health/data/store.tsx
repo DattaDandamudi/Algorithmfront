@@ -76,7 +76,7 @@ import {
   type ShardIndex,
 } from './storage';
 import { buildCSV, buildExportJSON, buildWorkoutsCSV, parseImport } from './export';
-import { generateDemoData } from './seed';
+import { generateDemoData, generateDemoWorkouts } from './seed';
 import { computeEwmaTrend } from '../engine/weight';
 import { computeKalmanTrend } from '../engine/kalman';
 import { todayISO, yearMonthOf } from '../lib/dates';
@@ -937,10 +937,20 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
         }),
       loadDemoData: () => {
         const s = stateRef.current;
-        const demo = generateDemoData(s.settings, todayISO());
+        const today = todayISO();
+        const demo = generateDemoData(s.settings, today);
+        const demoWorkouts = generateDemoWorkouts(s.settings, today);
         mutateDays((days) => {
           const next: Days = { ...days };
           for (const r of demo) next[r.d] = { ...(next[r.d] ?? {}), ...r, d: r.d };
+          return next;
+        });
+        // Sessions go in after the days so `applyTrainingDerived` stamps
+        // ld/wko/lift onto records that already exist; without this the demo
+        // would load a month of physiology with no training history behind it.
+        mutateWorkouts((ws) => {
+          const next: Workouts = { ...ws };
+          for (const w of demoWorkouts) next[w.id] = w;
           return next;
         });
         mutateSettings((st) => ({ ...st, demoLoaded: true, onboarded: true, whoop: { ...st.whoop, connected: true, source: 'manual', lastImportAt: Date.now() } }));

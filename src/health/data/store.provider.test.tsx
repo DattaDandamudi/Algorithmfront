@@ -576,3 +576,50 @@ describe('HealthStoreProvider — training sessions', () => {
     expect(Object.keys(history)[0]).toBe('2026-08-07');
   });
 });
+
+describe('HealthStoreProvider — demo data', () => {
+  it('loads training history alongside the day records, with the days stamped', () => {
+    vi.setSystemTime(new Date(2026, 8, 6, 20, 0, 0));
+    mount();
+    act(() => {
+      ctx.actions.loadDemoData();
+    });
+
+    const workouts = Object.values(ctx.state.workouts);
+    expect(workouts.length).toBeGreaterThan(20);
+    expect(workouts.every((w) => w.source === 'demo')).toBe(true);
+    expect(workouts.some((w) => w.kind === 'strength')).toBe(true);
+    expect(workouts.some((w) => w.kind === 'cardio')).toBe(true);
+
+    // Every session's day carries the derived training fields.
+    for (const w of workouts) {
+      const day = ctx.state.days[w.d];
+      expect(day, w.d).toBeDefined();
+      expect(day.wko as number).toBeGreaterThan(0);
+      expect(day.ld as number).toBeGreaterThan(0);
+    }
+    // And a strength session makes its day a lift day whatever the split says.
+    const lift = workouts.find((w) => w.kind === 'strength')!;
+    expect(ctx.state.days[lift.d].lift).toBe(true);
+
+    // The stress inputs are there too, so the strain index has something to read.
+    const withCheckIn = Object.values(ctx.state.days).filter((d) => d.qs !== undefined);
+    expect(withCheckIn.length).toBeGreaterThan(20);
+    expect(Object.values(ctx.state.days).some((d) => d.rr !== undefined && d.skt !== undefined)).toBe(true);
+  });
+
+  it('persists both families and reloads them on a fresh mount', () => {
+    vi.setSystemTime(new Date(2026, 8, 6, 20, 0, 0));
+    mount();
+    act(() => {
+      ctx.actions.loadDemoData();
+    });
+    tick(2000);
+    const before = Object.keys(ctx.state.workouts).length;
+    cleanup();
+
+    mount();
+    expect(Object.keys(ctx.state.workouts)).toHaveLength(before);
+    expect(readIndex()?.workouts).toBeDefined();
+  });
+});
