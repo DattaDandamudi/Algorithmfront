@@ -4,10 +4,13 @@
  * Caffeine (§6.4): "+ coffee" only logs a clock time (`logCaffeine`); it
  * does not add a meal. The time input defaults to now and follows the clock
  * until the user picks one, so a coffee drunk at 15:30 can be logged at 17:00
- * with the right stamp (checklist S6.4-08) — the after-cutoff caution uses the
- * chosen time. A caution appears when the latest log is after the profile
- * cutoff (default 14:00, ≥8–10 h before bed) using the §7 #12 copy.
- * Tapping a time chip removes that entry (mis-taps happen).
+ * with the right stamp (checklist S6.4-08) — the after-cutoff hint is computed
+ * from the PICKED time (`caffeinePickHint`), never from an earlier log. Once
+ * something is logged after the cutoff (default 14:00, ≥8–10 h before bed) the
+ * §7 #12 caution measures EACH logged time against the bed target, and a time
+ * past the target reads "after your bed target" rather than 23.5 h before it
+ * (review R7-6; `hoursToBed` on the eating-day axis). Tapping a time chip
+ * removes that entry (mis-taps happen).
  *
  * Water (§6.5): ~30–35 ml/kg + activity bumps → `hydrationTargetCups` from
  * the context; one cup ≈ 250 ml. Stored as `h2o` cups via patchDay.
@@ -16,11 +19,10 @@ import { useState } from 'react';
 import { Coffee, Droplets, Minus, Plus } from 'lucide-react';
 import type { CoachContext, DailyRecord, HHMM, Profile } from '../../data/types';
 import { ML_PER_CUP } from '../../engine/nutrition';
-import { caffeineCheck } from '../../engine/sleep';
 import { formatClock } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { Button, Chip, ProgressRing, SectionHeader } from '../../ui';
-import { isAfterCutoff, normaliseTime } from './logUtils';
+import { caffeineLateCaption, caffeinePickHint, normaliseTime } from './logUtils';
 
 export interface HydrationCardProps {
   ctx: CoachContext;
@@ -35,11 +37,12 @@ export interface HydrationCardProps {
 
 export default function HydrationCard({ ctx, todayRecord, profile, nowHHMM, onCaffeine, onRemoveCaffeine, onWater }: HydrationCardProps) {
   const caf = todayRecord?.caf ?? [];
-  const check = caffeineCheck(caf, profile.bedTarget, profile.caffeineCutoff);
+  const lateCaption = caffeineLateCaption(caf, profile.bedTarget, profile.caffeineCutoff);
   // null = follow the clock; a pick sticks until logged or cleared.
   const [picked, setPicked] = useState<HHMM | null>(null);
   const at = picked ?? nowHHMM;
-  const late = isAfterCutoff(at, profile.caffeineCutoff);
+  const pickHint = caffeinePickHint(at, profile.bedTarget, profile.caffeineCutoff);
+  const late = pickHint !== null;
   const log = () => {
     onCaffeine(picked);
     setPicked(null);
@@ -80,15 +83,12 @@ export default function HydrationCard({ ctx, todayRecord, profile, nowHHMM, onCa
             ))}
           </div>
         )}
-        {check.afterCutoff ? (
+        {lateCaption ? (
           <p className="text-[13px] leading-5 text-hx-yellow" role="status">
-            You logged caffeine at {formatClock(check.afterCutoff)} — within {check.hoursBeforeBed !== null ? fmt(check.hoursBeforeBed, 1) : '—'} h of bed. Cut off by {formatClock(profile.caffeineCutoff)} tomorrow to protect
-            deep sleep.
+            {lateCaption}
           </p>
-        ) : late ? (
-          <p className="text-[13px] leading-5 text-hx-text2">
-            {formatClock(at)} is past your {formatClock(profile.caffeineCutoff)} cutoff — a coffee then lands within {check.hoursBeforeBed !== null ? fmt(check.hoursBeforeBed, 1) : '~9'} h of bed.
-          </p>
+        ) : pickHint ? (
+          <p className="text-[13px] leading-5 text-hx-text2">{pickHint}</p>
         ) : null}
       </div>
 

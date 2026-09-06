@@ -8,10 +8,16 @@
  * mandatory grams confirm: a photo has no depth cue and hides oil, so the
  * portion is a guess (the spec's Cal AI evidence). Estimation state is owned
  * by the Log screen (`busy` / `error`) so the result can open its sheet.
+ *
+ * The client is loaded lazily (aiStatus.ts, review R7-3): with a key
+ * configured but the SDK still loading the camera button reads "Loading AI…"
+ * and waits (a photo has no local fallback), and a failed load shows the
+ * reason — the "add an AI key" copy is only for `aiStatus === 'none'`.
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Loader2, Settings2 } from 'lucide-react';
 import { Button, Sheet } from '../../ui';
+import { AI_LOADING_LABEL, photoAINote, type AIStatus } from './aiStatus';
 
 /** Caveat copy (spec §2 / §9 photo evidence). */
 export const PHOTO_CAVEAT = "Photos can't judge depth or hidden oil — confirm the grams";
@@ -19,7 +25,10 @@ export const PHOTO_CAVEAT = "Photos can't judge depth or hidden oil — confirm 
 export interface PhotoSheetProps {
   open: boolean;
   onClose: () => void;
-  aiConfigured: boolean;
+  /** Lazy-client state; 'none' = no key configured. */
+  aiStatus: AIStatus;
+  /** Why the client failed when `aiStatus === 'error'`. */
+  aiError?: string | null;
   /** True while the photo is being encoded/estimated. */
   busy: boolean;
   /** Last estimation failure, shown inline. */
@@ -30,9 +39,14 @@ export interface PhotoSheetProps {
   onOpenAISettings: () => void;
 }
 
-export default function PhotoSheet({ open, onClose, aiConfigured, busy, error, onPick, onUseTextBar, onOpenAISettings }: PhotoSheetProps) {
+export default function PhotoSheet({ open, onClose, aiStatus, aiError = null, busy, error, onPick, onUseTextBar, onOpenAISettings }: PhotoSheetProps) {
   const [hint, setHint] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const aiConfigured = aiStatus !== 'none';
+  const loading = aiStatus === 'loading' || aiStatus === 'slow';
+  // Loading or failed: nothing can estimate the photo, so do not open the camera (R7-3).
+  const aiNote = photoAINote(aiStatus, aiError);
+  const canShoot = aiNote === null;
 
   const onFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,13 +91,18 @@ export default function PhotoSheet({ open, onClose, aiConfigured, busy, error, o
                 disabled={busy}
               />
             </label>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden onChange={onFile} disabled={busy} />
-            <Button size="lg" fullWidth icon={busy ? <Loader2 className="animate-spin" aria-hidden /> : <Camera aria-hidden />} onClick={() => fileRef.current?.click()} disabled={busy}>
-              {busy ? 'Estimating from the photo…' : 'Take a photo'}
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden onChange={onFile} disabled={busy || !canShoot} />
+            <Button size="lg" fullWidth icon={busy || loading ? <Loader2 className="animate-spin" aria-hidden /> : <Camera aria-hidden />} onClick={() => fileRef.current?.click()} disabled={busy || !canShoot}>
+              {busy ? 'Estimating from the photo…' : loading ? AI_LOADING_LABEL : 'Take a photo'}
             </Button>
             {busy && (
               <p role="status" className="text-[12px] leading-4 text-hx-text2 text-center">
                 Resizing and sending to Claude — a few seconds.
+              </p>
+            )}
+            {aiNote && !busy && (
+              <p role="status" className={`text-[13px] leading-5 ${aiStatus === 'error' ? 'text-hx-yellow' : 'text-hx-text2'}`}>
+                {aiNote}
               </p>
             )}
             {error && !busy && (

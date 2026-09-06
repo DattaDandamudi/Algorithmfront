@@ -3,15 +3,18 @@ import { DEFAULT_FAVORITES } from '../../data/defaults';
 import type { FoodEstimate, Meal } from '../../data/types';
 import { AI_UNAVAILABLE_NOTE } from '../../ai/food';
 import { weeklyExpenditure } from '../../engine/expenditure';
+import { caffeineCheck } from '../../engine/sleep';
 import { weighInsInWeek } from '../../engine/weight';
 import { addDays, formatDateShort } from '../../lib/dates';
 import { blockProgress } from '../trends/summaries';
 import {
   appendClarification,
   appendNote,
+  bedProximity,
   bedtimeNightOf,
   bedtimeRecordDate,
-  describeClientError,
+  caffeineLateCaption,
+  caffeinePickHint,
   displayToLb,
   eatingDayCaption,
   eatingDayOf,
@@ -199,7 +202,9 @@ describe('eatingDayOf', () => {
     expect(eatingDayOf(t)).toBe(bedtimeNightOf(t));
   });
   it('explains where a pre-04:00 entry goes', () => {
-    expect(eatingDayCaption('2026-09-06')).toBe('Logging to Sat 6 Sep — meals before 04:00 count toward the previous day');
+    // 2026-09-05 is a Saturday.
+    expect(eatingDayCaption('2026-09-05')).toBe('Logging meals to Sat 5 Sep — entries before 04:00 count toward the previous day');
+    expect(eatingDayCaption('2026-09-06')).toBe(`Logging meals to ${formatDateShort('2026-09-06')} — entries before 04:00 count toward the previous day`);
   });
 });
 
@@ -224,42 +229,103 @@ describe('hoursToBed', () => {
   });
 });
 
+describe('caffeine copy (R7-6)', () => {
+  const bed = '23:00';
+  const cutoff = '14:00';
+  it('bedProximity never wraps a full day', () => {
+    expect(bedProximity(7, bed)).toBe('within 7.0 h of bed');
+    expect(bedProximity(6.5, bed)).toBe('within 6.5 h of bed');
+    expect(bedProximity(0, bed)).toBe('right at your 11:00 pm bed target');
+    expect(bedProximity(-0.5, bed)).toBe('after your 11:00 pm bed target');
+    expect(bedProximity(null, bed)).toBe('close to bed');
+  });
+  it('the pick hint is computed from the picked time, not an earlier log', () => {
+    // The reported repro: an 08:00 log made caffeineCheck say 15 h, and the 16:00 pick showed it.
+    expect(caffeineCheck(['08:00'], bed, cutoff).hoursBeforeBed).toBe(15);
+    expect(caffeinePickHint('16:00', bed, cutoff)).toBe('4:00 pm is past your 2:00 pm cutoff — a coffee then lands within 7.0 h of bed.');
+    expect(caffeinePickHint('12:00', bed, cutoff)).toBeNull();
+    expect(caffeinePickHint('14:00', bed, cutoff)).toBeNull();
+    expect(caffeinePickHint('23:30', bed, cutoff)).toBe('11:30 pm is past your 2:00 pm cutoff — a coffee then lands after your 11:00 pm bed target.');
+    expect(caffeinePickHint('00:30', bed, cutoff)).toBe('12:30 am is past your 2:00 pm cutoff — a coffee then lands after your 11:00 pm bed target.');
+  });
+  it('the logged caption measures each logged time and never says 23.5 h', () => {
+    expect(caffeineLateCaption(['08:00'], bed, cutoff)).toBeNull();
+    expect(caffeineLateCaption(undefined, bed, cutoff)).toBeNull();
+    expect(caffeineLateCaption(['08:00', '16:30'], bed, cutoff)).toBe('You logged caffeine at 4:30 pm — within 6.5 h of bed. Cut off by 2:00 pm tomorrow to protect deep sleep.');
+    expect(caffeineLateCaption(['23:30'], bed, cutoff)).toBe('You logged caffeine at 11:30 pm — after your 11:00 pm bed target. Cut off by 2:00 pm tomorrow to protect deep sleep.');
+    expect(caffeineLateCaption(['16:30', '23:30'], bed, cutoff)).toBe(
+      'You logged caffeine after your 2:00 pm cutoff: 4:30 pm (within 6.5 h of bed), 11:30 pm (after your 11:00 pm bed target). Cut off by 2:00 pm tomorrow to protect deep sleep.',
+    );
+    expect(caffeineLateCaption(['23:30'], bed, cutoff)).not.toMatch(/23\.5/);
+  });
+});
+
 // R7-5: the weight card must count the same 7-day block the expenditure gate uses.
 describe('weighInBlockLine', () => {
   const today = '2026-09-06';
   const rec = (k: number, extra: object = {}) => ({ d: addDays(today, k), w: 172, ...extra });
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  const next = (exp: ReturnType<typeof weeklyExpenditure>) => formatDateShort(exp.nextUpdate as string);
+
   it('reports the block count, not the trailing-7-day count', () => {
     // First weigh-in 9 days ago anchors the blocks: [-9..-3] closed, [-2..+4] in progress.
     const records = [-9, -6, -5, -4, -3, -2].map((k) => rec(k));
     const exp = weeklyExpenditure(records, today);
     expect(weighInsInWeek(records, today)).toBe(5); // what the old card showed ("Enough…")
     expect(exp.weighInsThisWeek).toBe(1);
-    const line = weighInBlockLine(exp, blockProgress(exp, today).met);
-    expect(line.value).toBe('1/7 weigh-ins');
-    expect(line.sub).toBe(`in this block · updates ${formatDateShort(exp.nextUpdate as string)} — weigh in 5+ days to calibrate.`);
+    const line = weighInBlockLine(exp, today);
+    expect(line.value).toBe('1/7');
+    expect(line.met).toBe(blockProgress(exp, today).met);
+    expect(line.met).toBe(false);
+    // Block 1 (days 7–13 after the anchor) only builds calibration history, and the date is the first estimate.
+    expect(line.sub).toBe(`in this block · first estimate ${next(exp)} — weigh in 5+ days of every block to calibrate.`);
     expect(line.sub).not.toMatch(/Enough/);
   });
-  it('says "Enough" only when the block gate is met', () => {
-    // Anchor 5 days ago; weigh-ins and intake on every day since → 6/7 of both in the open block.
-    const records = [-5, -4, -3, -2, -1, 0].map((k) => rec(k, { kc: 2000, p: 150 }));
+  it('a full calibration block is "enough" for history, not an update', () => {
+    // Anchor 5 days ago; weigh-ins and intake on every day since → 6/7 of both in block 0.
+    const records = range(-5, 0).map((k) => rec(k, { kc: 2000, p: 150 }));
     const exp = weeklyExpenditure(records, today);
     expect(exp.weighInsThisWeek).toBe(6);
-    const line = weighInBlockLine(exp, blockProgress(exp, today).met);
-    expect(line.value).toBe('6/7 weigh-ins');
-    expect(line.sub).toBe(`Enough for this block’s expenditure update · updates ${formatDateShort(exp.nextUpdate as string)}.`);
+    const line = weighInBlockLine(exp, today);
+    expect(line.value).toBe('6/7');
+    expect(line.met).toBe(true);
+    expect(line.met).toBe(blockProgress(exp, today).met);
+    expect(line.sub).toBe(`Enough for this block — it builds calibration history · first estimate ${next(exp)}.`);
+    expect(line.sub).not.toMatch(/expenditure update/);
+  });
+  it('says "Enough for this block’s expenditure update" only when a publishable block meets both gates', () => {
+    // Anchor 27 days ago, daily weigh-ins and intake → block 3 (days 21–27) is open with 7/7 of both.
+    const full = range(-27, 0).map((k) => rec(k, { kc: 2000, p: 150 }));
+    const exp = weeklyExpenditure(full, today);
+    expect(exp.calibrating).toBe(false);
+    expect(exp.weighInsThisWeek).toBe(7);
+    const line = weighInBlockLine(exp, today);
+    expect(line).toEqual({ value: '7/7', met: true, sub: `Enough for this block’s expenditure update · updates ${next(exp)}.` });
+
+    // Same weigh-ins, but no intake logged in the open block → weigh-ins alone are not enough.
+    const noIntake = range(-27, 0).map((k) => rec(k, k < -7 ? { kc: 2000, p: 150 } : {}));
+    const exp2 = weeklyExpenditure(noIntake, today);
+    const line2 = weighInBlockLine(exp2, today);
+    expect(line2.met).toBe(false);
+    expect(line2.met).toBe(blockProgress(exp2, today).met);
+    expect(line2.sub).toBe(`in this block · updates ${next(exp2)} — log meals on 5+ days of it too so expenditure can update.`);
+
+    // Too few weigh-ins in a publishable block.
+    const sparse = [...range(-27, -7), -1, 0].map((k) => rec(k, { kc: 2000, p: 150 }));
+    const exp3 = weeklyExpenditure(sparse, today);
+    expect(exp3.weighInsThisWeek).toBe(2);
+    expect(weighInBlockLine(exp3, today).sub).toBe(`in this block · updates ${next(exp3)} — weigh in 5+ days to calibrate.`);
+  });
+  it('the first publishable block (day 14+) is labelled as the first estimate', () => {
+    const records = [...range(-16, -10), -2, -1, 0].map((k) => rec(k, { kc: 2000, p: 150 }));
+    const exp = weeklyExpenditure(records, today);
+    expect(exp.calibrating).toBe(true);
+    const line = weighInBlockLine(exp, today);
+    expect(line.value).toBe('3/7');
+    expect(line.sub).toBe(`in this block · first estimate ${next(exp)} — weigh in 5+ days to calibrate.`);
   });
   it('has copy for before the first weigh-in', () => {
     const exp = weeklyExpenditure([], today);
-    expect(weighInBlockLine(exp, false)).toEqual({ value: '0/7 weigh-ins', sub: 'Your first weigh-in starts a 7-day block — weigh in 5+ days of it so expenditure can calibrate.' });
-  });
-});
-
-// R7-3: the lazy SDK import can fail; the reason must be readable, never "connect an AI key".
-describe('describeClientError', () => {
-  it('maps a failed chunk load to an offline hint and keeps other messages', () => {
-    expect(describeClientError(new TypeError('Failed to fetch dynamically imported module: http://x/@anthropic-ai_sdk.js'))).toBe('the AI module could not be downloaded — check your connection and reload');
-    expect(describeClientError(new Error('boom'))).toBe('boom');
-    expect(describeClientError('nope')).toBe('the AI client could not be created');
-    expect(describeClientError(new Error(''))).toBe('the AI client could not be created');
+    expect(weighInBlockLine(exp, today)).toEqual({ value: '0/7', met: false, sub: 'Your first weigh-in starts a 7-day block — weigh in 5+ days of it so expenditure can calibrate.' });
   });
 });

@@ -3,7 +3,13 @@
  * language AI bar"). Purely presentational: the Log screen owns the estimate
  * call so the result can open the shared EstimateSheet. Shows a busy state
  * while estimating, an inline question when the parser found no food, and a
- * reminder that the offline parser is in use when no AI key is configured.
+ * line saying who will answer — Claude, the offline parser (no key), or, for
+ * a configured key whose SDK is still loading / failed to load, that state and
+ * its reason (review R7-3: never "add an AI key" when one exists).
+ *
+ * While the SDK is 'loading' the button reads "Loading AI…" and submits are
+ * held; after the Log's grace period ('slow') the local parser answers so a
+ * slow link never blocks logging.
  *
  * While busy the input is `readOnly`, not `disabled`: disabling would throw
  * focus to <body>, and the estimate Sheet records the focused element as the
@@ -11,6 +17,7 @@
  */
 import type { FormEvent, RefObject } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
+import { AI_LOADING_LABEL, aiBarCaption, type AIStatus } from './aiStatus';
 
 export interface AIBarProps {
   inputRef: RefObject<HTMLInputElement>;
@@ -18,7 +25,10 @@ export interface AIBarProps {
   value: string;
   onChange: (text: string) => void;
   busy: boolean;
-  aiConfigured: boolean;
+  /** Lazy-client state (aiStatus.ts). */
+  aiStatus: AIStatus;
+  /** Why the client failed when `aiStatus === 'error'`. */
+  aiError?: string | null;
   /** Question to show under the bar when the last submit produced no items. */
   question?: string | null;
   onSubmit: (text: string) => void;
@@ -26,13 +36,17 @@ export interface AIBarProps {
 
 export const AI_BAR_PLACEHOLDER = '200 g chicken tikka and one roti';
 
-export default function AIBar({ inputRef, value: text, onChange: setText, busy, aiConfigured, question, onSubmit }: AIBarProps) {
+export default function AIBar({ inputRef, value: text, onChange: setText, busy, aiStatus, aiError = null, question, onSubmit }: AIBarProps) {
+  // Hold submits only for the first stretch of loading; 'slow' lets the local parser answer.
+  const waiting = aiStatus === 'loading';
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const t = text.trim();
-    if (!t || busy) return;
+    if (!t || busy || waiting) return;
     onSubmit(t);
   };
+  const spinning = busy || waiting;
+  const captionTone = aiStatus === 'error' ? 'text-hx-yellow' : 'text-hx-muted';
 
   return (
     <form onSubmit={submit} className="space-y-1.5" aria-busy={busy || undefined}>
@@ -56,11 +70,11 @@ export default function AIBar({ inputRef, value: text, onChange: setText, busy, 
         </div>
         <button
           type="submit"
-          disabled={busy || !text.trim()}
+          disabled={busy || waiting || !text.trim()}
           className="h-12 px-4 shrink-0 rounded-2xl bg-hx-text text-hx-base font-semibold text-[14px] inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-white transition-colors"
         >
-          {busy ? <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden /> : null}
-          {busy ? 'Estimating' : 'Estimate'}
+          {spinning ? <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden /> : null}
+          {busy ? 'Estimating' : waiting ? AI_LOADING_LABEL : 'Estimate'}
         </button>
       </div>
       {question ? (
@@ -68,8 +82,8 @@ export default function AIBar({ inputRef, value: text, onChange: setText, busy, 
           {question}
         </p>
       ) : (
-        <p className="text-[12px] leading-4 text-hx-muted px-1">
-          {aiConfigured ? 'Claude estimates macros with Indian / Middle Eastern priors — you edit before saving.' : 'Offline parser · add an AI key in Settings for better accuracy on restaurant dishes.'}
+        <p className={`text-[12px] leading-4 px-1 ${captionTone}`} role={aiStatus === 'error' ? 'status' : undefined}>
+          {aiBarCaption(aiStatus, aiError)}
         </p>
       )}
     </form>

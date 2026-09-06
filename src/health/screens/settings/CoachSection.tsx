@@ -19,6 +19,7 @@ import { maskKey } from '../../ai/guardrails';
 import { useHealth } from '../../data/store';
 import type { AISettings, CoachTone } from '../../data/types';
 import { Banner, Button, SegmentedControl, toast } from '../../ui';
+import { describeClientError } from '../log/aiStatus';
 import { useConfirm } from './useConfirm';
 import { CONTROL, Field, Note, SelectField, SubHeading, TextField } from './fields';
 
@@ -55,7 +56,15 @@ export default function CoachSection() {
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const test = async () => {
-    const client = await createClient(ai);
+    let client: Awaited<ReturnType<typeof createClient>>;
+    try {
+      client = await createClient(ai);
+    } catch (err) {
+      // The SDK is a lazily imported chunk; a failed download must land in the
+      // result banner, not leave the button doing nothing (review R7-3).
+      setResult({ ok: false, message: `Could not load the AI client — ${describeClientError(err)}.` });
+      return;
+    }
     if (!client) {
       setResult({ ok: false, message: ai.provider === 'proxy' ? 'Add a proxy URL first.' : ai.provider === 'anthropic-direct' ? 'Save an API key first.' : 'Pick a provider and add a key or proxy URL first.' });
       return;

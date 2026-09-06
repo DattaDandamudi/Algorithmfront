@@ -20,9 +20,9 @@
 import type { FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Macros, Meal, MealSource } from '../../data/types';
 import { findFood, normalise } from '../../ai/foodDb';
 import { AI_UNAVAILABLE_NOTE } from '../../ai/food';
-import type { ExpenditureResult } from '../../engine/expenditure';
-import { addDays, formatDateShort, hhmmToMinutes, minutesToHHMM, toISODate } from '../../lib/dates';
-import { kgToLb, lbToKg, round } from '../../lib/format';
+import { CALIBRATION_DAYS, type ExpenditureResult } from '../../engine/expenditure';
+import { addDays, diffDays, formatClock, formatDateShort, hhmmToMinutes, minutesToHHMM, toISODate } from '../../lib/dates';
+import { fmt, kgToLb, lbToKg, round } from '../../lib/format';
 import { mealClockMinutes, mealOccasions } from '../../engine/nutrition';
 
 // ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ export function eatingDayOf(now: Date): ISODate {
 /** Caption shown while the eating day differs from the calendar date (00:00–03:59). */
 export function eatingDayCaption(eatingDay: ISODate): string {
   const boundary = `${String(BEDTIME_ROLLOVER_HOUR).padStart(2, '0')}:00`;
-  return `Logging to ${formatDateShort(eatingDay)} — meals before ${boundary} count toward the previous day`;
+  return `Logging meals to ${formatDateShort(eatingDay)} — entries before ${boundary} count toward the previous day`;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +327,41 @@ export function hoursToBed(at: HHMM, bedTarget: HHMM): number | null {
   return round((b - a) / 60, 1);
 }
 
+/**
+ * How close a caffeine time sits to the bed target, for the card copy:
+ * "within 6.5 h of bed", "right at your 11:00 pm bed target", or — for a time
+ * past the target — "after your 11:00 pm bed target" (R7-6). `hours` is
+ * `hoursToBed(t, bedTarget)`; null (malformed time) reads as "close to bed".
+ */
+export function bedProximity(hours: number | null, bedTarget: HHMM): string {
+  if (hours === null) return 'close to bed';
+  if (hours < 0) return `after your ${formatClock(bedTarget)} bed target`;
+  if (hours === 0) return `right at your ${formatClock(bedTarget)} bed target`;
+  return `within ${fmt(hours, 1)} h of bed`;
+}
+
+/**
+ * Caution under the caffeine card once something is logged after the cutoff
+ * (§7 #12), measuring EACH logged time against the bed target itself rather
+ * than reusing one figure for all of them (R7-6). Null when nothing is late.
+ *   ['16:30']          → "You logged caffeine at 4:30 pm — within 6.5 h of bed. Cut off by 2:00 pm tomorrow to protect deep sleep."
+ *   ['16:30', '23:30'] → "You logged caffeine after your 2:00 pm cutoff: 4:30 pm (within 6.5 h of bed), 11:30 pm (after your 11:00 pm bed target). Cut off by …"
+ */
+export function caffeineLateCaption(caf: readonly HHMM[] | undefined, bedTarget: HHMM, cutoff: HHMM): string | null {
+  const late = (caf ?? []).filter((t) => isAfterCutoff(t, cutoff));
+  if (late.length === 0) return null;
+  const tail = `Cut off by ${formatClock(cutoff)} tomorrow to protect deep sleep.`;
+  if (late.length === 1) return `You logged caffeine at ${formatClock(late[0])} — ${bedProximity(hoursToBed(late[0], bedTarget), bedTarget)}. ${tail}`;
+  const list = late.map((t) => `${formatClock(t)} (${bedProximity(hoursToBed(t, bedTarget), bedTarget)})`).join(', ');
+  return `You logged caffeine after your ${formatClock(cutoff)} cutoff: ${list}. ${tail}`;
+}
+
+/** Hint for the time being picked when it is past the cutoff — computed from THAT time, not from an earlier log (R7-6). */
+export function caffeinePickHint(at: HHMM, bedTarget: HHMM, cutoff: HHMM): string | null {
+  if (!isAfterCutoff(at, cutoff)) return null;
+  return `${formatClock(at)} is past your ${formatClock(cutoff)} cutoff — a coffee then lands ${bedProximity(hoursToBed(at, bedTarget), bedTarget)}.`;
+}
+
 /** Normalised HH:MM from a <input type="time"> value, or the fallback when malformed. */
 export function normaliseTime(value: string, fallback: HHMM): HHMM {
   const m = hhmmToMinutes(value);
@@ -340,41 +375,45 @@ export function normaliseTime(value: string, fallback: HHMM): HHMM {
 /** SPEC §6.2: a 7-day block needs ≥ 5 weigh-ins (and intake days) to update the expenditure estimate. */
 export const WEIGH_INS_GATE = 5;
 
-/**
- * "This block" copy for the weight card. It reads `weeklyExpenditure(...)`,
- * whose `weighInsThisWeek` counts the in-progress 7-day block anchored to the
- * first weigh-in — the block the expenditure gate is evaluated on — not the
- * trailing 7 calendar days (`weighInsInWeek`), so the Log and Trends counters
- * agree. `met` is `blockProgress(result, today).met` (both gates), so
- * "Enough…" is only promised when the block will actually publish.
- */
-export function weighInBlockLine(result: ExpenditureResult, met: boolean): { value: string; sub: string } {
-  const value = `${result.weighInsThisWeek}/7 weigh-ins`;
-  if (!result.firstWeighIn || !result.nextUpdate) {
-    return { value, sub: `Your first weigh-in starts a 7-day block — weigh in ${WEIGH_INS_GATE}+ days of it so expenditure can calibrate.` };
-  }
-  const next = formatDateShort(result.nextUpdate);
-  if (met) return { value, sub: `Enough for this block’s expenditure update · updates ${next}.` };
-  return { value, sub: `in this block · updates ${next} — weigh in ${WEIGH_INS_GATE}+ days to calibrate.` };
+export interface WeighInBlockLine {
+  /** "n/7" — weigh-ins so far in the in-progress block. */
+  value: string;
+  /** The sentence under it. */
+  sub: string;
+  /** True when the block has enough weigh-ins AND intake days to update the estimate. */
+  met: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Lazy AI client (R7-3)
-// ---------------------------------------------------------------------------
-
-const CLIENT_LOAD_FALLBACK = 'the AI client could not be created';
-
 /**
- * Readable reason for a `createClient` rejection. The SDK is a lazily imported
- * chunk, so the usual failure is the browser's "Failed to fetch dynamically
- * imported module" (offline, blocked, or a stale deploy) — say what to do
- * about it rather than echo the URL.
+ * "This block" copy for the weight card (R7-5). It reads
+ * `weeklyExpenditure(records, today)`, whose `weighInsThisWeek` counts the
+ * in-progress 7-day block anchored to the first weigh-in — the block the
+ * expenditure gate is actually evaluated on — not the trailing 7 calendar days
+ * (`ctx.weight.weighInsThisWeek` / `weighInsInWeek`), so the Log and Trends
+ * counters agree. "Enough…" is only promised when both §6.2 gates are met
+ * (≥5 weigh-ins and ≥5 intake days, the same test as Trends' blockProgress)
+ * AND the block can publish: the blocks starting < CALIBRATION_DAYS after the
+ * first weigh-in only build history (estimateWeek marks them invalid), and
+ * while `calibrating` the date is the FIRST estimate, not an update.
+ *   1/7 → "in this block · updates Sat 12 Sep — weigh in 5+ days to calibrate."
+ *   6/7 → "Enough for this block’s expenditure update · updates Sat 12 Sep."
  */
-export function describeClientError(e: unknown): string {
-  const msg = e instanceof Error ? e.message.trim() : '';
-  if (!msg) return CLIENT_LOAD_FALLBACK;
-  if (/dynamically imported module|Failed to fetch|Importing a module script failed|Loading chunk/i.test(msg)) {
-    return 'the AI module could not be downloaded — check your connection and reload';
+export function weighInBlockLine(result: ExpenditureResult, today: ISODate, gate = WEIGH_INS_GATE): WeighInBlockLine {
+  const w = result.weighInsThisWeek;
+  const value = `${w}/7`;
+  if (!result.firstWeighIn || !result.nextUpdate) {
+    return { value, met: false, sub: `Your first weigh-in starts a 7-day block — weigh in ${gate}+ days of it so expenditure can calibrate.` };
   }
-  return msg;
+  const when = `${result.calibrating ? 'first estimate' : 'updates'} ${formatDateShort(result.nextUpdate)}`;
+  const met = w >= gate && result.intakeDaysThisWeek >= gate;
+  const blockIndex = Math.floor(Math.max(0, diffDays(result.firstWeighIn, today)) / 7);
+  const historyOnly = 7 * blockIndex < CALIBRATION_DAYS;
+  if (historyOnly) {
+    return met
+      ? { value, met, sub: `Enough for this block — it builds calibration history · ${when}.` }
+      : { value, met, sub: `in this block · ${when} — weigh in ${gate}+ days of every block to calibrate.` };
+  }
+  if (met) return { value, met, sub: `Enough for this block’s expenditure update · ${when}.` };
+  if (w >= gate) return { value, met, sub: `in this block · ${when} — log meals on ${gate}+ days of it too so expenditure can update.` };
+  return { value, met, sub: `in this block · ${when} — weigh in ${gate}+ days to calibrate.` };
 }

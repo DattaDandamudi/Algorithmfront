@@ -287,15 +287,20 @@ export function caffeineCheck(caf: HHMM[] | undefined, bedTarget: HHMM, cutoff: 
     .map((t) => hhmmToMinutes(t))
     .filter((m): m is number => m !== null);
   if (!times.length) return { afterCutoff: null, latest: null, hoursBeforeBed: null };
-  const latestMin = Math.max(...times);
+  // Work on the eating-day axis (minutes since 04:00) so a 00:30 coffee counts as
+  // late-evening — after a 14:00 cutoff and past a 23:00 bed target — instead of
+  // as an early-morning one, and a bed target after midnight ('00:30') still
+  // lands later than any evening time.
+  const axis = (m: number) => (m - 4 * 60 + 1440) % 1440;
+  const latestMin = times.reduce((best, m) => (axis(m) > axis(best) ? m : best), times[0]);
   const latest = minutesToHHMM(latestMin);
   const cutoffMin = hhmmToMinutes(cutoff);
-  const afterCutoff = cutoffMin !== null && latestMin > cutoffMin ? latest : null;
+  const afterCutoff = cutoffMin !== null && axis(latestMin) > axis(cutoffMin) ? latest : null;
   const bedMin = hhmmToMinutes(bedTarget);
   let hoursBeforeBed: number | null = null;
   if (bedMin !== null) {
-    // Bed targets after midnight ('00:30') sit on the next calendar day.
-    const diff = bedMin >= latestMin ? bedMin - latestMin : bedMin + 1440 - latestMin;
+    // A coffee at or after the bed target is 0 h before bed — never "23.5 h" (review R7-6).
+    const diff = Math.max(0, axis(bedMin) - axis(latestMin));
     hoursBeforeBed = round(diff / 60, 1);
   }
   return { afterCutoff, latest, hoursBeforeBed };

@@ -47,7 +47,8 @@ import { addDays, formatClock, formatDateShort, nowHHMM, parseISODate, toISODate
 import { fmt, fmtWeight } from '../lib/format';
 import { toast } from '../ui';
 import { useNav, type LogSection } from '../nav';
-import AIBar, { type AIStatus } from './log/AIBar';
+import AIBar from './log/AIBar';
+import { CLIENT_LOAD_FALLBACK, describeClientError, photoAINote, type AIStatus } from './log/aiStatus';
 import BarcodeSheet from './log/BarcodeSheet';
 import BedtimeCard from './log/BedtimeCard';
 import EstimateSheet from './log/EstimateSheet';
@@ -64,7 +65,6 @@ import {
   appendClarification,
   appendNote,
   bedtimeRecordDate,
-  describeClientError,
   eatingDayCaption,
   eatingDayOf,
   estimateNote,
@@ -132,12 +132,14 @@ const AI_LOAD_WAIT_MS = 3000;
 
 /** Wall-clock HH:MM at the moment of a tap — stamps should not be up to 59 s stale. */
 const clockNow = (): HHMM => nowHHMM(new Date());
+/** The eating day at the moment a sheet opens / a quick-add lands (pairs with `clockNow`, R7-1/R7-2). */
+const mealDayNow = (): ISODate => eatingDayOf(new Date());
 
 // ---------------------------------------------------------------------------
 // Lazy AI client (R7-3)
 // ---------------------------------------------------------------------------
 
-type ClientStatus = 'idle' | 'loading' | 'ready' | 'error';
+type ClientStatus = 'none' | 'loading' | 'ready' | 'error';
 
 /**
  * The client for one AISettings object. Keyed by the settings identity so a
@@ -152,7 +154,10 @@ interface ClientSlot {
   error: string | null;
 }
 
-const freshSlot = (ai: AISettings): ClientSlot => ({ ai, status: isAIConfigured(ai) ? 'loading' : 'idle', client: null, error: null });
+const freshSlot = (ai: AISettings): ClientSlot => ({ ai, status: isAIConfigured(ai) ? 'loading' : 'none', client: null, error: null });
+
+/** Settings objects whose failed load was already toasted — the Log remounts on every tab visit and retries; one warning per configuration is enough. */
+const loadErrorToasted = new WeakSet<AISettings>();
 
 // ---------------------------------------------------------------------------
 
@@ -203,13 +208,16 @@ export default function Log() {
     let alive = true;
     createClient(ai)
       .then((c) => {
-        if (alive) setSlot({ ai, status: c ? 'ready' : 'idle', client: c, error: null });
+        if (alive) setSlot({ ai, status: c ? 'ready' : 'none', client: c, error: null });
       })
       .catch((e: unknown) => {
         if (!alive) return;
         const error = describeClientError(e);
         setSlot({ ai, status: 'error', client: null, error });
-        toast(`AI unavailable — ${error}`, 'warn');
+        if (!loadErrorToasted.has(ai)) {
+          loadErrorToasted.add(ai);
+          toast(`AI unavailable — ${error}. Meals still log with the local estimate.`, 'warn');
+        }
       });
     return () => {
       alive = false;
@@ -229,9 +237,9 @@ export default function Log() {
     const id = window.setTimeout(() => setSlowLoad(true), AI_LOAD_WAIT_MS);
     return () => window.clearTimeout(id);
   }, [clientStatus, settings.ai]);
-  const aiStatus: AIStatus = clientStatus === 'idle' ? 'off' : clientStatus === 'loading' ? (slowLoad ? 'slow' : 'loading') : clientStatus;
+  const aiStatus: AIStatus = clientStatus === 'loading' && slowLoad ? 'slow' : clientStatus;
   /** Why a configured key still has no client right now — for the estimate note and toast. */
-  const noClientReason = clientStatus === 'error' ? (clientError ?? 'the AI client could not be created') : 'the AI module is still loading';
+  const noClientReason = clientStatus === 'error' ? (clientError ?? CLIENT_LOAD_FALLBACK) : 'the AI module is still loading';
 
   // --- AI bar + sheet ---------------------------------------------------------
   const inputRef = useRef<HTMLInputElement>(null);
@@ -289,7 +297,7 @@ export default function Log() {
           items: est.items,
           // The AI bar's time is the real clock; the day is the eating day (a clarification keeps both).
           time: keepTime ?? clockNow(),
-          date: keepTime && s.open ? s.date : eatingDayOf(new Date()),
+          date: keepTime && s.open ? s.date : mealDayNow(),
           clarify: est.clarify,
           note: estimateNote(origin),
           src: ESTIMATE_MEAL_SRC,
@@ -321,7 +329,7 @@ export default function Log() {
       title: est.items[0]?.name ?? `Barcode ${code}`,
       items: est.items,
       time: clockNow(),
-      date: eatingDayOf(new Date()),
+      date: mealDayNow(),
       clarify: null,
       note: BARCODE_NOTE,
       src: 'barcode',
@@ -336,9 +344,9 @@ export default function Log() {
   const runPhoto = useCallback(
     async (file: File, hint: string, keepTime?: HHMM) => {
       if (!client) {
-        // The PhotoSheet already hides the camera without a key; this covers
-        // the loading / failed-load window for a configured key (R7-3).
-        setPhotoError(!aiConfigured ? 'Add an AI key in Settings to estimate from photos.' : clientStatus === 'error' ? `AI unavailable — ${noClientReason}.` : 'The AI module is still loading — try again in a moment, or type it.');
+        // The PhotoSheet hides the camera without a key and holds it while the
+        // client loads / after a failed load (R7-3); this is the safety net.
+        setPhotoError(photoAINote(aiStatus, clientError) ?? 'Add an AI key in Settings to estimate from photos.');
         return;
       }
       setPhotoBusy(true);
@@ -359,7 +367,7 @@ export default function Log() {
           title: est.items.length > 1 ? `Confirm ${est.items.length} items` : 'Confirm the photo estimate',
           items: est.items,
           time: keepTime ?? clockNow(),
-          date: keepTime && s.open ? s.date : eatingDayOf(new Date()),
+          date: keepTime && s.open ? s.date : mealDayNow(),
           clarify: est.clarify,
           note: PHOTO_NOTE,
           src: 'photo',
@@ -374,7 +382,7 @@ export default function Log() {
         if (alive.current) setPhotoBusy(false);
       }
     },
-    [client, clientStatus, aiConfigured, noClientReason, settings.ai, profile],
+    [client, aiStatus, clientError, settings.ai, profile],
   );
 
   const onClarify = (answer: string) => {
@@ -456,7 +464,7 @@ export default function Log() {
 
   const quickAdd = (item: FoodItem, src: 'recent' | 'favorite') => {
     const est = foodItemToEstimate(item, portionOf(item));
-    actions.addMeal(mealDay, itemToMeal(est, clockNow(), src));
+    actions.addMeal(mealDayNow(), itemToMeal(est, clockNow(), src));
     actions.touchRecent(item);
     toast(`Added ${item.name} · ${fmt(est.kcal)} kcal · ${fmt(est.protein_g)} g P`);
   };
@@ -468,7 +476,7 @@ export default function Log() {
       title: item.name,
       items: [foodItemToEstimate(item, portionOf(item))],
       time: clockNow(),
-      date: mealDay,
+      date: mealDayNow(),
       clarify: null,
       note: null,
       src,
@@ -703,8 +711,8 @@ export default function Log() {
       <PhotoSheet
         open={secondary === 'photo'}
         onClose={closeSecondary}
-        aiConfigured={aiConfigured}
-        aiLoading={aiStatus === 'loading'}
+        aiStatus={aiStatus}
+        aiError={clientError}
         busy={photoBusy}
         error={photoError}
         onPick={(file, hint) => void runPhoto(file, hint)}

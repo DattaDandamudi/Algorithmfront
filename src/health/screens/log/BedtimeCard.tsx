@@ -12,7 +12,9 @@
  *
  * Shows last night's logged bedtime (today's record), tonight's if already
  * pressed (with Undo), the countdown nudge from `bedtimeCountdown`, and the
- * 7-night consistency SD with the spec's empty-state copy.
+ * bedtime SD over the nights actually logged in the rolling 7-day window
+ * (`ctx.sleep.bedtimeNights`, shown from 3 — review R7-12: a 4-night SD must
+ * not be labelled "7 nights") with the spec's empty-state copy.
  */
 import { Moon } from 'lucide-react';
 import { BEDTIME_SD_MIN_NIGHTS } from '../trends/series';
@@ -43,7 +45,8 @@ export default function BedtimeCard({ ctx, now, profile, targetDate, targetRecor
   const lastKnown = lastNight ?? (tonight ? null : ctx.sleep.lastBedtime);
   const countdown = bedtimeCountdown(now, profile.bedTarget, profile.wakeTarget);
   // Same gate as the Trends consistency card: an SD from fewer than 3 nights is noise.
-  const sd = (ctx.sleep.bedtimeNights ?? 0) >= BEDTIME_SD_MIN_NIGHTS ? ctx.sleep.bedtimeSdMin : null;
+  const nights = ctx.sleep.bedtimeNights ?? 0;
+  const sd = nights >= BEDTIME_SD_MIN_NIGHTS ? ctx.sleep.bedtimeSdMin : null;
   // The record is dated the morning after; show the night it belongs to.
   const nightOf = addDays(targetDate, -1);
 
@@ -76,7 +79,7 @@ export default function BedtimeCard({ ctx, now, profile, targetDate, targetRecor
           Last night: <span className="text-hx-text font-semibold">{lastKnown ? formatClock(lastKnown) : '—'}</span>
         </span>
         <span className="text-hx-text2 text-right">
-          {sd === null ? 'Tap "Going to bed" nightly — consistency shows after 3 nights.' : `Bedtime swing ${fmt(sd)} min (7 nights)`}
+          {sd === null ? 'Tap "Going to bed" nightly — consistency shows after 3 nights.' : `Bedtime swing ${fmt(sd)} min over the last ${nights} nights`}
         </span>
       </div>
     </div>
