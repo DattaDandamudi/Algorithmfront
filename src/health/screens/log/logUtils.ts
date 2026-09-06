@@ -108,7 +108,10 @@ const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v)
  */
 export function groupMealsByTime(meals: Meal[] | undefined): MealGroup[] {
   if (!meals || meals.length === 0) return [];
-  const occasions = new Set(mealOccasions(meals).map((o) => o.t));
+  // Every clock time folded into the sitting, not just its first: with gap
+  // grouping a 13:20 roti belongs to the 13:00 sitting, and keying on `o.t`
+  // alone would render it as a non-occasion.
+  const occasions = new Set(mealOccasions(meals).flatMap((o) => o.times));
   const map = new Map<HHMM, MealGroup>();
   for (const m of meals) {
     const g = map.get(m.t) ?? { t: m.t, meals: [], kc: 0, p: 0, isOccasion: occasions.has(m.t) };
