@@ -1040,6 +1040,14 @@ export interface CoachContext {
     sriNights?: number;
     /** |midsleep on rest days − midsleep on training days|, minutes (MCTQ). */
     socialJetlagMin?: number | null;
+    /**
+     * How tonight's need was arrived at, and the hedges behind it: the strain
+     * add and the circadian-delay penalty are both our own calibration rather
+     * than published quantities, and this is the string that says so where a
+     * user can read it. The engine computed it from the start; without this
+     * field it reached no screen and no coach.
+     */
+    tonightNeedReason?: string;
   };
   steps: BaselineDelta & { goalMin: number; goalMax: number };
   weight: {

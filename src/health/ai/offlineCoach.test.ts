@@ -586,7 +586,8 @@ describe('2d overtraining — cites load, ACWR and the check-in', () => {
 describe('2d stress — signals, check-in and resilience, as patterns not causes', () => {
   it('leads on the count of deviating signals and names them', () => {
     const out = ask(STRESS_CHIP);
-    expect(out).toContain('1 of 5 overnight signals is outside your own range: breathing rate 14.9 (+1.4 SD).');
+    // Breathing rate carries sign +1, so a strain z of +1.4 is 1.4 SD above normal.
+    expect(out).toContain('1 of 5 overnight signals is outside your own range: breathing rate 14.9 (1.4 SD above your normal).');
     expect(out).toContain('Overnight strain index 28 of 100 (19–37 interval), band none.');
     expect(out).toContain('You rated stress 2 of 7 and fatigue 3 of 7 this morning.');
     expect(out).toContain('Resilience 62 (solid), load-vs-recovery balance +0.19.');
@@ -598,10 +599,20 @@ describe('2d stress — signals, check-in and resilience, as patterns not causes
       ...ctx.stress!,
       signalsDeviating: 3,
       band: 'major',
-      outliers: ctx.stress!.outliers.map((o) => (o.key === 'hrv' || o.key === 'rhr' || o.key === 'rr' ? { ...o, deviating: true } : o)),
+      // `z` is on the strain axis, so a deviating signal is one whose z has
+      // crossed its threshold upward whatever the underlying metric did. The
+      // old fixture flipped `deviating` on without touching z, which asked the
+      // coach to describe an outlier at −0.4 SD — a state the engine cannot
+      // produce, and the reason this line used to read "hrv 54 (−0.4 SD)" as
+      // if the user's variability had risen on a night it fell.
+      outliers: ctx.stress!.outliers.map((o) =>
+        o.key === 'hrv' ? { ...o, z: 1.6, deviating: true } : o.key === 'rhr' ? { ...o, z: 1.5, deviating: true } : o.key === 'rr' ? { ...o, deviating: true } : o,
+      ),
     };
     const out = ask(STRESS_CHIP, ctx);
-    expect(out).toContain('3 of 5 overnight signals are outside your own range: hrv 54 (−0.4 SD) and resting hr 52 (−0.6 SD).');
+    // HRV carries sign −1, so a strain z of +1.6 is variability 1.6 SD *below*
+    // this user's own normal; resting heart rate carries +1, so +1.5 is above.
+    expect(out).toContain('3 of 5 overnight signals are outside your own range: hrv 54 (1.6 SD below your normal) and resting hr 52 (1.5 SD above your normal).');
     expect(out).toMatch(/\*\*Protect tonight: in bed by 23:00, nothing caffeinated after 14:00, and keep training easy\.\*\*$/);
   });
 
@@ -688,6 +699,54 @@ describe('2d stress & impact copy — associations with intervals, never causes 
       const out = ask(q);
       expect(out).not.toMatch(/illness|overload|doctor/i);
     }
+  });
+
+  it('"what should I lift today?" escalates on a flagged run like the other training answers', () => {
+    // The same question wearing different words. The escalation originally
+    // covered only the `train` and `recovery` routes, so a lifter who asked
+    // for their session by name got loads and a top set with no mention that
+    // five of their overnight signals had been outside range for days.
+    const ctx = fullContext();
+    ctx.readiness = { ...ctx.readiness, score: 34, band: 'red', verdict: 'Run down — keep today light', training: 'Light day' };
+    ctx.stress = {
+      ...ctx.stress!,
+      band: 'major',
+      osi: 99,
+      signalsDeviating: 5,
+      illness: { flag: true, since: '2026-09-02', reasons: ['skin temp +1.4 SD for 2 nights', 'breathing rate +1.6 SD'] },
+    };
+    expect(routeQuestion(LIFT_CHIP)).toBe('lift');
+    const out = ask(LIFT_CHIP, ctx);
+    expect(out).toContain('Possible illness or heavy overload since 2026-09-02');
+    expect(out).toContain('not a diagnosis');
+    expect(out).toMatch(/\*\*Keep today easy, sleep long and hydrate; if it lasts more than a few days or you feel unwell, see your doctor\.\*\*$/);
+    expect(out).not.toMatch(/\b(infection|virus|viral|flu|covid|fever)\b/i);
+    // The flag survives the 'direct' tone, which keeps only the first two details.
+    expect(ask(LIFT_CHIP, ctx, 'direct')).toContain('Possible illness or heavy overload');
+    // And with the flag down it invents nothing.
+    expect(ask(LIFT_CHIP)).not.toMatch(/illness|overload|doctor/i);
+  });
+
+  it('tonight\'s sleep need is quoted with the calibration behind it', () => {
+    // `tonightNeedReason` was computed from the start and reached no surface,
+    // so the strain add and the circadian-delay penalty changed the number a
+    // user was told to sleep while their "our own calibration" hedge lived
+    // only in a code comment.
+    const ctx = fullContext();
+    ctx.sleep = {
+      ...ctx.sleep,
+      tonightNeed: 8.57,
+      tonightNeedReason: 'Baseline 7.75 h, +49 min for today\'s strain. The midpoint, scale and ceiling are our own calibration, not published quantities.',
+    };
+    const out = ask('how did last night\'s sleep affect me?', ctx);
+    expect(out).toContain('Tonight you need 8.6 h');
+    expect(out).toContain('our own calibration, not published quantities');
+    // No reason on file: the number still appears, without an invented hedge.
+    const bare = fullContext();
+    bare.sleep = { ...bare.sleep, tonightNeed: 8, tonightNeedReason: undefined };
+    const out2 = ask('how did last night\'s sleep affect me?', bare);
+    expect(out2).toContain('Tonight you need 8 h');
+    expect(out2).not.toContain('calibration');
   });
 
   it('"am I getting sick?" is a symptom ask: it holds training and sends the user to a clinician', () => {

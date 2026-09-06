@@ -466,6 +466,7 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       sri: sleep.sri,
       sriNights: sleep.sriNights,
       socialJetlagMin: sleep.socialJetlagMin,
+      tonightNeedReason: sleep.tonightNeedReason,
     },
     steps: {
       // Like every other tile: the previous 30 days, never today's partial count (R3-9).

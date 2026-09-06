@@ -28,7 +28,8 @@
  * modifier: **possible** illness *or* heavy overload, the user's own numbers as
  * the evidence, no condition named, and the doctor on persistence.
  */
-import type { CoachContext, CoachTone, ISODate, Profile, SessionType, Targets, TrainingSplit, Weekday } from '../data/types';
+import type { CoachContext, CoachTone, ISODate, Profile, SessionType, StressSignal, Targets, TrainingSplit, Weekday } from '../data/types';
+import { SIGNAL_STRAIN_SIGN } from '../engine/stress';
 import { hhmmToMinutes, weekdayOf } from '../lib/dates';
 import { fmt, fmtSigned, fmtWeight, kgToLb, lbToKg, round } from '../lib/format';
 import { EMERGENCY_MESSAGE, MAX_WORDS, detectEmergency, isSymptomAsk, wordCount } from './guardrails';
@@ -181,6 +182,21 @@ function sleepSentence(ctx: CoachContext): string {
  * naming no condition. Null when the flag is down, so a caller can push it
  * without a guard of its own.
  */
+/**
+ * `StressSignal.z` is on the *strain* axis: heart-rate variability and blood
+ * oxygen carry `sign: -1`, so a night either one FELL comes through positive.
+ * Printing it as "(+2.2 SD)" therefore told the user their variability was
+ * above normal on exactly the nights it had dropped. Divide the sign back out
+ * and say which side of their own normal it landed on, in words, the way the
+ * stress card does.
+ */
+function signalDistance(o: StressSignal): string {
+  const sign = SIGNAL_STRAIN_SIGN[o.key] ?? 1;
+  const metricZ = (o.z as number) * sign;
+  const side = metricZ >= 0 ? 'above' : 'below';
+  return `${r1(Math.abs(metricZ))} SD ${side} your normal`;
+}
+
 function illnessNote(ctx: CoachContext): string | null {
   const ill = ctx.stress?.illness;
   if (!ill?.flag) return null;
@@ -350,8 +366,17 @@ function lift(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
   const lastSession = t?.lastSession;
   if (lastSession) details.push(`Last session: ${lastSession.session ?? lastSession.kind} on ${lastSession.d}${has(lastSession.srpe) ? ` at RPE ${lastSession.srpe}` : ''}.`);
 
+  // "What should I lift today?" is the same question as "should I train
+  // today?" wearing different words, so it escalates the same way. Unshifted
+  // for the same reason the train route does it: `compose` trims details from
+  // the end, and 'direct' keeps only the first two.
+  const illness = illnessNote(ctx);
+  if (illness) details.unshift(illness);
+
   let action: string;
-  if (!planned.length) {
+  if (illness) {
+    action = ILLNESS_ACTION;
+  } else if (!planned.length) {
     action = session
       ? `Log today's ${session} session in Train — with your sets and RPE on file I can pick the loads next time`
       : `Keep it a rest day: walk toward ${targets.stepsMin.toLocaleString('en-US')} steps and save the progression for your next ${next ?? 'lift'} session`;
@@ -420,7 +445,7 @@ function stress(ctx: CoachContext, profile: Profile): Parts {
   const deviating = (s?.outliers ?? []).filter((o) => o.deviating);
   const named = deviating
     .slice(0, 2)
-    .map((o) => `${o.label.toLowerCase()}${has(o.value) ? ` ${r1(o.value)}` : ''}${has(o.z) ? ` (${fmtSigned(o.z, 1)} SD)` : ''}`)
+    .map((o) => `${o.label.toLowerCase()}${has(o.value) ? ` ${r1(o.value)}` : ''}${has(o.z) ? ` (${signalDistance(o)})` : ''}`)
     .join(' and ');
 
   let lead: string;
@@ -621,6 +646,15 @@ function sleep(ctx: CoachContext, profile: Profile): Parts {
   }
   if (s.lastBedtime) {
     details.push(`Bed at ${s.lastBedtime} vs your ${profile.bedTarget} target${has(s.bedtimeSdMin) ? `; bedtime has swung ${r0(s.bedtimeSdMin)} min this week` : ''}.`);
+  }
+  // Tonight's number and how it was arrived at, including the two hedges the
+  // engine attaches to it: the strain add and the circadian-delay penalty are
+  // our own calibration rather than published quantities. The engine has
+  // computed this string all along; until it was carried through the context
+  // it reached no screen and no answer, so the caveat existed only in a
+  // comment while the number it qualifies changed the advice.
+  if (has(s.tonightNeed)) {
+    details.push(`Tonight you need ${r1(s.tonightNeed)} h${s.tonightNeedReason ? `. ${s.tonightNeedReason}` : '.'}`);
   }
   const short = has(s.hours) && has(s.need) && s.hours < s.need - 0.5;
   if (short) details.push('Short sleep in a deficit shifts loss toward muscle and pushes hunger up — expect stronger cravings today.');
