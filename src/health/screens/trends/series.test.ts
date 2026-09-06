@@ -173,7 +173,7 @@ describe('tdeeSeries', () => {
     const by = (r: '7D' | '30D' | '90D' | '1Y') => tdeeSeries(recs, rangeWindow(r, TODAY), 0.1);
     const short = by('7D');
     const long = by('1Y');
-    // The 4 points 7D plots are exactly the last 4 of the 52 that 1Y plots.
+    // The 4 points 7D plots are exactly the last 4 of the 17 completed blocks that 1Y plots (R7-7: never 52 padded ones).
     expect(short.points).toEqual(long.points.slice(-4));
     expect(by('30D').points).toEqual(long.points.slice(-5));
     expect(by('90D').points).toEqual(long.points.slice(-13));
@@ -215,9 +215,21 @@ describe('tdeeSeries', () => {
   });
   it('keeps only the latest update marker at 1Y', () => {
     const t = tdeeSeries(demo(40), rangeWindow('1Y', TODAY), 0.1);
-    expect(t.points).toHaveLength(52);
+    // R7-7: 1Y asks for 52 blocks but only 5 have completed since the first
+    // weigh-in (39 days ago) — the series is never padded with phantom
+    // blocks dated before the user ever weighed in.
+    expect(t.points).toHaveLength(5);
+    expect(t.points[0].d).toBe(addDays(t.result.firstWeighIn as string, 6));
+    expect(t.points.every((p) => p.d > (t.result.firstWeighIn as string))).toBe(true);
     expect(t.annotations).toHaveLength(1);
     expect(t.annotations[0].d).toBe(t.result.weeks[t.result.weeks.length - 1].end);
+  });
+  it('plots only completed blocks since the first weigh-in at every range (R7-7)', () => {
+    // demo(120): 17 completed 7-day blocks (day 119 sits in block 17) → 17 points at 1Y, not 52.
+    const t = tdeeSeries(demo(120), rangeWindow('1Y', TODAY), 0.1);
+    expect(t.points).toHaveLength(17);
+    expect(t.points[0].d).toBe(addDays(t.result.firstWeighIn as string, 6));
+    expect(t.points.filter((p) => p.value !== null).length).toBe(t.result.weeks.filter((w) => w.valid).length);
   });
   it('words the in-progress block as progress, not failure (engine v2 anchored blocks)', () => {
     // demo(40): first weigh-in 39 days ago → the open block started 4 days ago (5 of 7 days incl. today), 2 left.

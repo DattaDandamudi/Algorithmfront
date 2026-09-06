@@ -79,7 +79,7 @@ describe('MetricTiles — HRV delta (R7-8: the 28-day reference is the one basel
     ctx.hrv = { ...ctx.hrv, today: 57, baseline7: 59.4, baseline28: 59.7, baselineEstablished: true, daysOfData: 30, delta: bd({ today: 57, baseline: 59.47, delta: -2.47, n: 30, good: false }) };
     const hrv = tile(render(ctx, false), 'HRV');
     expect(hrv).toContain('vs 28-day baseline');
-    expect(hrv).toMatch(/▼<\/span><span aria-hidden> 3 ms<\/span>/);
+    expect(hrv).toMatch(/▼<\/span><span aria-hidden="true"> 3 ms<\/span>/);
     expect(hrv).not.toContain('vs 30-day avg');
     expect(hrv).not.toMatch(/> 2 ms</);
   });
@@ -89,6 +89,6 @@ describe('MetricTiles — HRV delta (R7-8: the 28-day reference is the one basel
     ctx.hrv = { ...ctx.hrv, today: 57, delta: bd({ today: 57, baseline: 59.47, delta: -2.47, n: 30, good: false }) };
     const hrv = tile(render(ctx, false), 'HRV');
     expect(hrv).toContain('vs 30-day avg');
-    expect(hrv).toMatch(/▼<\/span><span aria-hidden> 2 ms<\/span>/);
+    expect(hrv).toMatch(/▼<\/span><span aria-hidden="true"> 2 ms<\/span>/);
   });
 });
