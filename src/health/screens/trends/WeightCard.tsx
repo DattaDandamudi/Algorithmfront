@@ -1,25 +1,28 @@
 /**
- * Weight card — SPEC §3 / §6.1.
+ * Weight card — SPEC §3 / §6.1, on §1a's filter.
  *
- * Daily scale dots (neutral) under the EWMA trend line (α from settings) with
- * the water-noise band (trend ± expenditure.waterNoiseBand) as a 12 % wash —
- * "trust the trend line, never a single dot". Readouts: trend in the profile
- * unit, weekly rate in lb/wk (kg/wk for kg users) AND %BW/wk, and the
- * 0.5–1 %BW/wk target band converted to the current weight (172 lb →
- * 0.86–1.72 lb/wk) as a highlighted band with a marker for this week's rate
- * and the band state. The §1 empty state shows only while the trend itself is
- * unavailable (no EWMA yet, or fewer than 5 weigh-ins EVER) — an established
- * trend is never hidden because the selected range happens to hold few
- * weigh-ins; that case gets a neutral "N weigh-ins in this range" caption
- * (review R2-3).
+ * Daily scale dots (neutral) under the **RTS-smoothed Kalman level** with its
+ * 90% credible band as a 12% wash — "trust the trend line, never a single
+ * dot", and now the band says how much to trust the line itself. Weigh-ins the
+ * outlier gate set aside are drawn hollow rather than dropped: the number the
+ * user typed stays visible, it simply is not part of the trend.
+ *
+ * Readouts: the level in the profile unit, the weekly rate in lb/wk (kg/wk for
+ * kg users) with its own 90% interval, and the 0.5–1 %BW/wk target band
+ * converted to the current weight (172 lb → 0.86–1.72 lb/wk) as a highlighted
+ * band with a marker for this week's rate and the band state. The §1 empty
+ * state shows only while the trend itself is unavailable (no level yet, or
+ * fewer than 5 weigh-ins EVER) — an established trend is never hidden because
+ * the selected range happens to hold few weigh-ins; that case gets a neutral
+ * "N weigh-ins in this range" caption (review R2-3).
  */
 import { Scale } from 'lucide-react';
 import type { CoachContext, Targets } from '../../data/types';
 import { COACH_CHIPS } from '../../engine';
 import { clamp, fmt, fmtSigned } from '../../lib/format';
 import { Button, EmptyState, bandBg, type Tone } from '../../ui';
-import { TimeSeriesChart } from '../../ui/charts';
 import { Note, Readout, TrendCard } from './TrendCard';
+import WeightChart from './WeightChart';
 import { bucketDateFormat, rateBandState, weightFactor, type RangeWindow, type WeightSeries, type WeightUnits } from './series';
 
 /** §6.2's weigh-in gate, reused for the chart: under five weigh-ins EVER the trend is not yet meaningful. */
@@ -39,8 +42,11 @@ export interface WeightCardProps {
 
 export default function WeightCard({ weight, series, win, units, targets, onLogWeight, onOpenCoach }: WeightCardProps) {
   const k = weightFactor(units);
-  const conv = (lb: number | null): number | null => (lb === null ? null : lb * k);
-  const trend = conv(weight.trend);
+  const conv = (lb: number | null | undefined): number | null => (lb === null || lb === undefined ? null : lb * k);
+  // The drawn trend is the smoothed level; the context publishes the filtered
+  // one, and at `today` the smoother and the filter agree (§1a), so the
+  // readout and the end of the line are the same number.
+  const trend = conv(weight.kalmanLevel ?? weight.trend);
   const rate = conv(weight.weeklyRateLb);
   const pct = weight.weeklyRatePct;
   const lo = weight.targetLbPerWk[0] * k;
@@ -48,6 +54,10 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
   const state = rateBandState(weight.inBand, weight.weeklyRateLb);
   // Positive = losing, the direction the target band is defined in.
   const loss = rate === null ? null : -rate;
+  const rateLo = conv(weight.rateLow90);
+  const rateHi = conv(weight.rateHigh90);
+  const rateInterval =
+    rate === null || rateLo === null || rateHi === null ? null : `90% ${fmtSigned(rateLo, 2)} to ${fmtSigned(rateHi, 2)}`;
 
   const action = (
     <Button variant="ghost" size="sm" onClick={() => onOpenCoach(COACH_CHIPS[3])}>
@@ -55,7 +65,7 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
     </Button>
   );
 
-  const trendReady = weight.trend !== null && series.totalWeighIns >= MIN_WEIGH_INS;
+  const trendReady = trend !== null && series.totalWeighIns >= MIN_WEIGH_INS;
   if (!trendReady) {
     return (
       <TrendCard
@@ -74,12 +84,14 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
     );
   }
 
+  const bandText = series.bandHalf === null ? 'a 90% band' : `±${fmt(series.bandHalf, 1)} ${units} (90%)`;
+
   return (
     <TrendCard
       title="Weight"
-      caption={`EWMA trend (α ${targets.ewmaAlpha}) · ${weighInsText(series.weighIns)} in the ${win.label}`}
+      caption={`Smoothed trend with its 90% band · ${weighInsText(series.weighIns)} in the ${win.label}`}
       action={action}
-      meaning={`Trust the line, not the dots — day-to-day swings inside the ±${fmt(series.noise, 1)} ${units} band are water and glycogen, not fat.`}
+      meaning={`Trust the line, not the dots: the shaded ribbon is where your true weight sits ${bandText}, and day-to-day swings inside it are water and glycogen, not fat.`}
     >
       <div className="grid grid-cols-2 gap-3">
         <Readout
@@ -93,31 +105,39 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
           label="Weekly rate"
           value={rate === null ? null : fmtSigned(rate, 2)}
           unit={rate === null ? undefined : `${units}/wk`}
-          sub={pct === null ? 'Needs 8+ days of weigh-ins' : `${fmtSigned(pct, 2)} %BW/wk`}
+          sub={rate === null ? 'Needs 8+ days of weigh-ins' : (rateInterval ?? `${fmtSigned(pct, 2)} %BW/wk`)}
         />
       </div>
 
-      <TimeSeriesChart
-        ariaLabel={`Weight, ${win.label}: daily scale weights, EWMA trend and water-noise band`}
+      <WeightChart
+        ariaLabel={`Weight, ${win.label}: scale readings, the smoothed trend and its 90% band`}
         range={win.range}
-        data={series.dots}
+        dots={series.dots}
+        suspect={series.suspect}
         line={series.trend}
         band={series.band}
-        color="var(--hx-blue)"
-        dotColor="var(--hx-neutral)"
         unit={units}
-        label="Scale"
-        lineLabel="Trend"
-        bandLabel="Water noise"
         dateFormat={bucketDateFormat(win.bucket)}
         emptyText="Weigh in to start your trend."
       />
 
-      {series.weighIns < MIN_WEIGH_INS && (
-        <Note tone="neutral">
-          {weighInsText(series.weighIns)} in this range — the line carries your trend forward from earlier weigh-ins; weigh in {MIN_WEIGH_INS}+ days a week to keep expenditure calibrating.
-        </Note>
-      )}
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[12px] leading-4 text-hx-muted">
+          Filled dots are weigh-ins the trend used. Hollow dots are readings the outlier check set aside — a typo, a different
+          scale, or a day the number simply could not be right.
+        </p>
+        {series.suspectCount > 0 && (
+          <Note tone="yellow">
+            {series.suspectCount} weigh-in{series.suspectCount === 1 ? '' : 's'} set aside in the {win.label}. Nothing is deleted —
+            re-enter a value if it was real and the trend will take it.
+          </Note>
+        )}
+        {series.weighIns < MIN_WEIGH_INS && (
+          <Note tone="neutral">
+            {weighInsText(series.weighIns)} in this range — the line carries your trend forward from earlier weigh-ins; weigh in {MIN_WEIGH_INS}+ days a week to keep expenditure calibrating.
+          </Note>
+        )}
+      </div>
 
       <RateBand lo={lo} hi={hi} loss={loss} unit={units} tone={state.tone} pctBand={targets.weeklyRatePct} stateText={state.text} />
     </TrendCard>

@@ -1,28 +1,33 @@
 /**
  * Trends screen — pure derivations that are not plain metric series (SPEC §3):
  *   • adherence heatmap cells + legends (§3, engine/adherence tolerances),
- *   • weekly expenditure points with update markers (§6.2),
- *   • the one-line intake suggestion for the TDEE readout (§6.2 recommendIntake),
+ *   • the expenditure posterior with its credible band and update markers
+ *     (§1b `weeklyExpenditureV3` — v2's smoothed point estimate is gone),
+ *   • the one-line intake suggestion for the TDEE readout (§1b recommendIntakeV3),
  *   • nutrition-frequency table rows for the labs (§3, §7 #13/#14).
  *
  * Split out of ./series.ts to keep both modules under the ~400-line guide.
  * Same contract: records / engine output in, plain data out — never NaN,
  * never throws, never reads the clock. Tested in series.test.ts.
  */
-import type { Band, CoachContext, DailyRecord, ISODate, Targets } from '../../data/types';
+import type { Band, CoachContext, DailyRecord, ISODate, Profile, Targets, Workout } from '../../data/types';
 import { MONTH_SHORT, addDays, diffDays, parseISODate } from '../../lib/dates';
 import { clamp, fmt, round } from '../../lib/format';
 import {
   KCAL_HIT_OVER_G,
   KCAL_HIT_UNDER_G,
+  MIN_BLOCK_LOG_DAYS,
+  MIN_BLOCK_WEIGH_INS,
   PROTEIN_HIT_TOLERANCE_G,
+  TDEE_CI_Z,
   mealOccasions,
-  weeklyExpenditure,
+  weeklyExpenditureV3,
   type DayAdherence,
-  type ExpenditureResult,
+  type ExpenditureV3Result,
   type FrequencyCounters,
+  type KalmanResult,
 } from '../../engine';
-import { bucketStart, type ChartRange, type DatedValue, type HeatLevel, type HeatmapDay, type TimeSeriesAnnotation } from '../../ui/charts';
+import { bucketStart, type ChartRange, type DatedValue, type HeatLevel, type HeatmapDay, type TimeSeriesAnnotation, type TimeSeriesBandPoint } from '../../ui/charts';
 import { perWeek, type RangeWindow } from './series';
 
 // ---------------------------------------------------------------------------
@@ -84,55 +89,113 @@ export function heatLegend(mode: HeatMode, targets: Targets): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Expenditure (§6.2) — weekly points + update markers
+// Expenditure (§1b) — the posterior, its credible band and update markers
 // ---------------------------------------------------------------------------
+
+/**
+ * The band drawn round each block is the engine's own published coverage
+ * (`TDEE_CI_Z` → 90%), so the shaded ribbon and the "± N kcal (90%)" line in
+ * `result.reason` are the same interval measured the same way.
+ */
+export const TDEE_BAND_Z = TDEE_CI_Z;
+
+export interface TdeeSeriesOpts {
+  profile: Profile;
+  targets: Targets;
+  /**
+   * §1a's **filtered** Kalman result — the same object `buildCoachContext`
+   * hands the engine. It is not optional: without it `weeklyExpenditureV3`
+   * falls back to the v2 EWMA trend and the chart would publish a different
+   * posterior from the one Today and the coach quote.
+   */
+  kalman: KalmanResult;
+  /** Sessions, for the steps observation. Must match what the context was built with. */
+  workouts?: Workout[];
+  /** EWMA α, forwarded for the glycogen pass. Defaults to `targets.ewmaAlpha`. */
+  alpha?: number;
+}
 
 export interface TdeeSeries {
   /**
-   * One point per 7-day block, oldest first, plotted at the block's END date
-   * (the day the estimate updated). Blocks that failed the ≥5 weigh-in /
-   * ≥5 intake-day gate are `null` so the gap stays visible.
+   * Posterior mean expenditure after each completed 7-day block, oldest first,
+   * plotted at the block's END date (the day the estimate moved). Never null:
+   * a block that failed its gate is *predict-only* — the posterior still
+   * exists, it just widened rather than moved, which is what the band shows.
    */
   points: DatedValue[];
-  /** ▼ markers on the weeks whose estimate actually updated (valid blocks). */
+  /** The 90% credible interval around each of those points. */
+  band: TimeSeriesBandPoint[];
+  /** ▼ markers on the blocks whose weight observation actually moved the posterior. */
   annotations: TimeSeriesAnnotation[];
-  /**
-   * Today's engine result — the same evaluation as `ctx.expenditure` (default
-   * window), kept for the gate counts and the last-calibrated fallback.
-   */
-  result: ExpenditureResult;
+  /** Today's engine result — the same evaluation as `ctx.expenditure`. */
+  result: ExpenditureV3Result;
 }
 
 /**
- * One engine pass: `weeks` only decides how many COMPLETED blocks come back —
- * the engine's smoothing EWMA runs over every block since the first weigh-in
- * regardless (engine v2), so a point has the same value at every range and
- * `result.tdee` is exactly `ctx.expenditure.tdee`, the Today / coach number
- * (review R2-1). Points sit on each block's END date (blocks are anchored to
- * the first weigh-in, so the latest one can be up to 6 days old); invalid
- * blocks are gaps. `alpha` must be the store's EWMA α (INTEGRATION_NOTES). At
- * 1Y the 52 weekly points sit ~5 px apart, so only the latest update keeps
- * its ▼ marker (the tooltip and hidden table still carry every week).
+ * Engine v3 (§1b): one Bayesian posterior over TDEE rather than a smoothed
+ * point estimate, so the chart plots `block.tdee` with the `±TDEE_CI_Z·sd`
+ * band around it and never draws a gap where the engine still has a belief.
+ *
+ * `weeks` only decides how many COMPLETED blocks come back — the posterior
+ * always runs over every block since the first weigh-in — so a point has the
+ * same value at every range and the last one is exactly `result.tdee`, which
+ * is `ctx.expenditure.tdee` whenever the interval is tight enough to publish
+ * (review R2-1). This is why `opts.kalman` and `opts.workouts` must be the
+ * ones the context used: they are inputs to the posterior, not decoration.
+ *
+ * At 1Y the 52 weekly points sit ~5 px apart, so only the latest update keeps
+ * its ▼ marker (the tooltip and hidden table still carry every block).
  */
-export function tdeeSeries(records: DailyRecord[], win: RangeWindow, alpha: number): TdeeSeries {
-  const result = weeklyExpenditure(records, win.end, { alpha, weeks: win.tdeeWeeks });
+export function tdeeSeries(records: DailyRecord[], win: RangeWindow, opts: TdeeSeriesOpts): TdeeSeries {
+  const result = weeklyExpenditureV3(records, win.end, {
+    profile: opts.profile,
+    targets: opts.targets,
+    kalman: opts.kalman,
+    ...(opts.workouts ? { workouts: opts.workouts } : {}),
+    ...(opts.alpha === undefined ? {} : { alpha: opts.alpha }),
+    weeks: win.tdeeWeeks,
+  });
   const points: DatedValue[] = [];
+  const band: TimeSeriesBandPoint[] = [];
   let annotations: TimeSeriesAnnotation[] = [];
-  for (const wk of result.weeks) {
-    const ok = wk.valid && wk.smoothedTdee !== null;
-    points.push({ d: wk.end, value: ok ? wk.smoothedTdee : null });
-    if (ok) annotations.push({ d: wk.end, label: `Updated · ${wk.weighIns} weigh-ins, ${wk.intakeDays} intake days` });
+  for (const b of result.blocks) {
+    const half = round(TDEE_BAND_Z * b.tdeeSd);
+    points.push({ d: b.end, value: b.tdee });
+    band.push({ d: b.end, lo: b.tdee - half, hi: b.tdee + half });
+    if (b.valid) {
+      annotations.push({ d: b.end, label: `Updated · ${b.weighIns} weigh-ins, ${b.loggedDays} of ${b.spanDays} days logged` });
+    }
   }
   if (win.range === '1Y' && annotations.length > 1) annotations = annotations.slice(-1);
-  return { points, annotations, result };
+  return { points, band, annotations, result };
+}
+
+/** "5 of 7 days logged" — the coverage caption the posterior's latest block earned. */
+export function coverageCaption(coverage: { logged: number; days: number } | undefined): string {
+  const logged = coverage && Number.isFinite(coverage.logged) ? coverage.logged : 0;
+  const days = coverage && Number.isFinite(coverage.days) && coverage.days > 0 ? coverage.days : 7;
+  return `${fmt(logged)} of ${fmt(days)} days logged`;
+}
+
+/**
+ * Fields the block-gate copy reads. Both expenditure engines expose them (v2
+ * calls the second one `intakeDaysThisWeek`, v3 `loggedDaysThisWeek`), so the
+ * Log screen's v2 cross-check and this screen's v3 card share one function.
+ */
+export interface BlockGateResult {
+  weighInsThisWeek: number;
+  intakeDaysThisWeek?: number;
+  loggedDaysThisWeek?: number;
+  firstWeighIn: ISODate | null;
 }
 
 export interface BlockProgress {
   weighIns: number;
+  /** Days of the block with an intake logged. */
   intakeDays: number;
   /** Days of the in-progress block still to come after today (0–6); null before the first weigh-in. */
   daysLeft: number | null;
-  /** Both gates already met, so the block will publish when it closes. */
+  /** Both gates already met, so the block will produce a weight observation when it closes. */
   met: boolean;
   /** A gate can no longer be met in this block even with an entry on every remaining day (today included). */
   unreachable: boolean;
@@ -142,34 +205,45 @@ export interface BlockProgress {
 }
 
 /**
- * Copy for the in-progress expenditure block. Engine v2 anchors 7-day blocks
- * to the first weigh-in, so `weighInsThisWeek` counts a block that may be one
- * day old — "2/7, gate not met" on day 2 is not a failure, it is progress. The
- * tone is only yellow once the gate is arithmetically out of reach and only
- * green once it is met; anything in between is neutral (coordinator note on
- * R2-1/R2-8).
+ * Copy for the in-progress expenditure block. Blocks are anchored to the first
+ * weigh-in, so `weighInsThisWeek` counts a block that may be one day old —
+ * "1/7, gate not met" on day 2 is not a failure, it is progress. The tone is
+ * only yellow once a gate is arithmetically out of reach and only green once
+ * both are met; anything in between is neutral (coordinator note on R2-1/R2-8).
+ *
+ * v3 gates the two sides differently (`MIN_BLOCK_WEIGH_INS` weigh-ins,
+ * `MIN_BLOCK_LOG_DAYS` logged days) and missing the gate no longer voids the
+ * block: the posterior simply predicts and widens, which is what the card's
+ * band shows. The defaults are v2's symmetric 5/5 so the Log screen's
+ * cross-check keeps its meaning.
  */
-export function blockProgress(result: ExpenditureResult, today: ISODate, gate = 5): BlockProgress {
+export function blockProgress(result: BlockGateResult, today: ISODate, weighInGate = 5, logGate = weighInGate): BlockProgress {
   const w = result.weighInsThisWeek;
-  const i = result.intakeDaysThisWeek;
+  const i = result.loggedDaysThisWeek ?? result.intakeDaysThisWeek ?? 0;
   let daysLeft: number | null = null;
   if (result.firstWeighIn) {
     const since = Math.max(0, diffDays(result.firstWeighIn, today));
     const start = addDays(result.firstWeighIn, 7 * Math.floor(since / 7));
     daysLeft = clamp(diffDays(today, addDays(start, 6)), 0, 6);
   }
-  const met = w >= gate && i >= gate;
+  const met = w >= weighInGate && i >= logGate;
   // Today may still get an entry, so it counts as a chance.
   const chances = daysLeft === null ? 7 : daysLeft + 1;
-  const unreachable = !met && (w + chances < gate || i + chances < gate);
+  const unreachable = !met && (w + chances < weighInGate || i + chances < logGate);
   const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
   const tail = daysLeft === null ? '' : daysLeft === 0 ? ' · block closes tonight' : ` · ${days(daysLeft)} left`;
-  if (met) return { weighIns: w, intakeDays: i, daysLeft, met, unreachable: false, tone: 'green', text: `Gate met — ${w}/7 weigh-ins, ${i}/7 intake days${tail}` };
+  const counts = `${w}/7 weigh-ins, ${i}/7 logged days`;
+  if (met) return { weighIns: w, intakeDays: i, daysLeft, met, unreachable: false, tone: 'green', text: `Gate met — ${counts}${tail}` };
   if (unreachable) {
-    const what = w + chances < gate ? 'weigh-ins' : 'intake days';
-    return { weighIns: w, intakeDays: i, daysLeft, met, unreachable, tone: 'yellow', text: `Too few ${what} to update from this block — the estimate holds${tail}` };
+    const what = w + chances < weighInGate ? 'weigh-ins' : 'logged days';
+    return { weighIns: w, intakeDays: i, daysLeft, met, unreachable, tone: 'yellow', text: `Too few ${what} for a measured block — the estimate holds and widens${tail}` };
   }
-  return { weighIns: w, intakeDays: i, daysLeft, met, unreachable, tone: 'neutral', text: `${w}/7 weigh-ins, ${i}/7 intake days so far${tail}` };
+  return { weighIns: w, intakeDays: i, daysLeft, met, unreachable, tone: 'neutral', text: `${counts} so far${tail}` };
+}
+
+/** The v3 gate a Trends block is measured against: 3 weigh-ins and 4 logged days. */
+export function v3BlockProgress(result: BlockGateResult, today: ISODate): BlockProgress {
+  return blockProgress(result, today, MIN_BLOCK_WEIGH_INS, MIN_BLOCK_LOG_DAYS);
 }
 
 /** The TDEE chart always plots weekly points, so its date labels use the '6 Sep' (90D) or 'Sep' (1Y) format. */
@@ -188,18 +262,22 @@ export interface IntakeSuggestion {
   text: string;
   tone: Band;
   hold: boolean;
+  /** Which tier of evidence fired: a one-block nudge, a two-block move, or neither. */
+  tier: 'none' | 'fine' | 'coarse';
 }
 
 /**
- * One-line version of `recommendIntake` for the readout row. Null when this
- * week's expenditure is not valid — an unreliable week must not move the
- * target (§6.2), so there is nothing to suggest. `ctx.expenditure.reason`
- * carries the full sentence for the detail line.
+ * One-line version of `recommendIntakeV3` for the readout row. Null when the
+ * posterior is not tight enough to publish — an unreliable interval must not
+ * move the target (§1b), so there is nothing to suggest.
+ * `ctx.expenditure.reason` carries the full sentence (P(outside band), the
+ * coverage and the energy-density factor) for the detail line.
  */
 export function intakeSuggestion(ctx: CoachContext): IntakeSuggestion | null {
   const exp = ctx.expenditure;
-  if (!exp.valid || exp.suggestedKcal === null || exp.suggestedDelta === null) return null;
-  if (exp.suggestedDelta === 0) return { text: `Hold ${fmt(exp.suggestedKcal)} kcal`, tone: 'green', hold: true };
+  const tier = exp.tier ?? 'none';
+  if (!exp.valid || exp.suggestedKcal === null || exp.suggestedDelta === null || exp.suggestedKcal === undefined || exp.suggestedDelta === undefined) return null;
+  if (exp.suggestedDelta === 0) return { text: `Hold ${fmt(exp.suggestedKcal)} kcal`, tone: 'green', hold: true, tier };
   const rate = ctx.weight.weeklyRateLb;
   const why =
     ctx.weight.inBand === 'above'
@@ -207,7 +285,7 @@ export function intakeSuggestion(ctx: CoachContext): IntakeSuggestion | null {
       : rate !== null && rate > 0
         ? 'trend is rising'
         : 'losing slower than target';
-  return { text: `Adjust to ${fmt(exp.suggestedKcal)} kcal — ${why}`, tone: 'yellow', hold: false };
+  return { text: `Adjust to ${fmt(exp.suggestedKcal)} kcal — ${why}`, tone: 'yellow', hold: false, tier };
 }
 
 // ---------------------------------------------------------------------------

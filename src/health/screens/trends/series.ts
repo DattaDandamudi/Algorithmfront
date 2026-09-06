@@ -15,10 +15,42 @@
  * The non-chart derivations (heatmap cells, weekly TDEE points, intake copy,
  * frequency rows) live next door in ./summaries.ts.
  */
-import type { AppSettings, Band, CoachContext, DailyRecord, HHMM, HrvBand, ISODate, MetricKey, Profile } from '../../data/types';
+import type {
+  AppSettings,
+  Band,
+  CheckInSettings,
+  CoachContext,
+  DailyRecord,
+  Exercise,
+  HHMM,
+  HrvBand,
+  ISODate,
+  MetricKey,
+  Muscle,
+  MuscleVolume,
+  Profile,
+  VolumeLandmark,
+  Workout,
+} from '../../data/types';
 import { MONTH_SHORT, addDays, formatDateShort, lastNDates, minutesSinceNoon, parseISODate } from '../../lib/dates';
 import { LB_PER_KG, fmt, mean, round, stddev } from '../../lib/format';
-import { BASELINE_DAYS, bedtimeConsistency, computeEwmaTrend, isWeight, lnSeries, metricSeries, rollingMean, sleepSummary, swcBandSeries, waterNoiseBand } from '../../engine';
+import {
+  BASELINE_DAYS,
+  bedtimeConsistency,
+  checkInSummary,
+  isWeight,
+  lnSeries,
+  metricSeries,
+  overnightStrainIndex,
+  rollingMean,
+  sleepSummary,
+  swcBandSeries,
+  weekStartMonday,
+  weeklySetsByMuscle,
+  type AcwrPoint,
+  type KalmanResult,
+  type LoadPoint,
+} from '../../engine';
 import {
   RANGE_DAYS,
   aggregateByBucket,
@@ -187,46 +219,99 @@ export function weightFactor(units: WeightUnits): number {
   return units === 'kg' ? 1 / LB_PER_KG : 1;
 }
 
+/**
+ * z for the drawn weight band. The Kalman level's posterior is Gaussian, so
+ * `level ± 1.645·levelSd` is the 90% credible interval — the same coverage
+ * `ctx.weight.rateLow90/rateHigh90` publishes for the rate, so the two
+ * uncertainties on the card are read the same way.
+ */
+export const WEIGHT_BAND_Z = 1.645;
+
 export interface WeightSeries {
-  /** Daily scale weights (bucket means at 90D/1Y), display units. */
+  /** Accepted daily scale weights (bucket means at 90D/1Y), display units. */
   dots: DatedValue[];
-  /** EWMA trend (bucket end value at 90D/1Y), display units. */
+  /**
+   * Weigh-ins the Kalman outlier gate rejected, on the same axis — drawn
+   * hollow so a typo is visible without being folded into the trend.
+   */
+  suspect: DatedValue[];
+  /** RTS-smoothed Kalman level (bucket end value at 90D/1Y), display units. */
   trend: DatedValue[];
-  /** trend ± water-noise half-width. */
+  /** level ± `WEIGHT_BAND_Z`·levelSd — the smoothed 90% band (§1a). */
   band: TimeSeriesBandPoint[];
-  /** Half-width of the noise band, display units. */
-  noise: number;
-  /** Weigh-ins inside the window. */
+  /** Half-width of the band at the window end, display units; null without a level. */
+  bandHalf: number | null;
+  /** Accepted weigh-ins inside the window. */
   weighIns: number;
+  /** Rejected weigh-ins inside the window. */
+  suspectCount: number;
   /** Weigh-ins ever (up to the window end) — the trend gate, independent of the range (review R2-3). */
   totalWeighIns: number;
 }
 
-export function weightSeries(records: DailyRecord[], win: RangeWindow, alpha: number, units: WeightUnits): WeightSeries {
+/**
+ * The drawn weight trend is the **smoothed** Kalman level with its 90% band,
+ * not the EWMA (§1a): the RTS pass uses every later weigh-in to place each
+ * day's level, so the line a user reads back over is the best estimate we
+ * have of where they actually were. It is deliberately not persisted — the
+ * store stamps the causal filter (`kl`/`kv`) because a smoothed value would
+ * change under the user retroactively — so `kalman` is smoothed at render
+ * time by the caller and handed in here.
+ *
+ * Pass the result of `smoothKalman(computeKalmanTrend(records, win.end, …))`;
+ * `computeEwmaTrend` survives for export continuity and the Log block line,
+ * and a test pins the two within 1.5 lb on demo data.
+ */
+export function weightSeries(records: DailyRecord[], win: RangeWindow, kalman: KalmanResult, units: WeightUnits): WeightSeries {
   const k = weightFactor(units);
   const conv = (v: number | null | undefined): number | null => (isNum(v) ? round(v * k, 2) : null);
-  // `through = win.end` so today has a trend value even before today's weigh-in.
-  const trendMap = computeEwmaTrend(records, alpha, win.end);
-  const noise = round(waterNoiseBand(records, win.end) * k, 2);
   const scale = metricSeries(records, 'w', win.end, win.days);
+  const byDate = new Map<ISODate, DailyRecord>();
+  for (const r of records) byDate.set(r.d, r);
   let totalWeighIns = 0;
   for (const r of records) if (r.d <= win.end && isWeight(r.w)) totalWeighIns++;
+
   let weighIns = 0;
-  const dotsDaily: DatedValue[] = scale.map((p) => {
-    const ok = isWeight(p.v);
-    if (ok) weighIns++;
-    return { d: p.d, value: ok ? conv(p.v) : null };
-  });
-  const trendDaily: DatedValue[] = scale.map((p) => ({ d: p.d, value: conv(trendMap.get(p.d)) }));
-  const dots = aggregateByBucket(dotsDaily, win.bucket, 'mean');
+  let suspectCount = 0;
+  const dotsDaily: DatedValue[] = [];
+  const suspectDaily: DatedValue[] = [];
+  const trendDaily: DatedValue[] = [];
+  const loDaily: DatedValue[] = [];
+  const hiDaily: DatedValue[] = [];
+  for (const p of scale) {
+    const point = kalman.byDate.get(p.d);
+    // Same test the context applies (`ctx.weight.suspectToday`): the filter's
+    // own verdict, or the flag the store stamped when it ran.
+    const rejected = point?.suspect === true || byDate.get(p.d)?.ws === true;
+    const logged = isWeight(p.v);
+    if (logged) {
+      if (rejected) suspectCount++;
+      else weighIns++;
+    }
+    dotsDaily.push({ d: p.d, value: logged && !rejected ? conv(p.v) : null });
+    suspectDaily.push({ d: p.d, value: logged && rejected ? conv(p.v) : null });
+    const level = point && isNum(point.level) ? point.level : null;
+    const sd = point && isNum(point.levelSd) ? point.levelSd : null;
+    const half = level === null || sd === null ? null : round(WEIGHT_BAND_Z * sd * k, 2);
+    trendDaily.push({ d: p.d, value: conv(level) });
+    loDaily.push({ d: p.d, value: level === null || half === null ? null : round(level * k - half, 2) });
+    hiDaily.push({ d: p.d, value: level === null || half === null ? null : round(level * k + half, 2) });
+  }
+
+  const endPoint = kalman.byDate.get(win.end);
+  const bandHalf = endPoint && isNum(endPoint.levelSd) ? round(WEIGHT_BAND_Z * endPoint.levelSd * k, 2) : null;
   // 'last' so the final bucket equals today's trend readout exactly.
   const trend = aggregateByBucket(trendDaily, win.bucket, 'last');
-  const band = trend.map((p) => ({
-    d: p.d,
-    lo: p.value === null ? null : round(p.value - noise, 2),
-    hi: p.value === null ? null : round(p.value + noise, 2),
-  }));
-  return { dots, trend, band, noise, weighIns, totalWeighIns };
+  return {
+    dots: aggregateByBucket(dotsDaily, win.bucket, 'mean'),
+    suspect: aggregateByBucket(suspectDaily, win.bucket, 'mean'),
+    trend,
+    band: zipBand(aggregateByBucket(loDaily, win.bucket, 'last'), aggregateByBucket(hiDaily, win.bucket, 'last')),
+    bandHalf,
+    weighIns,
+    suspectCount,
+    totalWeighIns,
+  };
 }
 
 /**
@@ -460,4 +545,186 @@ export function stepsStats(records: DailyRecord[], win: RangeWindow, goalMin: nu
     .filter(isNum);
   const m = mean(vals);
   return { loggedDays: vals.length, goalDays: vals.filter((v) => v >= goalMin).length, meanSteps: m === null ? null : round(m) };
+}
+
+// ---------------------------------------------------------------------------
+// Training load (§1e) — absolute load leads, ACWR is descriptive
+// ---------------------------------------------------------------------------
+
+export interface LoadSeries {
+  /** Daily session load (0 on a rest day — never a gap; the EWMAs need it). */
+  daily: DatedValue[];
+  /** Acute EWMA (λ = 2/8) — the line drawn over the daily bars. */
+  acute: DatedValue[];
+  /** Chronic EWMA (λ = 2/29). */
+  chronic: DatedValue[];
+  /** acute ÷ chronic; null for the first 28 days. Descriptive only. */
+  acwr: DatedValue[];
+  /**
+   * Days actually plotted. The engine integrates load over its own window
+   * (`DEFAULT_LOAD_WINDOW_DAYS`), and the EWMAs must start where the context's
+   * do or the card would disagree with `ctx.training.load`, so a 1Y range
+   * plots that window rather than a re-integrated year.
+   */
+  days: number;
+  /** Days carrying any load at all. */
+  trainedDays: number;
+}
+
+/**
+ * The load card's three series, from the engine's own daily load and ACWR
+ * passes. Both are handed in rather than computed here so the card can never
+ * disagree with `ctx.training.load`: the caller builds them with exactly the
+ * arguments `buildCoachContext` uses.
+ */
+export function loadSeries(loads: readonly LoadPoint[], acwr: readonly AcwrPoint[], win: RangeWindow): LoadSeries {
+  const byDay = new Map<ISODate, AcwrPoint>();
+  for (const p of acwr) byDay.set(p.d, p);
+  const inWindow = loads.filter((p) => p.d >= win.start && p.d <= win.end);
+  let trainedDays = 0;
+  const daily: DatedValue[] = [];
+  const acute: DatedValue[] = [];
+  const chronic: DatedValue[] = [];
+  const ratio: DatedValue[] = [];
+  for (const p of inWindow) {
+    const load = isNum(p.load) ? round(p.load, 1) : 0;
+    if (load > 0) trainedDays++;
+    const a = byDay.get(p.d);
+    daily.push({ d: p.d, value: load });
+    acute.push({ d: p.d, value: a && isNum(a.acute) ? a.acute : null });
+    chronic.push({ d: p.d, value: a && isNum(a.chronic) ? a.chronic : null });
+    ratio.push({ d: p.d, value: a && isNum(a.acwr) ? a.acwr : null });
+  }
+  return {
+    daily: aggregateByBucket(daily, win.bucket, 'mean'),
+    acute: aggregateByBucket(acute, win.bucket, 'mean'),
+    chronic: aggregateByBucket(chronic, win.bucket, 'mean'),
+    acwr: aggregateByBucket(ratio, win.bucket, 'mean'),
+    days: inWindow.length,
+    trainedDays,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Weekly volume (§1e) — the 15 × N muscle grid
+// ---------------------------------------------------------------------------
+
+/** Mon-start weeks the volume grid shows (plan §2a: 15 muscles × 12 weeks). */
+export const VOLUME_WEEKS = 12;
+
+export interface VolumeWeek {
+  /** Monday the week starts on. */
+  weekStart: ISODate;
+  /** All 15 muscles, in `MUSCLES` order, so the grid never has holes. */
+  muscles: MuscleVolume[];
+}
+
+/**
+ * Weekly hard sets per muscle for the last `weeks` Mon–Sun weeks, oldest
+ * first. The newest entry is the week containing `asOf`, so its counts are
+ * partial — the card says so rather than pretending the week is over.
+ */
+export function volumeWeeks(
+  workouts: Workout[],
+  asOf: ISODate,
+  landmarks: Record<Muscle, VolumeLandmark>,
+  weeks = VOLUME_WEEKS,
+  custom?: readonly Exercise[],
+): VolumeWeek[] {
+  const n = Math.max(1, Math.floor(weeks));
+  const current = weekStartMonday(asOf);
+  const out: VolumeWeek[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const weekStart = addDays(current, -7 * i);
+    out.push({
+      weekStart,
+      muscles: weeklySetsByMuscle(workouts, asOf, landmarks, { weekStart, ...(custom ? { custom } : {}) }),
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Overnight strain & check-in (§1h) — the StressCard's panels
+// ---------------------------------------------------------------------------
+
+/**
+ * Days of overnight strain the card will draw, however long the range is.
+ *
+ * Unlike a metric series, each point here costs a full engine evaluation: the
+ * index re-standardises six signals against a rolling 60-day personal
+ * reference, so a year is ~365 of those and lands around 200 ms — a visible
+ * stall on a range flip, for a curve that a monthly bucket flattens to four
+ * points anyway. Four months is long enough to show a season and cheap enough
+ * to build inside a memo. `StressSeries.days` reports what was actually built
+ * so the caption never claims a window the chart does not cover.
+ */
+export const STRESS_SERIES_MAX_DAYS = 120;
+
+export interface StressSeries {
+  /** Overnight strain index 0–100, one entry per bucket. */
+  osi: DatedValue[];
+  /** Its credible interval. */
+  osiBand: TimeSeriesBandPoint[];
+  /** Hooper total 4–28 for the same axis — the check-in overlay panel. */
+  checkIn: DatedValue[];
+  /** Calendar days evaluated (`min(win.days, STRESS_SERIES_MAX_DAYS)`). */
+  days: number;
+  /** Days carrying an index. */
+  osiDays: number;
+  /** Days carrying a complete check-in. */
+  checkInDays: number;
+}
+
+/**
+ * The index, its interval and the Hooper total evaluated on every day of the
+ * window with the engine's own functions and the engine's own defaults, so
+ * the last point is exactly `ctx.stress.osi` / `ctx.stress.checkIn.total`.
+ */
+export function stressSeries(records: DailyRecord[], win: RangeWindow, checkIn?: CheckInSettings): StressSeries {
+  const days = Math.min(win.days, STRESS_SERIES_MAX_DAYS);
+  // The strain reference is 60 days and the check-in reference 30, so nothing
+  // older than the longer of the two can move a point in the window.
+  const from = addDays(win.end, -(days - 1 + 70));
+  const recs = records.filter((r) => r.d >= from && r.d <= win.end);
+  const items = checkIn?.items;
+  const osiDaily: DatedValue[] = [];
+  const loDaily: DatedValue[] = [];
+  const hiDaily: DatedValue[] = [];
+  const hooperDaily: DatedValue[] = [];
+  let osiDays = 0;
+  let checkInDays = 0;
+  for (const d of lastNDates(win.end, days)) {
+    const strain = overnightStrainIndex(recs, d);
+    if (strain.osi !== null) osiDays++;
+    osiDaily.push({ d, value: num(strain.osi) });
+    loDaily.push({ d, value: num(strain.lo) });
+    hiDaily.push({ d, value: num(strain.hi) });
+    const total = checkInSummary(recs, d, items ? { items } : undefined).total;
+    if (total !== null) checkInDays++;
+    hooperDaily.push({ d, value: num(total) });
+  }
+  return {
+    osi: aggregateByBucket(osiDaily, win.bucket, 'mean'),
+    osiBand: zipBand(aggregateByBucket(loDaily, win.bucket, 'mean'), aggregateByBucket(hiDaily, win.bucket, 'mean')),
+    checkIn: aggregateByBucket(hooperDaily, win.bucket, 'mean'),
+    days,
+    osiDays,
+    checkInDays,
+  };
+}
+
+/**
+ * The resilience scissors as two plottable curves. `resilienceSummary` reports
+ * them on the same 0–1 scale as `ctx.stress.resilience.loadEwma`, so nothing is
+ * rescaled here — the card shades the gap between them and that gap IS the
+ * balance the band word describes.
+ */
+export function resilienceCurves(
+  series: ReadonlyArray<{ d: ISODate; load: number | null; recovery: number | null }>,
+): { load: DatedValue[]; recovery: DatedValue[] } {
+  return {
+    load: series.map((p) => ({ d: p.d, value: num(p.load) })),
+    recovery: series.map((p) => ({ d: p.d, value: num(p.recovery) })),
+  };
 }

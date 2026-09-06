@@ -8,18 +8,36 @@
  * rebuild on every keystroke"). Every number on the screen comes from here.
  *
  * Every series is built by `./series.ts` from engine helpers (metricSeries,
- * swcBandSeries, computeEwmaTrend, weeklyExpenditure, adherenceGrid …) so the
- * Trends charts can never disagree with the Today tiles or the coach.
+ * swcBandSeries, computeKalmanTrend, weeklyExpenditureV3, adherenceGrid …) so
+ * the Trends charts can never disagree with the Today tiles or the coach.
+ *
+ * Three engine passes are repeated here rather than read off the context,
+ * because the context publishes their *conclusions* and the charts need their
+ * *series*: the Kalman filter (weight band + the expenditure posterior's level
+ * input), the daily training load (load card + the resilience scissors) and
+ * the overnight strain index. Each is called with exactly the arguments
+ * `buildCoachContext` uses, so the drawn line always ends on the published
+ * number. The RTS smoother runs here and nowhere else: the store deliberately
+ * stamps only the causal filter, since a smoothed level would keep changing
+ * under the user after the fact.
  */
 import { useMemo } from 'react';
-import type { AppSettings, CoachContext, DailyRecord, ISODate } from '../../data/types';
-import { useHealth, useNow, useRecords } from '../../data/store';
+import type { AppSettings, CoachContext, DailyRecord, ISODate, Workout } from '../../data/types';
+import { useHealth, useNow, useRecords, useWorkouts } from '../../data/store';
 import {
   RHR_BASELINE_DAYS,
+  acwrSeries,
   adherenceGrid,
   buildCoachContext,
+  computeKalmanTrend,
+  dailyLoadSeries,
+  fitWhoopScale,
   frequencyCounters,
   labLinkedHabits,
+  median,
+  metricSeries,
+  resilienceSummary,
+  smoothKalman,
   weighInStreak,
   type FrequencyCounters,
 } from '../../engine';
@@ -30,19 +48,26 @@ import {
   bedtimeOffsetSeries,
   bedtimeSdSeries,
   hrvSeries,
+  loadSeries,
   metricChartSeries,
   rangeWindow,
+  resilienceCurves,
   rollingMeanSeries,
   sleepSeries,
   stepsStats,
+  stressSeries,
+  volumeWeeks,
   weightSeries,
   type BandedSeries,
   type BaselineBand,
   type BedtimeSdSeries,
   type LinedSeries,
+  type LoadSeries,
   type RangeWindow,
   type SleepSeries,
   type StepsStats,
+  type StressSeries,
+  type VolumeWeek,
   type WeightSeries,
 } from './series';
 import { frequencyRows, heatDay, heatLegend, heatWindowDays, tdeeSeries, type FrequencyRow, type HeatMode, type TdeeSeries } from './summaries';
@@ -53,6 +78,7 @@ export interface TrendsModel {
   today: ISODate;
   settings: AppSettings;
   records: DailyRecord[];
+  workouts: Workout[];
   ctx: CoachContext;
   win: RangeWindow;
   weight: WeightSeries;
@@ -67,6 +93,14 @@ export interface TrendsModel {
   /** Nightly bedtime offset from the target, minutes (+ late / − early), bucketed. */
   bedOffsets: DatedValue[];
   steps: { series: DatedValue[]; stats: StepsStats };
+  /** Daily load, the two EWMAs and the descriptive ACWR (§1e). */
+  load: LoadSeries;
+  /** 15 muscles × 12 Mon-start weeks of hard sets with their landmark status. */
+  volume: VolumeWeek[];
+  /** Overnight strain with its interval, plus the Hooper overlay (§1h). */
+  stress: StressSeries;
+  /** The resilience scissors — the two curves behind `ctx.stress.resilience`. */
+  resilience: { load: DatedValue[]; recovery: DatedValue[] };
   adherence: {
     heat: Record<HeatMode, HeatmapDay[]>;
     legend: Record<HeatMode, string[]>;
@@ -85,6 +119,7 @@ export interface TrendsModel {
 export function useTrendsModel(range: ChartRange): TrendsModel {
   const { state } = useHealth();
   const records = useRecords();
+  const workouts = useWorkouts();
   const wall = useNow();
   const today = toISODate(wall);
   const hh = wall.getHours();
@@ -98,10 +133,35 @@ export function useTrendsModel(range: ChartRange): TrendsModel {
   }, [today, hh, mm]);
   const settings = state.settings;
 
-  const ctx = useMemo(() => buildCoachContext({ records, settings, today, now }), [records, settings, today, now]);
+  const ctx = useMemo(
+    () => buildCoachContext({ records, settings, today, now, workouts }),
+    [records, settings, today, now, workouts],
+  );
+
+  // Kalman and load do not depend on the range toggle, so they sit in their own
+  // memo: flipping 7D → 1Y must not re-filter a year of weigh-ins.
+  const engine = useMemo(() => {
+    const { profile } = settings;
+    const filtered = computeKalmanTrend(records, today, { cycle: { enabled: profile.tracksCycle === true } });
+    const restHr = median(metricSeries(records, 'rhr', today, RHR_BASELINE_DAYS).map((p) => p.v));
+    const loadOpts = { profile, restHr };
+    const whoopFit = fitWhoopScale(records, workouts, loadOpts);
+    const loads = dailyLoadSeries(records, workouts, today, { ...loadOpts, whoopFit });
+    return {
+      filtered,
+      smoothed: smoothKalman(filtered),
+      loads,
+      acwr: acwrSeries(loads),
+      // The context's own resilience pass also sees its private readiness
+      // series; this one falls back to the stored `rec`/`osi` for that
+      // component. The curves are therefore the shape of the scissors, while
+      // every number the card prints comes from `ctx.stress.resilience`.
+      resilience: resilienceSummary(records, today, { profile, loads, sleepNeedHrs: ctx.sleep.tonightNeed ?? null }).series,
+    };
+  }, [records, workouts, settings, today, ctx.sleep.tonightNeed]);
 
   const series = useMemo(() => {
-    const { profile, targets } = settings;
+    const { profile, targets, training, checkIn } = settings;
     const win = rangeWindow(range, today);
     const alpha = targets.ewmaAlpha;
 
@@ -122,8 +182,8 @@ export function useTrendsModel(range: ChartRange): TrendsModel {
 
     return {
       win,
-      weight: weightSeries(records, win, alpha, profile.units),
-      tdee: tdeeSeries(records, win, alpha),
+      weight: weightSeries(records, win, engine.smoothed, profile.units),
+      tdee: tdeeSeries(records, win, { profile, targets, kalman: engine.filtered, workouts, alpha }),
       hrv: hrvSeries(records, win),
       rhr: rollingMeanSeries(records, 'rhr', win, 7),
       rhrBand: baselineBand(records, 'rhr', today, RHR_BASELINE_DAYS),
@@ -131,6 +191,10 @@ export function useTrendsModel(range: ChartRange): TrendsModel {
       bedSd: bedtimeSdSeries(records, win),
       bedOffsets: bedtimeOffsetSeries(records, win, profile.bedTarget),
       steps: { series: metricChartSeries(records, 'st', win, 'mean'), stats: stepsStats(records, win, targets.stepsMin) },
+      load: loadSeries(engine.loads, engine.acwr, win),
+      volume: volumeWeeks(workouts, today, training.volumeLandmarks, undefined, training.customExercises),
+      stress: stressSeries(records, win, checkIn),
+      resilience: resilienceCurves(engine.resilience),
       adherence: { heat, legend, loggingStreak: 0, weighInStreak: weighInStreak(records, today) },
       frequency: {
         week,
@@ -139,12 +203,13 @@ export function useTrendsModel(range: ChartRange): TrendsModel {
         habits: labLinkedHabits(week, Array.isArray(profile.bloodwork) ? profile.bloodwork : []),
       },
     };
-  }, [records, settings, today, range]);
+  }, [records, workouts, settings, today, range, engine]);
 
   return {
     today,
     settings,
     records,
+    workouts,
     ctx,
     ...series,
     // loggingStreak already lives on the context; read it from there so the
