@@ -3,7 +3,8 @@
  *
  * Source priority (spec: "defer to WHOOP recovery when present, else HRV band"):
  *   1. 'whoop' — today's record has `rec`: score = rec, banded 67/34 like WHOOP.
- *   2. 'hrv'   — HrvStatus has a range: today's ln(rMSSD) is mapped onto 0–100 by
+ *   2. 'hrv'   — HrvStatus has a range: the 7-day rolling mean of ln(rMSSD) (the
+ *                quantity §6.3 bands — see engine/hrv.ts) is mapped onto 0–100 by
  *                its position in the SWC band so the bands line up with WHOOP's:
  *                  below lower SWC  → 10–33  (33 just under, 10 one SD below)
  *                  within the band  → 34–66  (linear, lower edge → upper edge)
@@ -14,8 +15,11 @@
  *   3. 'none'  — no signal: score null, band 'neutral'.
  *
  * Forcing rule (spec "Thresholds that should change behaviour"): WHOOP recovery
- * < 34 % OR HRV band 'low' (below the lower SWC) → band red / "Light day",
- * whatever the source. The score itself is never altered — it is the data.
+ * < 34 % OR HRV band 'low' (7-day mean below the lower SWC) → band red / "Light
+ * day", whatever the source. The HRV half only applies once the baseline is
+ * established (≥ 21 readings in 30 days — §6.3 "give ~30 days to establish
+ * baseline before acting"); a provisional range never overrides WHOOP. The
+ * score itself is never altered — it is the data.
  *
  * Pure & deterministic; never throws, never NaN.
  */
@@ -70,11 +74,13 @@ export function rhrAdjustment(deltaBpm: number | null): number {
 
 /**
  * Map an HRV status (and RHR delta) onto the 0–100 readiness scale described
- * in the module header. Null when there is no SWC range yet.
+ * in the module header. The positioned value is the 7-day mean — the same
+ * construction hrvStatus bands — so score band and HRV band always agree.
+ * Null when there is no SWC range yet.
  */
 export function hrvScore(hrv: HrvStatus, rhr: BaselineDelta | null): number | null {
   if (hrv.band === 'insufficient') return null;
-  const v = hrv.todayLn ?? hrv.mean7Ln;
+  const v = hrv.mean7Ln;
   const lo = hrv.swcLowerLn;
   const hi = hrv.swcUpperLn;
   if (v === null || lo === null || hi === null) return null;
@@ -125,7 +131,8 @@ export function readiness(
   }
 
   const forcedByRec = rec !== null && rec < BAND_THRESHOLDS.yellow;
-  const forcedByHrv = hrv.band === 'low';
+  // R3-5: no forcing from a baseline that is still forming.
+  const forcedByHrv = hrv.band === 'low' && hrv.baselineEstablished;
   let band = bandOf(score);
   if (forcedByRec || forcedByHrv) band = 'red';
 
@@ -144,6 +151,7 @@ export function readiness(
 /**
  * One sentence citing the actual numbers, e.g.
  * "HRV 58 ms (baseline 62), RHR 52 (−1 vs baseline), slept 7.4 h of 7.9 h need."
+ * The HRV baseline quoted is the long-term reference the SWC is centred on.
  */
 function buildDetail(
   today: DailyRecord | null,
@@ -155,8 +163,9 @@ function buildDetail(
 ): string {
   const parts: string[] = [];
   if (source === 'whoop' && today && isScore(today.rec)) parts.push(`WHOOP recovery ${fmt(today.rec)}%`);
+  const base = hrv.baselineMs ?? hrv.mean7Ms;
   if (hrv.todayMs !== null) {
-    parts.push(`HRV ${fmt(hrv.todayMs)} ms${hrv.mean7Ms !== null ? ` (baseline ${fmt(hrv.mean7Ms)})` : ''}`);
+    parts.push(`HRV ${fmt(hrv.todayMs)} ms${base !== null ? ` (baseline ${fmt(base)})` : ''}`);
   } else if (hrv.mean7Ms !== null) {
     parts.push(`HRV 7-day mean ${fmt(hrv.mean7Ms)} ms (none logged today)`);
   }
@@ -167,7 +176,7 @@ function buildDetail(
     parts.push(`slept ${fmt(today.slh, 1)} h${isScore(today.sln) ? ` of ${fmt(today.sln, 1)} h need` : ''}`);
   }
   if (forcedByRec) parts.push('recovery under 34% forces a light day');
-  else if (forcedByHrv) parts.push('HRV below your normal range forces a light day');
+  else if (forcedByHrv) parts.push(`7-day HRV average ${fmt(hrv.mean7Ms)} ms is below your normal range and forces a light day`);
   if (!hrv.baselineEstablished) parts.push(`HRV baseline still forming (${hrv.daysOfData} days)`);
   if (!parts.length) return `${VERDICT_COPY.neutral}.`;
   const s = `${parts.join(', ')}.`;

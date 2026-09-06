@@ -29,6 +29,8 @@ function build(
 }
 
 const withToday = (dev: number | null) => [...BALANCED.slice(0, -1), dev];
+/** Shift the current week (last 7 entries) so the banded 7-day mean sits at μ + dev (R3-1). */
+const shiftLast7 = (dev: number) => BALANCED.map((v, i) => (i >= BALANCED.length - 7 ? v + dev : v));
 const todayOnly = (patch: Partial<DailyRecord>) => (i: number, n: number) => (i === n - 1 ? patch : {});
 
 describe('bandOf / thresholds', () => {
@@ -80,36 +82,48 @@ describe('readiness — HRV-only source', () => {
     expect(r.training).toBe('Train, hold loads');
   });
 
-  it('scores above the upper SWC into 67–85 (green) with no RHR data', () => {
+  it('R3-1: scores a week above the upper SWC into 67–85 (green) with no RHR data', () => {
     for (const dev of [0.03, 0.05, 0.1, 0.3]) {
-      const r = readiness(build(withToday(dev)), ASOF, PROFILE);
+      const r = readiness(build(shiftLast7(dev)), ASOF, PROFILE);
       expect(r.source).toBe('hrv');
       expect(r.score as number).toBeGreaterThanOrEqual(67);
       expect(r.score as number).toBeLessThanOrEqual(85);
       expect(r.band).toBe('green');
       expect(r.training).toBe('Progress');
     }
-    expect(readiness(build(withToday(0.1)), ASOF, PROFILE).score).toBe(85); // > 1 SD above → capped
+    expect(readiness(build(shiftLast7(0.1)), ASOF, PROFILE).score).toBe(85); // > 1 SD above → capped
   });
 
-  it('scores below the lower SWC into 10–33 (red, forced Light day)', () => {
+  it('R3-1: scores a week below the lower SWC into 10–33 (red, forced Light day)', () => {
     for (const dev of [-0.03, -0.05, -0.1, -0.3]) {
-      const r = readiness(build(withToday(dev)), ASOF, PROFILE);
+      const r = readiness(build(shiftLast7(dev)), ASOF, PROFILE);
       expect(r.source).toBe('hrv');
       expect(r.score as number).toBeGreaterThanOrEqual(10);
       expect(r.score as number).toBeLessThanOrEqual(33);
       expect(r.band).toBe('red');
       expect(r.training).toBe('Light day');
     }
-    expect(readiness(build(withToday(-0.1)), ASOF, PROFILE).score).toBe(10);
+    expect(readiness(build(shiftLast7(-0.1)), ASOF, PROFILE).score).toBe(10);
+  });
+
+  it('R3-1: a single outlying reading moves the score only slightly and never bands it', () => {
+    // −0.1 ln on one day shifts the 7-day mean by ≈ 0.014 ln, well inside ± 0.5 SD.
+    const dip = readiness(build(withToday(-0.1)), ASOF, PROFILE);
+    expect(dip.band).toBe('yellow');
+    expect(dip.score as number).toBeLessThan(50);
+    expect(dip.score as number).toBeGreaterThanOrEqual(34);
+    const spike = readiness(build(withToday(0.1)), ASOF, PROFILE);
+    expect(spike.band).toBe('yellow');
+    expect(spike.score as number).toBeGreaterThan(50);
+    expect(spike.score as number).toBeLessThanOrEqual(66);
   });
 
   it('adjusts an above-band score by RHR vs its 28-day baseline (±10 cap)', () => {
-    const base = readiness(build(withToday(0.05)), ASOF, PROFILE).score as number;
+    const base = readiness(build(shiftLast7(0.05)), ASOF, PROFILE).score as number;
     const rhr = (todayBpm: number) => (i: number, n: number) => ({ rhr: i === n - 1 ? todayBpm : 52 });
-    const lower = readiness(build(withToday(0.05), rhr(46)), ASOF, PROFILE).score as number; // −6 → +10
-    const higher = readiness(build(withToday(0.05), rhr(58)), ASOF, PROFILE).score as number; // +6 → −10
-    const small = readiness(build(withToday(0.05), rhr(50)), ASOF, PROFILE).score as number; // −2 → 0
+    const lower = readiness(build(shiftLast7(0.05), rhr(46)), ASOF, PROFILE).score as number; // −6 → +10
+    const higher = readiness(build(shiftLast7(0.05), rhr(58)), ASOF, PROFILE).score as number; // +6 → −10
+    const small = readiness(build(shiftLast7(0.05), rhr(50)), ASOF, PROFILE).score as number; // −2 → 0
     expect(lower).toBe(Math.min(100, base + 10));
     expect(higher).toBe(base - 10);
     expect(small).toBe(base);
@@ -130,13 +144,15 @@ describe('readiness — HRV-only source', () => {
     expect(rhrAdjustment(9)).toBe(-10);
   });
 
-  it('hrvScore stays in the documented ranges across the band (synthetic status)', () => {
+  it('hrvScore positions the 7-day mean and stays in the documented ranges (synthetic status)', () => {
     const lo = 4.0;
     const hi = 4.1;
+    // todayLn is deliberately far from mean7Ln: only the 7-day mean may drive the score (R3-1).
     const mk = (v: number): HrvStatus => ({
-      todayMs: Math.exp(v), todayLn: v, mean7Ln: (lo + hi) / 2, mean7Ms: null, sdLn: hi - lo,
-      swcLowerLn: lo, swcUpperLn: hi, swcLowerMs: null, swcUpperMs: null, band: 'balanced',
-      cv7: null, cvPrev7: null, cvTrend: null, bigDrop: false, daysOfData: 30, baselineEstablished: true, note: '',
+      todayMs: Math.exp(v - 0.5), todayLn: v - 0.5, mean7Ln: v, mean7Ms: null, baselineLn: (lo + hi) / 2, baselineMs: null,
+      nBaseline: 21, sdLn: hi - lo, swcLowerLn: lo, swcUpperLn: hi, swcLowerMs: null, swcUpperMs: null, band: 'balanced',
+      cv7: null, cvPrev7: null, cvTrend: null, overreachingFlag: false, overreachingNote: null, bigDrop: false,
+      daysOfData: 30, baselineEstablished: true, note: '',
     });
     for (let v = 3.7; v <= 4.4; v += 0.01) {
       const s = hrvScore(mk(v), null) as number;
@@ -160,21 +176,48 @@ describe('readiness — HRV-only source', () => {
   });
 
   it('uses a pre-computed HrvStatus when passed', () => {
-    const recs = build(withToday(0.1));
+    const recs = build(shiftLast7(0.1));
     const hrv = hrvStatus(recs, ASOF, { age: PROFILE.age });
     expect(readiness(recs, ASOF, PROFILE, { hrv })).toEqual(readiness(recs, ASOF, PROFILE));
   });
 });
 
 describe('readiness — forcing rule', () => {
-  it('forces red / Light day when HRV is low even if WHOOP is green', () => {
-    const r = readiness(build(withToday(-0.1), todayOnly({ rec: 80 })), ASOF, PROFILE);
+  it('R3-1: forces red / Light day when the 7-day HRV mean is low even if WHOOP is green', () => {
+    const r = readiness(build(shiftLast7(-0.05), todayOnly({ rec: 80 })), ASOF, PROFILE);
     expect(r.source).toBe('whoop');
     expect(r.score).toBe(80); // the number is the data; only the band is forced
     expect(r.band).toBe('red');
+    expect(r.forced).toBe(true);
     expect(r.training).toBe('Light day');
     expect(r.verdict).toBe(VERDICT_COPY.red);
-    expect(r.detail).toMatch(/HRV below your normal range forces a light day/);
+    expect(r.detail).toMatch(/7-day HRV average 57 ms is below your normal range and forces a light day/);
+  });
+
+  it('R3-1: a single low reading (bigDrop) does not force a light day over a green WHOOP recovery', () => {
+    const r = readiness(build(withToday(-0.1), todayOnly({ rec: 80 })), ASOF, PROFILE);
+    expect(r.band).toBe('green');
+    expect(r.forced).toBeUndefined();
+    expect(r.training).toBe('Progress');
+  });
+
+  it('R3-5: the HRV forcing rule waits for an established baseline (≥ 21 readings)', () => {
+    // 14 readings: the last 7 sit well below the 7 before → band 'low' on a provisional range.
+    const devs: Array<number | null> = Array.from({ length: 30 }, () => null);
+    for (let i = 16; i < 23; i++) devs[i] = CYCLE[i % 7];
+    for (let i = 23; i < 30; i++) devs[i] = CYCLE[i % 7] - 0.08;
+    const recs = build(devs, todayOnly({ rec: 80 }));
+    const hrv = hrvStatus(recs, ASOF, { age: PROFILE.age });
+    expect(hrv.band).toBe('low');
+    expect(hrv.baselineEstablished).toBe(false);
+    const r = readiness(recs, ASOF, PROFILE, { hrv });
+    expect(r.source).toBe('whoop');
+    expect(r.band).toBe('green'); // not forced — the baseline is still forming
+    expect(r.forced).toBeUndefined();
+    expect(r.detail).toMatch(/HRV baseline still forming \(14 days\)/);
+    // The same shape with 30 readings is forced.
+    const full = build(shiftLast7(-0.08), todayOnly({ rec: 80 }));
+    expect(readiness(full, ASOF, PROFILE).band).toBe('red');
   });
 
   it('forces Light day when rec < 34', () => {
@@ -184,7 +227,7 @@ describe('readiness — forcing rule', () => {
   });
 
   it('does not force when HRV is merely unbalanced or poor', () => {
-    expect(readiness(build(withToday(0.1), todayOnly({ rec: 70 })), ASOF, PROFILE).band).toBe('green');
+    expect(readiness(build(shiftLast7(0.1), todayOnly({ rec: 70 })), ASOF, PROFILE).band).toBe('green');
     const poor = build(BALANCED).map((r) => ({ ...r, hrv: (r.hrv as number) * (28 / 60) }));
     const p = readiness(poor, ASOF, PROFILE);
     expect(p.source).toBe('hrv');

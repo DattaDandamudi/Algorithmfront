@@ -22,7 +22,13 @@ interface NavValue {
   openLog(section?: LogSection): void;
   logSection: LogSection | null;
   consumeLogSection(): void;
+  /** Deep-link into a Settings section (its Section id, e.g. 'whoop', 'bloodwork', 'data', 'coach'). */
+  openSettings(section?: SettingsSection): void;
+  settingsSection: SettingsSection | null;
+  consumeSettingsSection(): void;
 }
+
+export type SettingsSection = 'profile' | 'targets' | 'split' | 'bloodwork' | 'food' | 'whoop' | 'coach' | 'data' | 'about';
 
 export type LogSection = 'meal' | 'weight' | 'tobacco' | 'bedtime' | 'caffeine' | 'water';
 
@@ -43,8 +49,11 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const setTab = useCallback((t: Tab) => {
     setTabState(t);
     if (typeof window !== 'undefined') {
-      const base = window.location.pathname.startsWith('/health') ? '' : '/health';
-      window.history.replaceState(null, '', `${window.location.pathname}${base ? '' : ''}#/${t}`);
+      // Keep the app reachable after a reload: when the path is not /health the hash
+      // must carry the `health/` prefix that main.tsx's router looks for.
+      const underHealthPath = window.location.pathname === '/health' || window.location.pathname.startsWith('/health/');
+      const hash = underHealthPath ? `#/${t}` : `#/health/${t}`;
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
     }
   }, []);
 
@@ -64,6 +73,15 @@ export function NavProvider({ children }: { children: ReactNode }) {
     [setTab],
   );
 
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  const openSettings = useCallback(
+    (section?: SettingsSection) => {
+      if (section) setSettingsSection(section);
+      setTab('settings');
+    },
+    [setTab],
+  );
+
   const value = useMemo<NavValue>(
     () => ({
       tab,
@@ -74,8 +92,11 @@ export function NavProvider({ children }: { children: ReactNode }) {
       openLog,
       logSection,
       consumeLogSection: () => setLogSection(null),
+      openSettings,
+      settingsSection,
+      consumeSettingsSection: () => setSettingsSection(null),
     }),
-    [tab, setTab, openCoach, coachPrefill, openLog, logSection],
+    [tab, setTab, openCoach, coachPrefill, openLog, logSection, openSettings, settingsSection],
   );
 
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>;
