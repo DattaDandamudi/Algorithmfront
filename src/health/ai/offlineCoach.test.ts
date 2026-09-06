@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { CoachTone } from '../data/types';
+import type { CoachContext, CoachTone } from '../data/types';
 import { DEFAULT_PROFILE, DEFAULT_TARGETS } from '../data/defaults';
+import { COACH_CHIPS } from '../engine/insights';
 import { CHIPS, emptyContext, fullContext } from './coachContext.fixture';
 import { EMERGENCY_MESSAGE, MAX_WORDS, ensureBoldAction, wordCount } from './guardrails';
 import { answerOffline, nextSession, routeQuestion, type OfflineRoute } from './offlineCoach';
@@ -390,5 +391,302 @@ describe('R7-9 offline coach — weights and rates follow profile.units', () => 
 
   it('lb output is unchanged', () => {
     expect(ask(CHIPS[3])).toContain('Trend 171.9 lb, −1.10 lb/wk (−0.64%/wk) against your 0.86–1.72 lb/wk loss target — on target.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2d — the four v3 routes (lift / overtraining / stress / energy)
+// ---------------------------------------------------------------------------
+
+/** COACH_CHIPS 8–11, the chips these routes answer. */
+const V3_CHIPS = COACH_CHIPS.slice(8);
+const [LIFT_CHIP, OVERTRAINING_CHIP, STRESS_CHIP, ENERGY_CHIP] = V3_CHIPS;
+
+/** A context whose four v3 blocks are absent entirely (not merely empty). */
+function noBlocks(): CoachContext {
+  const ctx = fullContext();
+  delete ctx.training;
+  delete ctx.stress;
+  delete ctx.energy;
+  delete ctx.impact;
+  delete ctx.changepoints;
+  return ctx;
+}
+
+describe('2d routeQuestion — the v3 chips take the v3 handlers', () => {
+  it('maps chips 8–11 in order', () => {
+    expect(V3_CHIPS).toEqual(['What should I lift today?', 'Am I overtraining?', 'Why am I so stressed?', 'When will I have energy today?']);
+    expect(V3_CHIPS.map(routeQuestion)).toEqual(['lift', 'overtraining', 'stress', 'energy']);
+  });
+
+  it('still maps the original eight chips to their own handlers', () => {
+    expect(CHIPS.map((c) => routeQuestion(c))).toEqual(EXPECTED_ROUTES);
+  });
+
+  it('routes the contextual prompts the tiles offer', () => {
+    expect(routeQuestion('Should I deload this week?')).toBe('overtraining');
+    expect(routeQuestion('Why has this lift stalled?')).toBe('lift');
+    expect(routeQuestion('Which muscles need more volume?')).toBe('lift');
+    expect(routeQuestion('Which overnight signals are off?')).toBe('stress');
+    expect(routeQuestion('Am I getting sick or just tired?')).toBe('stress');
+    expect(routeQuestion('What do I do about three bad days?')).toBe('stress');
+    expect(routeQuestion('How do I get my stress down today?')).toBe('stress');
+  });
+
+  it('routes free-text variants', () => {
+    expect(routeQuestion('what exercises are on today')).toBe('lift');
+    expect(routeQuestion('am I overreaching?')).toBe('overtraining');
+    expect(routeQuestion('is my training load too much')).toBe('overtraining');
+    expect(routeQuestion('feeling anxious and wound up')).toBe('stress');
+    expect(routeQuestion('when does my afternoon slump hit')).toBe('energy');
+  });
+
+  it('does not steal the more specific routes that come first', () => {
+    // carbs wins over lift, labs wins over energy, tobacco keeps its own chip
+    expect(routeQuestion('Plan my carbs for a lift day.')).toBe('carbs');
+    expect(routeQuestion('should I deadlift heavy')).toBe('train');
+    expect(routeQuestion('Should I train today?')).toBe('train');
+    expect(routeQuestion('is my energy expenditure right')).toBe('weight');
+    expect(routeQuestion('caffeine pills for energy?')).toBe('labs');
+  });
+});
+
+describe('2d answerOffline — output contract for the v3 chips', () => {
+  const contexts = { full: fullContext(), empty: emptyContext(), noBlocks: noBlocks() };
+  for (const [name, ctx] of Object.entries(contexts)) {
+    for (const tone of TONES) {
+      it.each(V3_CHIPS)(`[${name}/${tone}] "%s" is ≤120 words, ends with one bold action, no missing-value leaks`, (q) => {
+        const out = ask(q, ctx, tone);
+        expect(wordCount(out)).toBeLessThanOrEqual(MAX_WORDS);
+        expect(out).toMatch(/\*\*[^*]+\.\*\*$/);
+        expect(out.split('**').length - 1).toBe(2);
+        expect(ensureBoldAction(out)).toBe(out);
+        expect(out).not.toMatch(/\b(null|undefined|NaN)\b/);
+        // No half-sentence: never an empty parenthesis, a dangling unit or a stray "of ." fragment.
+        expect(out).not.toMatch(/\(\s*\)|\s—\s*\.|\bof\s+\.|\s{2,}/);
+        expect(out).toMatch(/\byou\b|\byour\b|\byou're\b/i);
+      });
+    }
+  }
+
+  it('direct tone is never longer than conversational', () => {
+    for (const q of V3_CHIPS) {
+      expect(wordCount(ask(q, fullContext(), 'direct'))).toBeLessThanOrEqual(wordCount(ask(q, fullContext(), 'conversational')));
+    }
+  });
+});
+
+describe('2d lift — cites the planned session from ctx.training', () => {
+  it('names the exercises, sets, reps and load, and opens with the first one', () => {
+    const out = ask(LIFT_CHIP);
+    expect(out).toContain('Today is your lower day — 3 exercises planned.');
+    expect(out).toContain('Back squat 4×5–8 at 226 lb — progress.');
+    expect(out).toContain('Romanian deadlift 3×6–10 at 198 lb — hold.');
+    expect(out).toContain('Readiness 71% (green) — verdict: Progress.');
+    expect(out).toMatch(/\*\*Open with Back squat 4×5–8 at 226 lb and take the top set to RPE 8\.\*\*$/);
+  });
+
+  it('names the least-recovered muscle and the week\'s PR', () => {
+    const out = ask(LIFT_CHIP);
+    expect(out).toContain('Your least-recovered muscle is front-delts at 74%, 18 h since you trained it.');
+    expect(out).toContain('PR this week: Back squat e1RM 268 lb.');
+  });
+
+  it('holds the load rather than progressing when readiness is not green', () => {
+    const ctx = fullContext();
+    ctx.readiness = { ...ctx.readiness, score: 48, band: 'yellow', verdict: 'Hold loads', training: 'Train, hold loads' };
+    expect(ask(LIFT_CHIP, ctx)).toMatch(/\*\*Open with Back squat 4×5–8 at 226 lb and hold that load — no PR attempts today\.\*\*$/);
+  });
+
+  it('swaps the session on a red day and deloads when the engine asks for one', () => {
+    const red = fullContext();
+    red.readiness = { ...red.readiness, score: 28, band: 'red', verdict: 'Rest', training: 'Rest' };
+    expect(ask(LIFT_CHIP, red)).toMatch(/\*\*Swap the lower session for mobility or a 20–30 min walk and be in bed by 23:00\.\*\*$/);
+
+    const deload = fullContext();
+    deload.training = { ...deload.training!, deload: { recommended: true, reasons: ['acute load up 34% for two weeks'] } };
+    expect(ask(LIFT_CHIP, deload)).toMatch(/\*\*Run the lower session as a deload — same loads, about two-thirds of the sets \(acute load up 34% for two weeks\)\.\*\*$/);
+  });
+
+  it('reports a plateau with its own numbers', () => {
+    const ctx = fullContext();
+    ctx.training = { ...ctx.training!, plateaus: [{ exerciseId: 'bench-press', name: 'Bench press', sessions: 5, gainPct: -0.4, rpeTrend: 0.3 }] };
+    expect(ask(LIFT_CHIP, ctx)).toContain("Bench press hasn't moved in 5 sessions (−0.4%).");
+  });
+
+  it('quotes loads in kg for a kg profile', () => {
+    const out = answerOffline(LIFT_CHIP, fullContext(), { ...DEFAULT_PROFILE, units: 'kg' }, DEFAULT_TARGETS, 'conversational');
+    expect(out).toContain('Back squat 4×5–8 at 102.5 kg');
+    expect(out).not.toMatch(/\blb\b/);
+  });
+
+  it('empty context: no plan, no invented exercises, points at the split', () => {
+    const out = ask(LIFT_CHIP, emptyContext());
+    expect(out).toBe(
+      'Today is a rest day on your split; your next session is upper. **Keep it a rest day: walk toward 8,000 steps and save the progression for your next upper session.**',
+    );
+  });
+
+  it('no training block at all: falls back to the split and asks for a log', () => {
+    const out = ask(LIFT_CHIP, noBlocks());
+    expect(out).toContain("Today is your lower day, but I have no planned session for it");
+    expect(out).toMatch(/\*\*Log today's lower session in Train/);
+    expect(out).not.toMatch(/exercises planned|least-recovered|PR this week/);
+  });
+});
+
+describe('2d overtraining — cites load, ACWR and the check-in', () => {
+  it('leads on absolute load and week-on-week change, with ACWR described only', () => {
+    const out = ask(OVERTRAINING_CHIP);
+    expect(out).toContain('Your 7-day load is 342 units against a 28-day base of 318, +6% week-on-week.');
+    expect(out).toContain('ACWR 1.08 (sweet) — descriptive only, not a causal injury predictor.');
+    expect(out).toContain('Form +13 (fresh), monotony 1.4.');
+    expect(out).toContain('Check-in total 12 of 28 (green) across 26 days.');
+    expect(out).toMatch(/\*\*Keep next week within about 10% of 342 load units and progress loads, not volume\.\*\*$/);
+  });
+
+  it('slows a ramp down instead of adding to it', () => {
+    const ctx = fullContext();
+    ctx.training = { ...ctx.training!, load: { ...ctx.training!.load, weekOverWeekPct: 34 } };
+    const out = ask(OVERTRAINING_CHIP, ctx);
+    expect(out).toContain('+34% week-on-week');
+    expect(out).toMatch(/\*\*Hold this week near 342 load units instead of adding — the \+34% jump is the part to slow down\.\*\*$/);
+  });
+
+  it('three worse-than-normal check-ins in a row is the back-off cue', () => {
+    const ctx = fullContext();
+    ctx.stress = { ...ctx.stress!, checkIn: { ...ctx.stress!.checkIn, worseRun: 3, total: 20, band: 'yellow' } };
+    const out = ask(OVERTRAINING_CHIP, ctx);
+    expect(out).toContain('Your check-in has been worse than normal 3 days running — that is the back-off cue.');
+    expect(out).toMatch(/\*\*Take two easy days and be in bed by 23:00 — 3 days of worse-than-normal check-ins is the cue to back off\.\*\*$/);
+  });
+
+  it('a recommended deload wins over everything else', () => {
+    const ctx = fullContext();
+    ctx.training = { ...ctx.training!, deload: { recommended: true, reasons: ['form −18 for 6 days', 'HRV below its range twice'] } };
+    const out = ask(OVERTRAINING_CHIP, ctx);
+    expect(out).toContain('Deload flags: form −18 for 6 days; HRV below its range twice.');
+    expect(out).toMatch(/\*\*Run a deload week/);
+  });
+
+  it('empty context: says there is no load rather than reporting zeros', () => {
+    const out = ask(OVERTRAINING_CHIP, emptyContext());
+    expect(out).toContain("I don't have training load for you — no sessions logged and no WHOOP strain to read.");
+    expect(out).not.toMatch(/ACWR|Form |monotony|Resilience/);
+    expect(out).toMatch(/\*\*Log your sessions \(or import WHOOP workouts\) for a fortnight/);
+  });
+
+  it('no training block at all: the same honest empty answer', () => {
+    const out = ask(OVERTRAINING_CHIP, noBlocks());
+    expect(out).toContain("I don't have training load for you");
+    expect(out).toContain('HRV 54 ms'); // the numbers it does have are still cited
+  });
+});
+
+describe('2d stress — signals, check-in and resilience, as patterns not causes', () => {
+  it('leads on the count of deviating signals and names them', () => {
+    const out = ask(STRESS_CHIP);
+    expect(out).toContain('1 of 5 overnight signals is outside your own range: breathing rate 14.9 (+1.4 SD).');
+    expect(out).toContain('Overnight strain index 28 of 100 (19–37 interval), band none.');
+    expect(out).toContain('You rated stress 2 of 7 and fatigue 3 of 7 this morning.');
+    expect(out).toContain('Resilience 62 (solid), load-vs-recovery balance +0.19.');
+  });
+
+  it('protects the night when several signals deviate', () => {
+    const ctx = fullContext();
+    ctx.stress = {
+      ...ctx.stress!,
+      signalsDeviating: 3,
+      band: 'major',
+      outliers: ctx.stress!.outliers.map((o) => (o.key === 'hrv' || o.key === 'rhr' || o.key === 'rr' ? { ...o, deviating: true } : o)),
+    };
+    const out = ask(STRESS_CHIP, ctx);
+    expect(out).toContain('3 of 5 overnight signals are outside your own range: hrv 54 (−0.4 SD) and resting hr 52 (−0.6 SD).');
+    expect(out).toMatch(/\*\*Protect tonight: in bed by 23:00, nothing caffeinated after 14:00, and keep training easy\.\*\*$/);
+  });
+
+  it('empty context: no signals, no check-in, asks for the one that needs no wearable', () => {
+    const out = ask(STRESS_CHIP, emptyContext());
+    expect(out).toContain("I don't have overnight signals or a check-in from you yet");
+    expect(out).toContain("I'm still learning your normal — 0 nights of reference so far.");
+    expect(out).not.toMatch(/strain index|Resilience|association/);
+    expect(out).toMatch(/\*\*Fill in today's check-in in Log/);
+  });
+
+  it('no stress block at all: renders nothing about stress rather than a fragment', () => {
+    const out = ask(STRESS_CHIP, noBlocks());
+    expect(out).toContain("I don't have overnight signals or a check-in from you yet");
+    expect(out).not.toMatch(/of 5 overnight|strain index|check-in total/i);
+  });
+});
+
+describe('2d stress & impact copy — associations with intervals, never causes or diagnoses', () => {
+  it('quotes a behaviour effect with its interval and labels it an association', () => {
+    const out = ask(STRESS_CHIP);
+    expect(out).toContain('From your own days: on the 9 days you drank, next-morning HRV averaged 6.2 ms lower (95% CI 2.8–9.6) — an association, not a cause.');
+    // Association wording only: no causal verb anywhere in the reply.
+    expect(out).not.toMatch(/\bcaused\b|\bcauses\b|\bbecause\b|\bdue\s+to\b|\bmakes?\s+your\b|\blowered\s+your\b|\bfrom\s+drinking\b/i);
+  });
+
+  it('names the confound when the engine found one', () => {
+    const ctx = fullContext();
+    ctx.impact = { ...ctx.impact!, effects: [ctx.impact!.effects[1]] };
+    const out = ask(STRESS_CHIP, ctx);
+    expect(out).toContain('(95% CI 0.2–1.0) — an association, not a cause (those days were also harder training days).');
+  });
+
+  it('the illness flag stays a data pattern and routes to a doctor', () => {
+    const ctx = fullContext();
+    ctx.stress = {
+      ...ctx.stress!,
+      illness: { flag: true, since: '2026-09-02', reasons: ['skin temp +1.4 SD for 2 nights', 'breathing rate +1.6 SD'] },
+    };
+    const out = ask(STRESS_CHIP, ctx);
+    expect(out).toContain(
+      'Your overnight signals have matched an illness pattern since 2026-09-02 (skin temp +1.4 SD for 2 nights, breathing rate +1.6 SD) — a pattern in the data, not a diagnosis.',
+    );
+    expect(out).toMatch(/\*\*Keep today easy, sleep long and hydrate; if it lasts more than a few days or you feel unwell, see your doctor\.\*\*$/);
+    // Never a condition, never a verdict on what it is.
+    expect(out).not.toMatch(/\b(infection|virus|viral|flu|covid|fever|you\s+are\s+sick|you're\s+sick)\b/i);
+    // The only time "diagnos" may appear is in the denial.
+    expect(out.match(/diagnos\w*/gi)).toEqual(['diagnosis']);
+  });
+
+  it('"am I getting sick?" is a symptom ask: it holds training and sends the user to a clinician', () => {
+    const ctx = fullContext();
+    ctx.stress = { ...ctx.stress!, illness: { flag: true, since: '2026-09-02', reasons: ['skin temp +1.4 SD for 2 nights'] } };
+    const out = ask('Am I getting sick or just tired?', ctx);
+    expect(routeQuestion('Am I getting sick or just tired?')).toBe('stress');
+    expect(out).toContain('not a diagnosis');
+    expect(out).toMatch(/\*\*Hold or skip training today[^*]*clinician[^*]*\.\*\*$/);
+    expect(out).not.toMatch(/\b(infection|virus|viral|covid)\b/i);
+  });
+});
+
+describe('2d energy — a forecast, never a measurement', () => {
+  it('cites the curve, the dip and the caffeine still on board', () => {
+    const out = ask(ENERGY_CHIP);
+    expect(out).toContain('Predicted energy is 72 of 100 at 15:20 — a forecast from your sleep and body clock, not a measurement.');
+    expect(out).toContain('Your dip lands around 15:00 at 54 of 100.');
+    expect(out).toContain('The best window is around 10:00 at 86.');
+    expect(out).toContain('About 42 mg of caffeine is still in you.');
+    expect(out).not.toMatch(/battery|measured\s+energy/i);
+  });
+
+  it('front-loads the day when the dip is still ahead', () => {
+    const ctx = fullContext();
+    ctx.nowHHMM = '09:30';
+    expect(ask(ENERGY_CHIP, ctx)).toMatch(/\*\*Put your hardest work before 15:00 and give the dip a 10-min walk instead of more coffee\.\*\*$/);
+  });
+
+  it('empty context: says the forecast is missing and asks for the inputs', () => {
+    const out = ask(ENERGY_CHIP, emptyContext());
+    expect(out).toBe(
+      "I don't have an energy forecast yet — it needs last night's sleep and your wake time. **Log last night's sleep and your wake time (or import WHOOP sleep) and I'll forecast today's peak and dip.**",
+    );
+  });
+
+  it('no energy block at all: the same empty answer, no fragments', () => {
+    expect(ask(ENERGY_CHIP, noBlocks())).toContain("I don't have an energy forecast yet");
   });
 });

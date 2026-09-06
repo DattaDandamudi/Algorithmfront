@@ -9,19 +9,29 @@
  * `useNow()` supplies it, and the memo is keyed on the minute (brief: "never
  * rebuild on every keystroke") so the bedtime countdown and protein pacing
  * refresh once a minute and not on every store write in between.
+ *
+ * v3 (plan 2b): the context is built with `workouts` so the training, load,
+ * stress and energy blocks are filled — the check-ins ride along on the daily
+ * records (`qs`/`qf`/`qt`/`qo`/`qsk`) and `settings.checkIn`, which the engine
+ * reads itself. The cards this screen shows are then recorded once a day via
+ * `recordInsightsShown`, which is what makes the decaying insight priority
+ * work: a card that held slot 1 yesterday starts today 4 points down.
  */
-import { useMemo } from 'react';
-import type { AppSettings, BaselineDelta, CoachContext, DailyRecord, Insight, ISODate } from '../../data/types';
-import { useHealth, useNow, useRecords } from '../../data/store';
+import { useEffect, useMemo } from 'react';
+import type { AppSettings, BaselineDelta, CoachContext, DailyRecord, Insight, ISODate, Workout } from '../../data/types';
+import { useHealth, useNow, useRecords, useWorkouts } from '../../data/store';
 import {
   baselineDelta,
   bedtimeCountdown,
   buildCoachContext,
   buildInsights,
   computeEwmaTrend,
+  computeKalmanTrend,
   emptyStates,
+  kalmanRate,
   lateEatingCheck,
   metricSeries,
+  smoothKalman,
   suggestedPrompts,
   tobaccoOf,
   tobaccoStats,
@@ -75,6 +85,8 @@ export interface TodayModel {
   now: Date;
   settings: AppSettings;
   records: DailyRecord[];
+  /** Logged and imported sessions, oldest first — what fills `ctx.training`. */
+  workouts: Workout[];
   todayRecord: DailyRecord | null;
   ctx: CoachContext;
   insights: Insight[];
@@ -92,6 +104,14 @@ export interface TodayModel {
   late: LateEatingCheck;
   /** §0 "vs your 30-day average" for the Protein / Calories tiles (R1-4). */
   nutritionBaseline: NutritionBaseline;
+  /**
+   * The engine's sentence for a slope it will not publish yet ("Rate
+   * unavailable — about 3 more weigh-ins"), or null once the rate is
+   * available. `ctx.weight` carries the interval but not this string, so the
+   * same `kalmanRate` call is repeated — with the same options — only in the
+   * state where the context has nothing to show. The count is the filter's.
+   */
+  rateReason: string | null;
 }
 
 export function useTodayModel(): TodayModel & {
@@ -102,6 +122,7 @@ export function useTodayModel(): TodayModel & {
 } {
   const { state, actions } = useHealth();
   const records = useRecords();
+  const workouts = useWorkouts();
   const wall = useNow();
   const today = toISODate(wall);
   const hh = wall.getHours();
@@ -116,7 +137,7 @@ export function useTodayModel(): TodayModel & {
   const settings = state.settings;
 
   const model = useMemo<TodayModel>(() => {
-    const ctx = buildCoachContext({ records, settings, today, now });
+    const ctx = buildCoachContext({ records, settings, today, now, workouts });
     const profile = settings.profile;
     const alpha = settings.targets.ewmaAlpha;
     const todayRecord = ctx.todayRecord;
@@ -133,11 +154,23 @@ export function useTodayModel(): TodayModel & {
 
     const exp = weeklyExpenditure(records, today, { alpha });
 
+    // Only when the context has no rate to show: the same filter, the same
+    // options, so the sentence and the (absent) interval can never disagree.
+    const rateReason =
+      ctx.weight.rateAvailable === false
+        ? kalmanRate(
+            smoothKalman(computeKalmanTrend(records, today, { cycle: { enabled: profile.tracksCycle === true } })),
+            today,
+            profile.weightLb,
+          ).reason
+        : null;
+
     return {
       today,
       now,
       settings,
       records,
+      workouts,
       todayRecord,
       ctx,
       insights: buildInsights(ctx, settings),
@@ -155,8 +188,21 @@ export function useTodayModel(): TodayModel & {
         kcal: baselineDelta(records, 'kc', today, NUTRITION_BASELINE_DAYS),
         dayComplete: now.getHours() >= DAY_COMPLETE_HOUR,
       },
+      rateReason,
     };
-  }, [records, settings, today, now]);
+  }, [records, workouts, settings, today, now]);
+
+  // The decaying priority (engine/insights.ts) needs to know which cards were
+  // actually on screen: `insightHistory[d]` is read as "what the app showed on
+  // day d", so it is written from the screen that shows them, keyed on the day
+  // and the template ids. The store no-ops when the ids are unchanged, so this
+  // settles after one write however often the model rebuilds; the ids stored
+  // are the TEMPLATE ids, which is what `insightStreak` matches on.
+  const shown = model.insights.map((i) => i.template).join(',');
+  const { recordInsightsShown } = actions;
+  useEffect(() => {
+    recordInsightsShown(today, shown === '' ? [] : shown.split(','));
+  }, [recordInsightsShown, today, shown]);
 
   // R7-13: "Going to bed" creates tomorrow's record before midnight; that
   // future-dated stub is not a day with data for the backup reminder.

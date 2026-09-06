@@ -297,3 +297,54 @@ describe('R5-6 isSymptomAsk — the symptom subset of medical asks', () => {
     expect(isSymptomAsk(q)).toBe(false),
   );
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2d — the stress stack's phrasing: associations, and a flag that is
+// never a diagnosis
+// ---------------------------------------------------------------------------
+
+describe('2d isSymptomAsk — the illness flag is answered as a symptom, never as a diagnosis', () => {
+  it.each([
+    'Am I getting sick or just tired?',
+    'am I sick?',
+    "I think I'm coming down with something",
+    'catching a cold before a lift day?',
+    'is my immune system taking a hit from this block',
+  ])('true for "%s" — it holds training and takes the doctor cue', (q) => {
+    expect(isSymptomAsk(q)).toBe(true);
+    expect(isMedicalAsk(q)).toBe(true);
+    expect(detectEmergency(q).emergency).toBe(false);
+  });
+
+  it.each(['What should I lift today?', 'Am I overtraining?', 'Why am I so stressed?', 'When will I have energy today?', 'Which overnight signals are off?', 'Should I deload this week?'])(
+    'false for "%s" — a v3 coaching question is not a medical ask',
+    (q) => {
+      expect(isSymptomAsk(q)).toBe(false);
+      expect(isMedicalAsk(q)).toBe(false);
+    },
+  );
+});
+
+describe('2d ensureDoctorCue / ensureBoldAction — association copy keeps its shape', () => {
+  const association = 'On the 9 days you drank, next-morning HRV averaged 6.2 ms lower (95% CI 2.8–9.6) — an association, not a cause. **Keep tonight alcohol-free.**';
+
+  it('leaves an association reply untouched when it is not a medical ask', () => {
+    expect(ensureDoctorCue(association, false)).toBe(association);
+    expect(ensureBoldAction(association)).toBe(association);
+  });
+
+  it('inserts the cue before the bold action so the interval sentence survives', () => {
+    const out = ensureDoctorCue(association, true);
+    expect(out).toContain('(95% CI 2.8–9.6) — an association, not a cause.');
+    expect(out).toContain('Confirm dosing and any changes with your doctor.');
+    expect(out).toMatch(/\*\*Keep tonight alcohol-free\.\*\*$/);
+    expect(ensureBoldAction(out)).toBe(out);
+  });
+
+  it('an illness-pattern reply that already names a doctor is not cued twice', () => {
+    const reply =
+      'Your overnight signals have matched an illness pattern since 2026-09-02 (skin temp +1.4 SD) — a pattern in the data, not a diagnosis. **Keep today easy and see your doctor if it persists.**';
+    expect(ensureDoctorCue(reply, true)).toBe(reply);
+    expect(reply.match(/diagnos\w*/gi)).toEqual(['diagnosis']);
+  });
+});

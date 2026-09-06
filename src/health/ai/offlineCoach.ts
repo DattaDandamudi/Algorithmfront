@@ -2,27 +2,61 @@
  * Offline coach — the app must work with NO API key (SPEC §4/§5, README
  * "None (default): offline coach").
  *
- * Eight rule-based handlers mirror the eight quick-prompt chips, plus a
+ * Twelve rule-based handlers mirror the twelve quick-prompt chips, plus a
  * generic fallback. Every answer follows the §8 contract the Claude coach is
  * held to: second person, ≤120 words, cites the user's actual numbers from
  * CoachContext (and says plainly when one is missing), cause → effect → one
  * action, ends with a single **bold** action. 'direct' tone drops the
  * explanatory middle. The lab handler is lifestyle-only with a doctor cue;
  * elevated lead escalates to a physician (§6.7, CAVEATS).
+ *
+ * The four v3 routes (`lift`, `overtraining`, `stress`, `energy`) read the
+ * `training` / `stress` / `energy` / `impact` blocks, which are optional: a
+ * user with no wearable and no logged sessions still gets a complete answer,
+ * because every sentence that depends on one of those blocks is either
+ * rendered with its real numbers or not rendered at all — never a half
+ * sentence, never a null. Two rules they inherit from the engine: ACWR is
+ * described, never used as an injury prediction (Impellizzeri 2020), and
+ * stress signals, behaviour effects and the illness flag are reported as
+ * associations or patterns with their intervals — never as causes and never
+ * as a diagnosis (§8 GUARDRAILS; persistence routes to the doctor cue).
  */
 import type { CoachContext, CoachTone, ISODate, Profile, SessionType, Targets, TrainingSplit, Weekday } from '../data/types';
-import { weekdayOf } from '../lib/dates';
-import { fmt, fmtSigned, fmtWeight, lbToKg, round } from '../lib/format';
+import { hhmmToMinutes, weekdayOf } from '../lib/dates';
+import { fmt, fmtSigned, fmtWeight, kgToLb, lbToKg, round } from '../lib/format';
 import { EMERGENCY_MESSAGE, MAX_WORDS, detectEmergency, isSymptomAsk, wordCount } from './guardrails';
 
-export type OfflineRoute = 'train' | 'eat' | 'recovery' | 'weight' | 'carbs' | 'sleep' | 'tobacco' | 'labs' | 'generic';
+export type OfflineRoute =
+  | 'lift'
+  | 'overtraining'
+  | 'stress'
+  | 'energy'
+  | 'train'
+  | 'eat'
+  | 'recovery'
+  | 'weight'
+  | 'carbs'
+  | 'sleep'
+  | 'tobacco'
+  | 'labs'
+  | 'generic';
 
-/** Order matters: earlier routes win ("carbs for a lift day" → carbs, not train). */
+/**
+ * Order matters: earlier routes win ("carbs for a lift day" → carbs, not
+ * train). The four v3 routes sit above `recovery`/`train` so the specific
+ * question takes the specific handler ("what should I lift today?" → lift, not
+ * train; "am I overtraining?" → overtraining, not recovery) and below `carbs`
+ * so "plan my carbs for a lift day" is still a carb question.
+ */
 const ROUTES: Array<[OfflineRoute, RegExp]> = [
   // Supplement names ride with labs (R5-9): the handler is lifestyle-only and its action carries the doctor cue.
   ['labs', /vitamin|\bvit[-\s]?d\b|ferritin|omega|\biron\b|\bzinc\b|testosterone|\blead\s+(level|result|exposure)|\b(elevated|blood)\s+lead\b|\blabs?\b|blood\s*(work|test)|supplement|fish\s+oil|\bdos(e|ing|age)\b|retest|creatine|melatonin|ashwagandha|\bzma\b|pre[-\s]?workout|caffeine\s+(pills?|tablets?)|beta[-\s]?alanine|multivitamin/i],
   ['tobacco', /tobacco|smok|cigarette|nicotine|\bvap(e|ing)\b|\bquit/i],
   ['carbs', /\bcarb|\brice\b|\broti\b|\bnaan\b|\bfuel|glycogen|\bbread\b/i],
+  ['lift', /what\s+(should|do|can|will)\s+i\s+lift|what\s+to\s+lift|\blift(s|ing)?\s+(today|now|next)|which\s+(lifts?|exercises?|muscles?)|what\s+exercises?|today'?s\s+(session|workout|lifts?)|planned\s+(session|workout|exercises?)|\bthis\s+lift\b|\be1rm\b|\bvolume\b|sets?\s+per\s+week|\bprogression\b|what\s+weight\s+should\s+i/i],
+  ['overtraining', /\bover[-\s]?train|overreach|\bdeload\b|too\s+much\s+(training|volume|load|work)|training\s+too\s+(much|hard|often)|\bacwr\b|acute[:\s/]+chronic|\bmonotony\b|training\s+load|\bramping\s+up\b/i],
+  ['stress', /\bstress(ed|ful|ors?|ing)?\b|\banxi(ous|ety)\b|overwhelm|\bwound\s+up\b|\bon\s+edge\b|\bhooper\b|resilien|check[-\s]?in\b|overnight\s+signals?|strain\s+index|getting\s+sick|coming\s+down\s+with|\bill(ness)?\b|\bbad\s+days\b|burn(t|ed)?\s*out/i],
+  ['energy', /\benerg(y|etic|ies)\b(?!\s+(expenditure|density|balance|intake))|\balertness\b|afternoon\s+(slump|dip|crash)|\bslump\b|second\s+wind|\bpeak\s+(hours?|time)\b|\bwired\b/i],
   ['recovery', /recover|readiness|\bhrv\b|\brhr\b|resting\s+heart|heart\s+rate|\bstrain\b|whoop|overtrain|run[-\s]?down|burn(t|ed)?\s*out/i],
   ['sleep', /sleep|slept|\bbed|\bnap|tired|fatigue|\bdebt\b|wind[-\s]?down|caffeine|coffee|insomnia|\bwake|\bwoke/i],
   ['weight', /weigh|\btrend\b|\bscale\b|calorie|kcal|deficit|\btdee\b|expenditure|fat[-\s]?loss|\blos(e|ing)\s+(fat|weight)|plateau|stall|\bcut\b|maintenance|\bbulk/i],
@@ -58,6 +92,8 @@ const inUnits = (lb: number, u: Units) => (u === 'kg' ? lbToKg(lb) : lb);
 const wtStr = (lb: number, u: Units) => fmtWeight(lb, u);
 const rateStr = (lb: number, u: Units) => `${fmtSigned(inUnits(lb, u), 2)} ${u}/wk`;
 const perWk = (lb: number, u: Units) => `${fmt(inUnits(lb, u), 2)} ${u}/wk`;
+/** Barbell loads are stored in kg (§1f); quote them in the same units as body weight. */
+const loadStr = (kg: number, u: Units) => (u === 'kg' ? `${r1(kg)} kg` : `${r0(kgToLb(kg))} lb`);
 
 interface Parts {
   lead: string;
@@ -215,6 +251,211 @@ function recovery(ctx: CoachContext, profile: Profile): Parts {
   else if (r.band === 'yellow') action = `Train but hold loads today, and protect tonight: in bed by ${profile.bedTarget}, no caffeine after ${profile.caffeineCutoff}`;
   else if (r.band === 'green') action = `You're primed — progress your loads and keep the same ${profile.bedTarget} bedtime tonight`;
   else action = `Log or import today's WHOOP recovery and HRV so I can pin down the cause; until then, train moderate and hold your loads`;
+  return { lead, details, action };
+}
+
+// --- v3 routes: training, overtraining, stress, energy ---------------------
+//
+// Each one leans on an optional block. `t`/`s`/`e` are read through `?.` and
+// every sentence is pushed only once its numbers exist, so a context with no
+// training, stress or energy block yields a shorter answer, never a broken one.
+
+/** Below this a muscle is still inside its 48–72 h recovery window (§1e). */
+const RECOVERING_PCT = 90;
+/** Three worse-than-normal check-ins in a row — the DALDA back-off cue (§1h). */
+const WORSE_RUN_CUE = 3;
+/** Week-on-week acute-load rise the engine treats as a ramp worth naming (§1e soft cap). */
+const RAMP_PCT = 10;
+
+const PR_KIND: Record<'weight' | 'reps' | 'e1rm', string> = { weight: 'load', reps: 'reps', e1rm: 'e1RM' };
+
+/** "3×5–8 at 226 lb" — the part of a planned exercise a reply can act on. */
+function prescription(e: NonNullable<CoachContext['training']>['plannedExercises'][number], u: Units): string {
+  const load = has(e.loadKg) ? ` at ${loadStr(e.loadKg, u)}` : '';
+  return `${e.sets}×${e.reps[0]}–${e.reps[1]}${load}`;
+}
+
+function lift(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
+  const t = ctx.training;
+  const u = unitsOf(profile);
+  const planned = t?.plannedExercises ?? [];
+  const session = t && t.todaySession !== 'rest' ? t.todaySession : ctx.dayType === 'lift' ? ctx.sessionType : null;
+  const next = nextSession(profile.split, ctx.today);
+  const r = ctx.readiness;
+
+  const lead = planned.length
+    ? `Today is your ${session ?? 'training'} day — ${plural(planned.length, 'exercise')} planned.`
+    : session
+      ? `Today is your ${session} day, but I have no planned session for it — nothing logged for these lifts yet.`
+      : `Today is a rest day on your split${next ? `; your next session is ${next}` : ''}.`;
+
+  const details: string[] = [];
+  for (const e of planned.slice(0, 2)) details.push(`${e.name} ${prescription(e, u)} — ${e.mode}.`);
+  if (r.score !== null) details.push(`Readiness ${r0(r.score)}% (${r.band}) — verdict: ${r.training}.`);
+  const sore = (t?.muscleReadiness ?? []).filter((m) => m.pct < RECOVERING_PCT).sort((a, b) => a.pct - b.pct)[0];
+  if (sore) {
+    details.push(`Your least-recovered muscle is ${sore.muscle} at ${r0(sore.pct)}%${has(sore.hoursSince) ? `, ${r0(sore.hoursSince)} h since you trained it` : ''}.`);
+  }
+  const pr = t?.prs7d[0];
+  if (pr) details.push(`PR this week: ${pr.name} ${PR_KIND[pr.kind]} ${pr.kind === 'reps' ? r0(pr.value) : loadStr(pr.value, u)}.`);
+  const plateau = t?.plateaus[0];
+  if (plateau) details.push(`${plateau.name} hasn't moved in ${plural(plateau.sessions, 'session')} (${fmtSigned(plateau.gainPct, 1)}%).`);
+  const lastSession = t?.lastSession;
+  if (lastSession) details.push(`Last session: ${lastSession.session ?? lastSession.kind} on ${lastSession.d}${has(lastSession.srpe) ? ` at RPE ${lastSession.srpe}` : ''}.`);
+
+  let action: string;
+  if (!planned.length) {
+    action = session
+      ? `Log today's ${session} session in Train — with your sets and RPE on file I can pick the loads next time`
+      : `Keep it a rest day: walk toward ${targets.stepsMin.toLocaleString('en-US')} steps and save the progression for your next ${next ?? 'lift'} session`;
+  } else if (t?.deload.recommended) {
+    action = `Run the ${session ?? 'planned'} session as a deload — same loads, about two-thirds of the sets${t.deload.reasons[0] ? ` (${t.deload.reasons[0]})` : ''}`;
+  } else if (r.band === 'red') {
+    action = `Swap the ${session ?? 'planned'} session for mobility or a 20–30 min walk and be in bed by ${profile.bedTarget}`;
+  } else {
+    const first = planned[0];
+    action =
+      first.mode === 'progress' && r.band === 'green'
+        ? `Open with ${first.name} ${prescription(first, u)} and take the top set to RPE 8`
+        : `Open with ${first.name} ${prescription(first, u)} and hold that load — no PR attempts today`;
+  }
+  return { lead, details, action };
+}
+
+function overtraining(ctx: CoachContext, profile: Profile): Parts {
+  const l = ctx.training?.load;
+  const s = ctx.stress;
+  const c = s?.checkIn;
+  const hasLoad = !!l && l.source !== 'none' && (l.acute7 > 0 || l.chronic28 > 0);
+
+  const lead = hasLoad
+    ? `Your 7-day load is ${r0(l.acute7)} units against a 28-day base of ${r0(l.chronic28)}${has(l.weekOverWeekPct) ? `, ${fmtSigned(l.weekOverWeekPct, 0)}% week-on-week` : ''}.`
+    : "I don't have training load for you — no sessions logged and no WHOOP strain to read.";
+
+  const details: string[] = [];
+  if (hasLoad) {
+    if (has(l.acwr) && l.acwrBand) details.push(`ACWR ${fmt(l.acwr, 2)} (${l.acwrBand}) — descriptive only, not a causal injury predictor.`);
+    if (l.formBand) details.push(`Form ${fmtSigned(l.form, 0)} (${l.formBand})${has(l.monotony) ? `, monotony ${r1(l.monotony)}` : ''}.`);
+  }
+  if (c && c.worseRun >= WORSE_RUN_CUE) details.push(`Your check-in has been worse than normal ${plural(c.worseRun, 'day')} running — that is the back-off cue.`);
+  else if (c && has(c.total)) details.push(`Check-in total ${r0(c.total)} of 28 (${c.band}) across ${plural(c.nDays, 'day')}.`);
+  details.push(hrvSentence(ctx));
+  if (ctx.hrv.overreaching === true) details.push('Your HRV variability has moved away from its own reference — the pattern that usually shows up before form drops.');
+  if (s && has(s.resilience.score) && s.resilience.band) details.push(`Resilience ${r0(s.resilience.score)} (${s.resilience.band}) over ${plural(s.resilience.nDays, 'day')}.`);
+  if (ctx.training?.deload.recommended) details.push(`Deload flags: ${ctx.training.deload.reasons.slice(0, 2).join('; ')}.`);
+
+  let action: string;
+  if (ctx.training?.deload.recommended) {
+    action = 'Run a deload week — same loads, about two-thirds of the sets — and reassess at the next check-in';
+  } else if (c && c.worseRun >= WORSE_RUN_CUE) {
+    action = `Take two easy days and be in bed by ${profile.bedTarget} — ${plural(c.worseRun, 'day')} of worse-than-normal check-ins is the cue to back off`;
+  } else if (hasLoad && has(l.weekOverWeekPct) && l.weekOverWeekPct > RAMP_PCT) {
+    action = `Hold this week near ${r0(l.acute7)} load units instead of adding — the ${fmtSigned(l.weekOverWeekPct, 0)}% jump is the part to slow down`;
+  } else if (hasLoad) {
+    action = `Keep next week within about ${RAMP_PCT}% of ${r0(l.acute7)} load units and progress loads, not volume`;
+  } else {
+    action = 'Log your sessions (or import WHOOP workouts) for a fortnight so I can compare your acute load with your 28-day base';
+  }
+  return { lead, details, action };
+}
+
+/**
+ * Stress. The leading number is the count of overnight signals outside the
+ * user's own range, not the fused index — and every line here describes a
+ * pattern: an outlying signal is never given a cause, a behaviour effect is
+ * quoted with its interval, and the illness flag is named as a flag with its
+ * reasons and routed to a doctor on persistence, never turned into a
+ * diagnosis (§8 GUARDRAILS).
+ */
+function stress(ctx: CoachContext, profile: Profile): Parts {
+  const s = ctx.stress;
+  const c = s?.checkIn;
+  const deviating = (s?.outliers ?? []).filter((o) => o.deviating);
+  const named = deviating
+    .slice(0, 2)
+    .map((o) => `${o.label.toLowerCase()}${has(o.value) ? ` ${r1(o.value)}` : ''}${has(o.z) ? ` (${fmtSigned(o.z, 1)} SD)` : ''}`)
+    .join(' and ');
+
+  let lead: string;
+  if (s && s.signalsAvailable > 0) {
+    lead = `${s.signalsDeviating} of ${s.signalsAvailable} overnight signals ${s.signalsDeviating === 1 ? 'is' : 'are'} outside your own range${named ? `: ${named}` : ''}.`;
+  } else if (c && has(c.total)) {
+    lead = `I have no overnight signals for you, only your check-in: ${r0(c.total)} of 28 (${c.band}).`;
+  } else {
+    lead = "I don't have overnight signals or a check-in from you yet, so I can't say where your stress actually sits.";
+  }
+
+  // Order is the drop order: `compose` trims from the end, so the flag and the
+  // back-off cue outrank the scores, and the scores outrank the context.
+  const details: string[] = [];
+  if (s?.illness.flag) {
+    details.push(`Your overnight signals have matched an illness pattern${s.illness.since ? ` since ${s.illness.since}` : ''}${s.illness.reasons.length ? ` (${s.illness.reasons.slice(0, 2).join(', ')})` : ''} — a pattern in the data, not a diagnosis.`);
+  }
+  if (c && c.worseRun >= WORSE_RUN_CUE) details.push(`That's ${plural(c.worseRun, 'day')} running worse than your normal.`);
+  if (s && has(s.osi)) {
+    details.push(`Overnight strain index ${r0(s.osi)} of 100${has(s.osiLo) && has(s.osiHi) ? ` (${r0(s.osiLo)}–${r0(s.osiHi)} interval)` : ''}${s.band ? `, band ${s.band}` : ''}.`);
+  }
+  if (c && has(c.stress) && has(c.fatigue)) details.push(`You rated stress ${r0(c.stress)} of 7 and fatigue ${r0(c.fatigue)} of 7 this morning.`);
+  if (s && has(s.resilience.score) && s.resilience.band) {
+    details.push(`Resilience ${r0(s.resilience.score)} (${s.resilience.band})${has(s.resilience.balance) ? `, load-vs-recovery balance ${fmtSigned(s.resilience.balance, 2)}` : ''}.`);
+  }
+  const effect = ctx.impact?.effects[0];
+  if (effect) details.push(`From your own days: ${effect.label} — an association, not a cause${effect.confound ? ` (${effect.confound})` : ''}.`);
+  if (s?.calibrating) details.push(`I'm still learning your normal — ${plural(s.nRef, 'night')} of reference so far.`);
+
+  let action: string;
+  if (s?.illness.flag) {
+    action = `Keep today easy, sleep long and hydrate; if it lasts more than a few days or you feel unwell, see your doctor`;
+  } else if (c && c.worseRun >= WORSE_RUN_CUE) {
+    action = `Take today easy and be in bed by ${profile.bedTarget} — ${plural(c.worseRun, 'day')} of worse-than-normal check-ins is the cue to back off`;
+  } else if (s && (s.band === 'major' || s.signalsDeviating >= 2)) {
+    action = `Protect tonight: in bed by ${profile.bedTarget}, nothing caffeinated after ${profile.caffeineCutoff}, and keep training easy`;
+  } else if (!c || c.missingToday) {
+    action = `Fill in today's check-in in Log — four 1–7 taps, and it's the one stress signal that works without a wearable`;
+  } else {
+    action = `Keep tonight's routine — in bed by ${profile.bedTarget}, no caffeine after ${profile.caffeineCutoff} — and log tomorrow's check-in`;
+  }
+  return { lead, details, action };
+}
+
+/**
+ * Energy. Every number is from the two-process forecast in `ctx.energy`; the
+ * copy calls it a forecast, never a measurement, because nothing here has
+ * continuous heart rate to measure it with.
+ */
+function energy(ctx: CoachContext, profile: Profile): Parts {
+  const e = ctx.energy;
+  const curve = e?.forecast ?? [];
+  const peak = curve.reduce<(typeof curve)[number] | null>((best, p) => (best === null || p.value > best.value ? p : best), null);
+  const nowMin = hhmmToMinutes(ctx.nowHHMM);
+  const troughMin = e?.trough ? hhmmToMinutes(e.trough.hhmm) : null;
+  const beforeTrough = nowMin !== null && troughMin !== null && nowMin < troughMin;
+
+  const lead = has(e?.now)
+    ? `Predicted energy is ${r0(e.now)} of 100 at ${ctx.nowHHMM} — a forecast from your sleep and body clock, not a measurement.`
+    : curve.length
+      ? "Here's today's predicted energy curve — a forecast from your sleep and body clock, not a measurement."
+      : "I don't have an energy forecast yet — it needs last night's sleep and your wake time.";
+
+  const details: string[] = [];
+  if (e?.trough) details.push(`Your dip lands around ${e.trough.hhmm} at ${r0(e.trough.value)} of 100.`);
+  if (peak) details.push(`The best window is around ${peak.hhmm} at ${r0(peak.value)}.`);
+  if (e && has(e.atWake)) details.push(`You started the day at ${r0(e.atWake)}.`);
+  if (e && has(e.caffeineActiveMg) && e.caffeineActiveMg > 0) details.push(`About ${r0(e.caffeineActiveMg)} mg of caffeine is still in you.`);
+  if (e?.bedtimeReadyAt) details.push(`The curve reaches sleep-ready at ${e.bedtimeReadyAt}.`);
+  if (e?.drivers.length) details.push(`Behind it: ${e.drivers.slice(0, 2).join(' and ')}.`);
+  if (e && curve.length) details.push(`Confidence is ${e.confidence} — this is modelled, not measured.`);
+
+  let action: string;
+  if (!curve.length && !has(e?.now)) {
+    action = `Log last night's sleep and your wake time (or import WHOOP sleep) and I'll forecast today's peak and dip`;
+  } else if (e?.trough && beforeTrough) {
+    action = `Put your hardest work before ${e.trough.hhmm} and give the dip a 10-min walk instead of more coffee`;
+  } else if (e?.bedtimeReadyAt) {
+    action = `Use the window after your dip for anything demanding, then start winding down at ${e.bedtimeReadyAt}`;
+  } else {
+    action = `Keep caffeine before ${profile.caffeineCutoff} so tonight's sleep isn't what flattens tomorrow's curve`;
+  }
   return { lead, details, action };
 }
 
@@ -451,6 +692,10 @@ function generic(ctx: CoachContext, profile: Profile): Parts {
 type Handler = (ctx: CoachContext, profile: Profile, targets: Targets, question: string) => Parts;
 
 const HANDLERS: Record<OfflineRoute, Handler> = {
+  lift: (ctx, profile, targets) => lift(ctx, profile, targets),
+  overtraining: (ctx, profile) => overtraining(ctx, profile),
+  stress: (ctx, profile) => stress(ctx, profile),
+  energy: (ctx, profile) => energy(ctx, profile),
   train: (ctx, profile, targets) => train(ctx, profile, targets),
   eat: (ctx, profile, targets) => eat(ctx, profile, targets),
   recovery: (ctx, profile) => recovery(ctx, profile),

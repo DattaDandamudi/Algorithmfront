@@ -2,7 +2,7 @@
  * Small pure helpers shared by the Settings sections. Kept free of React so
  * they can be unit-tested and reused by the Data / WHOOP / Bloodwork panels.
  */
-import type { BloodMarker, ISODate, MarkerStatus, SessionType } from '../../data/types';
+import type { BloodMarker, CheckInItem, Equipment, ISODate, MarkerStatus, MovementPattern, Muscle, Program, SessionType, VolumeLandmark } from '../../data/types';
 import { retestReminders, type RetestReminder } from '../../engine/micronutrients';
 import type { Tone } from '../../ui';
 
@@ -161,4 +161,77 @@ export function normalizeHHMM(v: string): string | null {
 
 export function isISODate(v: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+// ---------------------------------------------------------------------------
+// Training (§4 Training, §9 Imports)
+// ---------------------------------------------------------------------------
+
+/** 'front-delts' → 'Front delts'. Matches engine/insights so both read alike. */
+export function muscleLabel(m: Muscle | string): string {
+  const s = String(m).replace(/-/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Movement patterns a user can pick for a custom exercise. */
+export const PATTERN_OPTIONS: Array<{ value: MovementPattern; label: string }> = [
+  { value: 'squat', label: 'Squat' },
+  { value: 'hinge', label: 'Hinge' },
+  { value: 'lunge', label: 'Lunge' },
+  { value: 'push-h', label: 'Horizontal push' },
+  { value: 'push-v', label: 'Vertical push' },
+  { value: 'pull-h', label: 'Horizontal pull' },
+  { value: 'pull-v', label: 'Vertical pull' },
+  { value: 'isolation', label: 'Isolation' },
+  { value: 'core', label: 'Core' },
+  { value: 'carry', label: 'Carry' },
+  { value: 'cardio', label: 'Cardio' },
+  { value: 'mobility', label: 'Mobility' },
+  { value: 'sport', label: 'Sport' },
+];
+
+export const EQUIPMENT_OPTIONS: Array<{ value: Equipment; label: string }> = [
+  { value: 'barbell', label: 'Barbell' },
+  { value: 'dumbbell', label: 'Dumbbell' },
+  { value: 'machine', label: 'Machine' },
+  { value: 'cable', label: 'Cable' },
+  { value: 'bodyweight', label: 'Bodyweight' },
+  { value: 'kettlebell', label: 'Kettlebell' },
+  { value: 'band', label: 'Band' },
+  { value: 'other', label: 'Other' },
+];
+
+/** 'M:SS' for the rest timer, because 120 s reads better as 2:00. */
+export function restLabel(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return 'off';
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return m === 0 ? `${s} s` : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** True when every muscle's row matches the given landmark table exactly. */
+export function landmarksMatch(a: Record<Muscle, VolumeLandmark>, b: Record<Muscle, VolumeLandmark>): boolean {
+  return (Object.keys(b) as Muscle[]).every((m) => a[m] && a[m].mev === b[m].mev && a[m].mav === b[m].mav && a[m].mrv === b[m].mrv);
+}
+
+/**
+ * A copy of a built-in program keeps a derived id, so making the copy twice
+ * replaces the first rather than piling up near-identical programs.
+ */
+export const copyIdOf = (builtInId: string) => `${builtInId}-copy`;
+
+/** The four Hooper items, in the order Log asks them (SPEC §5). */
+export const CHECK_IN_ITEMS: Array<{ key: CheckInItem; label: string; hint: string }> = [
+  { key: 'qs', label: 'Sleep quality', hint: 'How restful last night felt' },
+  { key: 'qf', label: 'Fatigue', hint: 'How tired you are right now' },
+  { key: 'qt', label: 'Stress', hint: 'Life stress, not training stress' },
+  { key: 'qo', label: 'Muscle soreness', hint: 'What the last session left behind' },
+];
+
+/** "Upper 7 · Lower 6" — what a program actually prescribes, never invented. */
+export function programSummary(program: Program): string {
+  const parts = (Object.keys(program.sessions) as SessionType[])
+    .filter((k) => (program.sessions[k]?.length ?? 0) > 0)
+    .map((k) => `${SESSION_OPTIONS.find((o) => o.value === k)?.label ?? k} ${program.sessions[k]?.length ?? 0}`);
+  return parts.length ? parts.join(' · ') : 'No exercises yet';
 }

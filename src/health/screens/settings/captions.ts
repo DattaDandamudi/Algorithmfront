@@ -8,7 +8,7 @@ import type { AppSettings, DailyRecord, ISODate, StorageStatus } from '../../dat
 import { QUOTA_BYTES } from '../../data/storage';
 import { fmt, fmtWeight } from '../../lib/format';
 import { APP_VERSION } from './AboutSection';
-import { CUISINE_OPTIONS, SESSION_OPTIONS, bloodworkAttention, formatBytes, isLiftSession, relativeTime } from './util';
+import { CUISINE_OPTIONS, SESSION_OPTIONS, bloodworkAttention, formatBytes, isLiftSession, relativeTime, restLabel } from './util';
 
 const PHASE_LABEL: Record<AppSettings['profile']['goalPhase'], string> = {
   'fat-loss': 'fat loss',
@@ -76,22 +76,27 @@ export function dataCaption(storage: StorageStatus, records: DailyRecord[], now:
   return `${records.length} day${records.length === 1 ? '' : 's'} · ${used} · saved ${relativeTime(storage.lastSavedAt, now)}`;
 }
 
-/**
- * Placeholder captions for the three sections this release adds. They take no
- * arguments on purpose: the settings they will summarise (`settings.training`,
- * `settings.checkIn`, `settings.training.imports`) do not exist yet, and Phase
- * 2e replaces each one with a live summary when the controls land.
- */
-export function trainingCaption(): string {
-  return 'Units, rest timer, progression, volume landmarks — coming with Train';
+export function trainingCaption(s: AppSettings): string {
+  const t = s.training;
+  const p = t.progression;
+  const custom = t.customExercises.length;
+  const parts = [t.units, `rest ${restLabel(t.restTimerSec)}`, `RPE ${p.targetRpe[0]}–${p.targetRpe[1]}`, `+${p.loadStepPctUpper}/${p.loadStepPctLower}%`];
+  if (custom) parts.push(`${custom} custom`);
+  return parts.join(' · ');
 }
 
-export function checkInCaption(): string {
-  return 'Daily 4-item check-in prompt — coming with Train';
+export function checkInCaption(s: AppSettings): string {
+  const c = s.checkIn;
+  if (!c.enabled) return 'Prompt off — nothing is asked';
+  const extra = [c.weeklySrss ? 'SRSS' : null, c.monthlyPss ? 'PSS-4' : null].filter(Boolean).join(' + ');
+  return `${c.items.length} item${c.items.length === 1 ? '' : 's'} from ${c.promptAfter}${extra ? ` · ${extra}` : ''}`;
 }
 
-export function importsCaption(): string {
-  return 'WHOOP, Strava and Apple Health workouts — coming with Train';
+/** `count` is the number of sessions stored — the honest measure of an import. */
+export function importsCaption(s: AppSettings, count: number, now: number): string {
+  const last = Math.max(s.training.imports?.whoopAt ?? 0, s.training.imports?.stravaAt ?? 0, s.training.imports?.appleAt ?? 0);
+  const sessions = `${count} session${count === 1 ? '' : 's'}`;
+  return last ? `${sessions} · last import ${relativeTime(last, now)}` : `${sessions} · WHOOP, Strava, Apple Health`;
 }
 
 export function aboutCaption(): string {

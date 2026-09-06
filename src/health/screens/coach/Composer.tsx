@@ -1,5 +1,5 @@
 /**
- * Composer (task items 3, 4, 6): the 8 quick-prompt chips as a horizontal
+ * Composer (task items 3, 4, 6): the quick-prompt chips (COACH_CHIPS) as a horizontal
  * scroll row (tap = send immediately), a textarea that sends on Enter and
  * inserts a newline on Shift+Enter, Send ↔ Stop while a reply streams, and
  * the persistent medical disclaimer (§4 "Persistent medical disclaimer
@@ -24,7 +24,7 @@ export interface ComposerProps {
   onSend: (text: string) => void;
   onStop: () => void;
   busy: boolean;
-  /** Hidden in the empty state, where the transcript already shows all 8 chips. */
+  /** Hidden in the empty state, where the transcript already shows every chip. */
   showChips: boolean;
   onChip: (prompt: string) => void;
   textareaRef: RefObject<HTMLTextAreaElement>;

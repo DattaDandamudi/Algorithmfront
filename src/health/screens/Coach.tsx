@@ -1,5 +1,5 @@
 /**
- * Coach — SPEC §4 (chat UI, 8 quick-prompt chips, tone toggle, disclaimer,
+ * Coach — SPEC §4 (chat UI, quick-prompt chips, tone toggle, disclaimer,
  * escalation cue) on top of the §8 prompt in ai/coach.ts.
  *
  * Layout: a fixed-height column (100dvh minus the shell's 96 px bottom

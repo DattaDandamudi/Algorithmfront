@@ -4,7 +4,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
-import type { ChatMessage } from '../data/types';
+import type { ChatMessage, CoachContext } from '../data/types';
 import { DEFAULT_AI, DEFAULT_PROFILE, DEFAULT_TARGETS } from '../data/defaults';
 import {
   CoachError,
@@ -446,6 +446,153 @@ describe('R5-13 system prompt — stable DERIVED legend pushes the prefix past t
 
   it('stays identical across turns (no dates, no per-turn numbers)', () => {
     expect(buildSystemPrompt(DEFAULT_PROFILE, DEFAULT_TARGETS, DEFAULT_AI)).toBe(prompt);
+    expect(buildTurnContext(fullContext())).not.toContain('DERIVED legend');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2d — the v3 blocks in DERIVED, and the association rule
+// ---------------------------------------------------------------------------
+
+/** The same context with the four v3 blocks (and the shifts) removed. */
+function withoutV3(ctx = fullContext()) {
+  delete ctx.training;
+  delete ctx.stress;
+  delete ctx.energy;
+  delete ctx.impact;
+  delete ctx.changepoints;
+  return ctx;
+}
+
+const derivedOf = (ctx: CoachContext) => buildTurnContext(ctx).split('\n')[0];
+
+describe('2d buildTurnContext — compact training / stress / energy / impact blocks', () => {
+  const full = fullContext();
+  const derivedLine = derivedOf(full);
+
+  it('keeps the three-line shape and still parses as compact JSON', () => {
+    expect(buildTurnContext(full).split('\n')).toHaveLength(3);
+    const json = derivedLine.slice(derivedLine.search(/[[{]/));
+    expect(() => JSON.parse(json)).not.toThrow();
+    expect(json).not.toContain('null');
+    expect(json).not.toMatch(/":\s/);
+  });
+
+  it('training: today\'s session, the prescriptions, load and the volume summary', () => {
+    for (const s of [
+      '"training":{"session":"lower"',
+      '"planned":[{"name":"Back squat","sets":4,"reps":"5-8","loadKg":102.5,"mode":"progress"}',
+      '"load":{"today":0,"acute7":342,"chronic28":318,"acwr":1.08,"acwrBand":"sweet","wowPct":6.4,"form":13,"formBand":"fresh","monotony":1.4,"weekly":2394,"source":"mixed","tauIsPrior":false}',
+      '"setsByMuscle":{"chest":8',
+      '"balance":{"pushPull":0.92,"squatHinge":1.2}',
+      '"prs7d":[{"name":"Back squat","kind":"e1rm","value":121.6,"prev":118.4}]',
+      '"lastSession":{"d":"2026-09-01","kind":"strength","session":"lower","min":62,"srpe":8,"load":496}',
+      '"vo2max":{"value":46.2,"lo":42.7,"hi":49.7}',
+    ]) {
+      expect(derivedLine).toContain(s);
+    }
+    // Projected, not dumped: no per-exercise prose, no landmark triples, no ghost sets.
+    expect(derivedLine).not.toContain('You hit 8 reps on every set');
+    expect(derivedLine).not.toContain('"mev"');
+    expect(derivedLine).not.toContain('"plannedExercises"');
+  });
+
+  it('stress: the deviating count leads, and only deviating signals are listed', () => {
+    for (const s of [
+      '"stress":{"osi":28,"osiLo":19,"osiHi":37,"band":"none","deviating":1,"available":5',
+      '"outliers":[{"key":"rr","label":"Breathing rate","value":14.9,"z":1.4}]',
+      '"checkIn":{"sleepQ":3,"fatigue":3,"stress":2,"soreness":4,"total":12,"band":"green","nDays":26,"worseRun":0,"missingToday":false}',
+      '"resilience":{"score":62,"band":"solid","loadEwma":0.44,"recoveryEwma":0.63,"balance":0.19,"nDays":14,"alCount":1}',
+      '"calibrating":false,"nRef":58',
+    ]) {
+      expect(derivedLine).toContain(s);
+    }
+    // The five non-deviating signals never travel.
+    expect(derivedLine).not.toContain('"label":"Skin temp"');
+    expect(derivedLine).not.toContain('"threshold"');
+  });
+
+  it('stress: the illness flag is sent only when it is raised', () => {
+    expect(derivedLine).not.toContain('"illness"');
+    const ill = fullContext();
+    ill.stress = { ...ill.stress!, illness: { flag: true, since: '2026-09-02', reasons: ['skin temp +1.4 SD for 2 nights'] } };
+    expect(derivedOf(ill)).toContain('"illness":{"flag":true,"since":"2026-09-02","reasons":["skin temp +1.4 SD for 2 nights"]}');
+  });
+
+  it('energy: a sampled curve and the shape of the day, not the whole forecast', () => {
+    expect(derivedLine).toContain('"energy":{"now":72,"atWake":58,"trough":{"at":"15:00","value":54},"bedtimeReadyAt":"22:40","caffeineMg":42');
+    expect(derivedLine).toContain('"curve":[["07:00",62],["10:00",86],["13:00",68],["16:00",60],["19:00",72],["22:00",40]]');
+    expect(derivedLine).toContain('"confidence":"medium"');
+    // 16 forecast points in, 6 out; no lo/hi band per point.
+    expect(full.energy!.forecast).toHaveLength(16);
+    expect(derivedLine).not.toContain('"lo":54');
+  });
+
+  it('impact: the engine\'s own association sentences, with the confound and no q rounding', () => {
+    expect(derivedLine).toContain(
+      '"impact":{"effects":[{"label":"on the 9 days you drank, next-morning HRV averaged 6.2 ms lower (95% CI 2.8–9.6)","nNo":71}',
+    );
+    expect(derivedLine).toContain('"confound":"those days were also harder training days"');
+    expect(derivedLine).toContain('"pending":["late eating"]');
+    // Already BH-corrected upstream, so no q-value that 2 dp could round to zero.
+    expect(derivedLine).not.toContain('"q"');
+    expect(derivedLine).toContain('"shifts":[{"d":"2026-08-14","label":"resting heart rate","prob":0.91,"before":55.4,"after":52.6}]');
+  });
+
+  it('drops every v3 key when the context has no v3 blocks', () => {
+    const line = derivedOf(withoutV3());
+    // (`readiness.training` is a different key with the same name — hence the `:{`.)
+    for (const key of ['"training":{', '"stress":{', '"energy":{', '"impact":{', '"shifts":[']) expect(line).not.toContain(key);
+    expect(line).toContain('"readiness"');
+    expect(line).toContain('"training":"Progress"');
+  });
+
+  it('a fresh install sends the empty states, not nulls', () => {
+    const line = derivedOf(emptyContext());
+    expect(line).not.toContain('null');
+    expect(line).toContain('"training":{"session":"rest","loggedToday":0');
+    expect(line).toContain('"source":"none","tauIsPrior":true');
+    expect(line).toContain('"deviating":0,"available":0');
+    expect(line).not.toContain('"planned"');
+    expect(line).not.toContain('"outliers"');
+    expect(line).not.toContain('"impact"');
+  });
+
+  it('stays a prompt payload, not a dump', () => {
+    const withBlocks = derivedLine.length;
+    const without = derivedOf(withoutV3()).length;
+    expect(withBlocks - without).toBeLessThan(3000); // ≈ 2.2k chars ≈ 560 tokens
+    expect(derivedOf(emptyContext()).length - derivedOf(withoutV3(emptyContext())).length).toBeLessThan(800);
+  });
+});
+
+describe('2d system prompt — the association rule and the v3 legend', () => {
+  const prompt = buildSystemPrompt(DEFAULT_PROFILE, DEFAULT_TARGETS, DEFAULT_AI);
+
+  it('states that stress and impact numbers are associations reported with their interval', () => {
+    expect(prompt).toContain('- Stress signals and behaviour-impact effects are ASSOCIATIONS, not causes.');
+    expect(prompt).toContain('never "alcohol lowered your HRV"');
+    expect(prompt).toContain('name the');
+    expect(prompt).toContain('confound when one is given');
+  });
+
+  it('states that the illness flag is never a diagnosis and routes to a doctor', () => {
+    expect(prompt).toContain('The illness flag is a');
+    expect(prompt).toContain('data pattern, never a diagnosis: name the signals behind it, never a condition, and send persistent symptoms to a doctor.');
+    // The existing medical boundary is untouched.
+    expect(prompt).toContain('- No diagnosis, no prescription, no interpreting labs as disease.');
+  });
+
+  it('legends every abbreviation the new blocks use', () => {
+    for (const s of ['- training:', 'wowPct', 'setsByMuscle', 'belowMev/aboveMrv', '- stress:', 'osi = overnight strain index', 'worseRun', '- energy:', 'PREDICTED alertness', '- impact:', 'Benjamini–Hochberg', 'shifts =']) {
+      expect(prompt).toContain(s);
+    }
+    expect(prompt).toContain('ACWR is DESCRIPTIVE only, never a causal injury');
+  });
+
+  it('is still deterministic and still cacheable', () => {
+    expect(buildSystemPrompt(DEFAULT_PROFILE, DEFAULT_TARGETS, DEFAULT_AI)).toBe(prompt);
+    expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(buildTurnContext(fullContext())).not.toContain('DERIVED legend');
   });
 });

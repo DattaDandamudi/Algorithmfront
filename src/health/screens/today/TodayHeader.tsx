@@ -12,7 +12,8 @@ import { formatDateLong } from '../../lib/dates';
 import { Banner } from '../../ui';
 import type { TodayBanner } from './banners';
 
-const SESSION_LABEL: Record<SessionType, string> = {
+/** Split slot → its display word. Shared with the training tile. */
+export const SESSION_LABEL: Record<SessionType, string> = {
   upper: 'Upper',
   lower: 'Lower',
   push: 'Push',

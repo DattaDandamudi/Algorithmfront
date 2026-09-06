@@ -7,8 +7,10 @@
  *     turns so it can be prompt-cached.
  *   - buildTurnContext: DERIVED + LAST_30_DAYS + TODAY as compact JSON —
  *     the engine has already computed readiness, HRV SWC, trend weight,
- *     expenditure and macros, so the model cites numbers instead of
- *     recomputing them (§8 "Always cite the user's ACTUAL numbers").
+ *     expenditure, macros and the v3 training / stress / energy / impact
+ *     blocks, so the model cites numbers instead of recomputing them (§8
+ *     "Always cite the user's ACTUAL numbers"). The v3 blocks are projected
+ *     down to what a ≤120-word reply can quote, never dumped.
  *   - buildMessages: prior turns as plain text (no stale context blocks),
  *     the new user turn = context + QUESTION, with the medical cue when
  *     isMedicalAsk() fires.
@@ -22,10 +24,15 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type {
   AISettings,
   BloodMarker,
+  Changepoint,
   ChatMessage,
   CoachContext,
+  EnergyContext,
+  ImpactContext,
   Profile,
+  StressContext,
   Targets,
+  TrainingContext,
   TrainingSplit,
 } from '../data/types';
 import { lbToKg, round } from '../lib/format';
@@ -105,6 +112,23 @@ const DERIVED_LEGEND = [
   '  proteinPerMealNeeded; lateEating; hydrationCups; caffeineAfterCutoff.',
   '- tobacco: today, avg7, avg30, streakDays, hrvSmokeFree vs hrvSmoking (ms). frequency: 7-day food counters.',
   '- adherence: 30-day protein/kcal/weigh-in hit counts and the logging streak.',
+  '- training: session = today\'s split slot; planned = suggested exercises (sets, reps range, loadKg, mode progress/hold/reduce);',
+  '  load = {today, acute7 = 7-day load, chronic28 = 28-day base, acwr + acwrBand, wowPct = week-on-week acute change,',
+  '  form = fitness − fatigue with formBand, monotony, weekly, source, tauIsPrior}. ACWR is DESCRIPTIVE only, never a causal injury',
+  '  predictor — lead on absolute acute load and wowPct. setsByMuscle = hard sets this week; belowMev/aboveMrv rate them against',
+  '  ADVISORY landmarks, never a cap. recovering = muscles still inside the 48–72 h window ({m, pct, h since}). Also prs7d,',
+  '  plateaus, deload {recommended, reasons}, lastSession, vo2max {value, lo, hi}, loggedToday.',
+  '- stress: osi = overnight strain index 0–100 with osiLo/osiHi; deviating of available = overnight signals outside this user\'s own',
+  '  range — that count is the headline, not osi; outliers list the deviating ones with value and z. checkIn = Hooper items 1–7',
+  '  (1 = best) with total 4–28, band, nDays, worseRun (3 in a row = the back-off cue), missingToday. resilience = 0–100 score with',
+  '  band and the load/recovery EWMAs. illness = a conjunctive DATA FLAG with its reasons; it is never a diagnosis. calibrating/nRef',
+  '  = how much reference history exists.',
+  '- energy: PREDICTED alertness 0–100 from a two-process model plus caffeine — a forecast, not a measurement. now, atWake,',
+  '  trough {at, value} = the afternoon dip, bedtimeReadyAt, caffeineMg still active, curve = [HH:MM, value] every ~3 h, drivers,',
+  '  confidence.',
+  '- impact: N-of-1 ASSOCIATIONS, already Benjamini–Hochberg-corrected (only surviving effects are sent). Each carries `label` —',
+  '  the association sentence with its 95% interval, phrased for you to reuse — plus nNo (comparison days) and an optional confound.',
+  '  pending = behaviours without enough yes/no days to report. shifts = confirmed level changes with prob and before/after means.',
 ];
 
 /**
@@ -135,7 +159,8 @@ export function buildSystemPrompt(profile: Profile, targets: Targets, ai: AISett
     '2. LAST_30_DAYS (compact JSON array of daily records).',
     '3. TODAY (partial log so far).',
     '4. DERIVED (numbers the app already computed: readiness band, HRV baseline & SWC, trend weight & weekly rate,',
-    '   expenditure, macros remaining, tobacco, adherence). Cite these; do not recompute them.',
+    '   expenditure, macros remaining, tobacco, adherence, plus the training, stress, energy and impact blocks).',
+    '   Cite these; do not recompute them.',
     '',
     ...DERIVED_LEGEND,
     '',
@@ -147,6 +172,10 @@ export function buildSystemPrompt(profile: Profile, targets: Targets, ai: AISett
     '- Second person, supportive but direct. Cause → effect → one action.',
     `- Protein-first for nutrition. Respect the ${targets.fatFloor} g fat floor and carb day-type.`,
     '- Ground training advice in WHOOP recovery band + HRV SWC.',
+    '- Stress signals and behaviour-impact effects are ASSOCIATIONS, not causes. Report them with their interval and the day counts',
+    '  ("on the 9 days you drank, next-day HRV averaged 6.2 ms lower, 95% CI 2.8–9.6"), never "alcohol lowered your HRV"; name the',
+    '  confound when one is given. A deviating overnight signal describes the night, it does not explain it. The illness flag is a',
+    '  data pattern, never a diagnosis: name the signals behind it, never a condition, and send persistent symptoms to a doctor.',
     '',
     'GUARDRAILS:',
     '- No diagnosis, no prescription, no interpreting labs as disease. For lab/medication/symptom',
@@ -194,6 +223,132 @@ export function compactJson(value: unknown): Json | undefined {
 
 const stringify = (v: unknown): string => JSON.stringify(compactJson(v) ?? {});
 
+// ---------------------------------------------------------------------------
+// v3 blocks — compact projections
+// ---------------------------------------------------------------------------
+
+/**
+ * The v3 engine blocks are far too big to send whole (`weeklySets` alone is one
+ * object per muscle, `forecast` a point per waking hour), and the model needs
+ * the *shape* of each, not the raw series. These projections keep every number
+ * a reply may cite, cap every list, and drop what the copy never quotes
+ * (per-exercise `reason` strings, landmark triples, the full curve). Empty
+ * lists are omitted rather than sent as `[]`: the legend already says a missing
+ * field means "no data", so an absent key costs nothing and a present one is
+ * always worth reading. Together they add ≈ 550 tokens to a turn.
+ */
+const MAX_PLANNED = 5;
+const MAX_MUSCLES = 4;
+const MAX_EFFECTS = 4;
+const MAX_LIST = 3;
+/** Every third forecast point (~3 h): the shape of the day, not the curve. */
+const ENERGY_STRIDE = 3;
+/** Below this, a muscle is still inside its 48–72 h recovery window and worth naming. */
+const RECOVERING_PCT = 90;
+
+/** `[]` → undefined so compactJson drops the key entirely. */
+const some = <T,>(xs: T[]): T[] | undefined => (xs.length ? xs : undefined);
+
+function trainingBlock(t: TrainingContext | undefined) {
+  if (!t) return undefined;
+  const l = t.load;
+  const sets: Record<string, number> = {};
+  for (const v of t.weeklySets) if (v.sets > 0) sets[v.muscle] = v.sets;
+  return {
+    session: t.todaySession,
+    planned: some(
+      t.plannedExercises.slice(0, MAX_PLANNED).map((e) => ({ name: e.name, sets: e.sets, reps: `${e.reps[0]}-${e.reps[1]}`, loadKg: e.loadKg, mode: e.mode })),
+    ),
+    loggedToday: t.todayWorkouts.length,
+    load: {
+      today: l.today,
+      acute7: l.acute7,
+      chronic28: l.chronic28,
+      acwr: l.acwr,
+      acwrBand: l.acwrBand,
+      wowPct: l.weekOverWeekPct,
+      form: l.form,
+      formBand: l.formBand,
+      monotony: l.monotony,
+      weekly: l.weeklyLoad,
+      source: l.source,
+      tauIsPrior: l.tauIsPrior,
+    },
+    setsByMuscle: Object.keys(sets).length ? sets : undefined,
+    belowMev: some(t.weeklySets.filter((v) => v.status === 'below-mev').map((v) => v.muscle).slice(0, MAX_MUSCLES)),
+    aboveMrv: some(t.weeklySets.filter((v) => v.status === 'high').map((v) => v.muscle).slice(0, MAX_MUSCLES)),
+    recovering: some(
+      t.muscleReadiness
+        .filter((m) => m.pct < RECOVERING_PCT)
+        .sort((a, b) => a.pct - b.pct)
+        .slice(0, MAX_MUSCLES)
+        .map((m) => ({ m: m.muscle, pct: m.pct, h: m.hoursSince })),
+    ),
+    balance: t.balance,
+    prs7d: some(t.prs7d.slice(0, MAX_LIST).map((p) => ({ name: p.name, kind: p.kind, value: p.value, prev: p.previous }))),
+    plateaus: some(t.plateaus.slice(0, MAX_LIST).map((p) => ({ name: p.name, sessions: p.sessions, gainPct: p.gainPct }))),
+    deload: t.deload.recommended ? t.deload : undefined,
+    lastSession: t.lastSession
+      ? { d: t.lastSession.d, kind: t.lastSession.kind, session: t.lastSession.session, min: t.lastSession.durationMin, srpe: t.lastSession.srpe, load: t.lastSession.load }
+      : undefined,
+    vo2max: t.vo2max && t.vo2max.value !== null ? { value: t.vo2max.value, lo: t.vo2max.lo, hi: t.vo2max.hi } : undefined,
+  };
+}
+
+function stressBlock(s: StressContext | undefined) {
+  if (!s) return undefined;
+  const c = s.checkIn;
+  const r = s.resilience;
+  return {
+    osi: s.osi,
+    osiLo: s.osiLo,
+    osiHi: s.osiHi,
+    band: s.band,
+    deviating: s.signalsDeviating,
+    available: s.signalsAvailable,
+    outliers: some(s.outliers.filter((o) => o.deviating).map((o) => ({ key: o.key, label: o.label, value: o.value, z: o.z }))),
+    checkIn: { sleepQ: c.sleepQ, fatigue: c.fatigue, stress: c.stress, soreness: c.soreness, total: c.total, band: c.band, nDays: c.nDays, worseRun: c.worseRun, missingToday: c.missingToday },
+    resilience: { score: r.score, band: r.band, loadEwma: r.loadEwma, recoveryEwma: r.recoveryEwma, balance: r.balance, nDays: r.nDays, alCount: r.alStyleCount },
+    // Only ever sent when it is actually raised — and it is a flag, not a finding.
+    illness: s.illness.flag ? { flag: true, since: s.illness.since, reasons: s.illness.reasons } : undefined,
+    calibrating: s.calibrating,
+    nRef: s.nRef,
+  };
+}
+
+function energyBlock(e: EnergyContext | undefined) {
+  if (!e) return undefined;
+  return {
+    now: e.now,
+    atWake: e.atWake,
+    trough: e.trough ? { at: e.trough.hhmm, value: e.trough.value } : undefined,
+    bedtimeReadyAt: e.bedtimeReadyAt,
+    caffeineMg: e.caffeineActiveMg,
+    curve: some(e.forecast.filter((_, i) => i % ENERGY_STRIDE === 0).map((p) => [p.hhmm, p.value] as [string, number])),
+    drivers: some(e.drivers.slice(0, MAX_LIST)),
+    confidence: e.confidence,
+  };
+}
+
+/**
+ * `label` is the engine's own association sentence (impact.ts: "on the 9 days
+ * you drank, next-day HRV averaged 6.2 ms lower (95% CI 2.8–9.6)"), so sending
+ * it instead of the raw delta/lo95/hi95 is both shorter and the phrasing the
+ * §8 association rule asks the model to keep. `qValue` is not sent: the context
+ * only ever carries Benjamini–Hochberg-confirmed effects (context.ts filters on
+ * `isConfirmedEffect`), and compactJson's 2 dp would round a q of 0.004 to 0.
+ */
+function impactBlock(i: ImpactContext | undefined) {
+  if (!i) return undefined;
+  const effects = some(i.effects.slice(0, MAX_EFFECTS).map((e) => ({ label: e.label, nNo: e.nNo, confound: e.confound })));
+  const pending = some(i.pending.slice(0, MAX_LIST));
+  return effects || pending ? { effects, pending } : undefined;
+}
+
+function shiftsBlock(cps: Changepoint[] | undefined) {
+  return some((cps ?? []).slice(0, MAX_LIST).map((c) => ({ d: c.d, label: c.label, prob: c.prob, before: c.meanBefore, after: c.meanAfter })));
+}
+
 /** Everything the engine derived, minus the raw records (sent separately) and bloodwork (already in the system prompt). */
 function derivedBlock(ctx: CoachContext) {
   return {
@@ -212,6 +367,11 @@ function derivedBlock(ctx: CoachContext) {
     tobacco: ctx.tobacco,
     frequency: ctx.frequency,
     adherence: ctx.adherence,
+    training: trainingBlock(ctx.training),
+    stress: stressBlock(ctx.stress),
+    energy: energyBlock(ctx.energy),
+    impact: impactBlock(ctx.impact),
+    shifts: shiftsBlock(ctx.changepoints),
   };
 }
 

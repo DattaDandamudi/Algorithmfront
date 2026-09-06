@@ -18,7 +18,9 @@
  *                    as its own 'offline' bubble so guidance never disappears).
  * - DeltaBuffer:     coalesces stream deltas into one store write per FLUSH_MS
  *                    so the transcript never re-renders per token.
- * - introLine:       the empty-state one-liner, from real context numbers.
+ * - introLine:       the empty-state one-liner, from real context numbers —
+ *                    day type, readiness and today's planned session when the
+ *                    training block has one.
  */
 import type { ChatMessage, CoachContext } from '../../data/types';
 import { MAX_WORDS, checkLength, detectEmergency, isMedicalAsk } from '../../ai/guardrails';
@@ -113,14 +115,32 @@ export function wordHint(text: string): string | null {
   return over ? `${words} words · over the ${MAX_WORDS}-word target` : null;
 }
 
-/** Empty-state line — day type + readiness from the real context, never invented. */
+/** How many planned exercises the intro names before it counts the rest. */
+const INTRO_EXERCISES = 2;
+
+/**
+ * "Planned: Back squat, Romanian deadlift +1 more." — only when the training
+ * block actually has a session planned for today; a context without one (no
+ * program, rest day, or no `training` block at all) adds nothing.
+ */
+function plannedPhrase(ctx: CoachContext): string {
+  const planned = ctx.training?.plannedExercises ?? [];
+  if (planned.length === 0) return '';
+  const names = planned.slice(0, INTRO_EXERCISES).map((e) => e.name);
+  const rest = planned.length - names.length;
+  return `Planned: ${names.join(', ')}${rest > 0 ? ` +${rest} more` : ''}.`;
+}
+
+/** Empty-state line — day type, readiness and today's planned session, from the real context, never invented. */
 export function introLine(ctx: CoachContext): string {
   const day = ctx.dayType === 'lift' ? `${ctx.sessionType} day` : 'rest day';
   const r = ctx.readiness;
-  if (r.score === null) {
-    return `Today is a ${day}. No readiness signal yet — log a WHOOP recovery or HRV and I'll ground my answers in it.`;
-  }
-  return `Today is a ${day}. Readiness ${Math.round(r.score)}% — ${r.verdict}`;
+  const base =
+    r.score === null
+      ? `Today is a ${day}. No readiness signal yet — log a WHOOP recovery or HRV and I'll ground my answers in it.`
+      : `Today is a ${day}. Readiness ${Math.round(r.score)}% — ${r.verdict}`;
+  const planned = plannedPhrase(ctx);
+  return planned ? `${base.replace(/[\s.]+$/, '')}. ${planned}` : base;
 }
 
 type Schedule = (cb: () => void) => void;

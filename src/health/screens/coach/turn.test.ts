@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage, CoachContext } from '../../data/types';
 import { EMERGENCY_MESSAGE } from '../../ai/guardrails';
+import { emptyContext, fullContext } from '../../ai/coachContext.fixture';
 import {
   DeltaBuffer,
   INTERRUPTED_TEXT,
@@ -164,5 +165,40 @@ describe('DeltaBuffer', () => {
     expect(out).toEqual([]);
     expect(b.text).toBe('partial more');
     expect(ticks).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2d — the intro line names today's planned session
+// ---------------------------------------------------------------------------
+
+describe('2d introLine — today\'s planned session', () => {
+  it('names the planned exercises when the training block has some', () => {
+    expect(introLine(fullContext())).toBe(
+      'Today is a lower day. Readiness 71% — Primed — progress loads today. Planned: Back squat, Romanian deadlift +1 more.',
+    );
+  });
+
+  it('names both without a counter when only two are planned', () => {
+    const ctx = fullContext();
+    ctx.training = { ...ctx.training!, plannedExercises: ctx.training!.plannedExercises.slice(0, 2) };
+    expect(introLine(ctx)).toContain('Planned: Back squat, Romanian deadlift.');
+  });
+
+  it('adds nothing on a rest day, with an empty plan, or with no training block at all', () => {
+    expect(introLine(emptyContext())).toBe(
+      "Today is a rest day. No readiness signal yet — log a WHOOP recovery or HRV and I'll ground my answers in it.",
+    );
+    const noBlock = fullContext();
+    delete noBlock.training;
+    expect(introLine(noBlock)).toBe('Today is a lower day. Readiness 71% — Primed — progress loads today');
+  });
+
+  it('keeps a single sentence break when there is no readiness score but a session is planned', () => {
+    const ctx = fullContext();
+    ctx.readiness = { ...ctx.readiness, score: null, band: 'neutral', source: 'none' };
+    const out = introLine(ctx);
+    expect(out).toContain("ground my answers in it. Planned: Back squat");
+    expect(out).not.toContain('..');
   });
 });

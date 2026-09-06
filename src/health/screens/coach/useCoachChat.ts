@@ -4,7 +4,9 @@
  * One turn, in order (the pure pieces live in ./turn.ts):
  *   1. append the user bubble (actions.appendChat);
  *   2. detectEmergency → a 'guardrail' reply and STOP — no model call (§8);
- *   3. buildCoachContext fresh at send time, so the model sees what was logged
+ *   3. buildCoachContext fresh at send time — with the day records AND the
+ *      workouts, so the training, load, stress and energy blocks are populated
+ *      (check-ins ride on the day records) — so the model sees what was logged
  *      a second ago. The memoised per-minute `ctx` returned below feeds only
  *      the transcript's intro line, never the prompt;
  *   4. with a client: system = buildSystemPrompt, messages = buildMessages
@@ -21,8 +23,8 @@
  * is NOT in the map (a reload mid-stream) is finalised on mount.
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { AppSettings, ChatMessage, CoachContext, CoachTone, DailyRecord, ISODate } from '../../data/types';
-import { useHealth, useNow, useRecords } from '../../data/store';
+import type { AppSettings, ChatMessage, CoachContext, CoachTone, DailyRecord, ISODate, Workout } from '../../data/types';
+import { useHealth, useNow, useRecords, useWorkouts } from '../../data/store';
 import { buildCoachContext } from '../../engine';
 import { createClient } from '../../ai/client';
 import { isAIConfigured, resolveModel } from '../../ai/config';
@@ -53,11 +55,16 @@ interface Latest {
   chat: ChatMessage[];
   settings: AppSettings;
   records: DailyRecord[];
+  workouts: Workout[];
 }
 
 export function useCoachChat(): CoachChat {
   const { state, actions } = useHealth();
   const records = useRecords();
+  // Sessions ride beside the days so the training, load and energy blocks are
+  // filled; the check-ins already live on DailyRecord (`qs`/`qf`/`qt`/`qo`),
+  // so `records` carries the stress side.
+  const workouts = useWorkouts();
   const wall = useNow();
   const today = toISODate(wall);
   const hh = wall.getHours();
@@ -71,11 +78,11 @@ export function useCoachChat(): CoachChat {
   const settings = state.settings;
   const chat = state.chat;
 
-  const ctx = useMemo(() => buildCoachContext({ records, settings, today, now }), [records, settings, today, now]);
+  const ctx = useMemo(() => buildCoachContext({ records, settings, today, now, workouts }), [records, settings, today, now, workouts]);
 
   // `send` reads the freshest store slices without being recreated per render.
-  const latest = useRef<Latest>({ chat, settings, records });
-  latest.current = { chat, settings, records };
+  const latest = useRef<Latest>({ chat, settings, records, workouts });
+  latest.current = { chat, settings, records, workouts };
 
   // Reload mid-stream leaves `streaming: true` behind with no request to finish it.
   useEffect(() => {
@@ -88,7 +95,7 @@ export function useCoachChat(): CoachChat {
     (raw: string): boolean => {
       const plan = planTurn(raw);
       if (plan.kind === 'empty' || inFlight.size > 0) return false;
-      const { chat: before, settings: s, records: recs } = latest.current;
+      const { chat: before, settings: s, records: recs, workouts: wos } = latest.current;
 
       actions.appendChat(makeMessage('user', plan.text));
       if (plan.kind === 'emergency') {
@@ -98,7 +105,7 @@ export function useCoachChat(): CoachChat {
 
       const { profile, targets, ai } = s;
       const sendNow = new Date();
-      const ctxNow = buildCoachContext({ records: recs, settings: s, today: toISODate(sendNow), now: sendNow });
+      const ctxNow = buildCoachContext({ records: recs, settings: s, today: toISODate(sendNow), now: sendNow, workouts: wos });
       const offline = () => answerOffline(plan.text, ctxNow, profile, targets, ai.tone);
 
       const placeholder = makeMessage('assistant', '', { streaming: true });

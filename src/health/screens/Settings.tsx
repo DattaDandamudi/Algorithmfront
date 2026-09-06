@@ -4,16 +4,16 @@
  *   5 Daily check-in    6 Bloodwork  7 Food preferences
  *   8 WHOOP             9 Imports   10 Coach & AI     11 Data     12 About
  *
- * Training, Daily check-in and Imports are placeholders in this release: each
- * is a titled card with one line of copy and no controls, reachable through
- * `openSettings('training' | 'checkin' | 'imports')`. Phase 2e fills them with
- * TrainingSection / CheckInSection / ImportsSection.
- *
  * Every section reads/writes the store directly (`useHealth()`); this file
  * only composes them, supplies the shared clock (`useNow()` → today / now for
  * relative times and retest math) and hosts the single confirmation sheet
  * (`ConfirmProvider`) every destructive action awaits. All section and field
  * components are module-level, so inputs never remount while typing.
+ *
+ * Training, Daily check-in and Imports landed in Phase 2e: the progression
+ * rule and the advisory volume table, the Hooper prompt's on/off and item
+ * choice, and the three workout imports (the Apple export is streamed in
+ * chunks by settings/appleStream, never read whole).
  *
  * The Data card opens by default when the durability layer has something to
  * say (quota warning, failed write, integrity problems, or a JSON backup
@@ -26,18 +26,21 @@
  */
 import { useEffect, useState } from 'react';
 import { Bot, ClipboardCheck, Database, Dumbbell, FileUp, FlaskConical, Info, SlidersHorizontal, Target, User, Utensils, Watch } from 'lucide-react';
-import { useHealth, useRecords, useNow } from '../data/store';
+import { useHealth, useRecords, useWorkouts, useNow } from '../data/store';
 import { toISODate } from '../lib/dates';
 import { useNav, type SettingsSection } from '../nav';
 import AboutSection from './settings/AboutSection';
 import BloodworkSection from './settings/BloodworkSection';
+import CheckInSection from './settings/CheckInSection';
 import CoachSection from './settings/CoachSection';
 import { ConfirmProvider } from './settings/confirm';
 import DataSection from './settings/DataSection';
 import FoodSection from './settings/FoodSection';
+import ImportsSection from './settings/ImportsSection';
 import ProfileSection from './settings/ProfileSection';
 import SplitSection from './settings/SplitSection';
 import TargetsSection from './settings/TargetsSection';
+import TrainingSection from './settings/TrainingSection';
 import WhoopSection from './settings/WhoopSection';
 import {
   aboutCaption,
@@ -56,17 +59,10 @@ import {
 import { Section } from './settings/fields';
 import { backupOverdue } from './settings/util';
 
-/**
- * Body of a section whose controls have not shipped yet: one line of copy, no
- * inputs. Kept at module level so it never remounts, like the real sections.
- */
-function ComingSoon({ children }: { children: string }) {
-  return <p className="text-[13px] leading-5 text-hx-text2">{children}</p>;
-}
-
 export default function Settings() {
   const { state } = useHealth();
   const records = useRecords();
+  const workouts = useWorkouts();
   const nowDate = useNow();
   const { settingsSection, consumeSettingsSection } = useNav();
   const [focus, setFocus] = useState<{ section: SettingsSection; nonce: number } | null>(null);
@@ -109,18 +105,12 @@ export default function Settings() {
             <SplitSection />
           </Section>
 
-          <Section id="hx-set-training" title="Training" icon={<SlidersHorizontal aria-hidden />} caption={trainingCaption()} openSignal={signal('training')}>
-            <ComingSoon>
-              Units, rest timer, progression rules, per-muscle volume landmarks, custom exercises and programs will live here once the Train tab can log a
-              workout.
-            </ComingSoon>
+          <Section id="hx-set-training" title="Training" icon={<SlidersHorizontal aria-hidden />} caption={trainingCaption(settings)} openSignal={signal('training')}>
+            <TrainingSection />
           </Section>
 
-          <Section id="hx-set-checkin" title="Daily check-in" icon={<ClipboardCheck aria-hidden />} caption={checkInCaption()} openSignal={signal('checkin')}>
-            <ComingSoon>
-              A 20-second daily check-in — sleep quality, fatigue, stress and soreness — that feeds the readiness score. You will choose here whether the app
-              asks, and which of the four items it asks for.
-            </ComingSoon>
+          <Section id="hx-set-checkin" title="Daily check-in" icon={<ClipboardCheck aria-hidden />} caption={checkInCaption(settings)} openSignal={signal('checkin')}>
+            <CheckInSection />
           </Section>
 
           <Section id="hx-set-bloodwork" title="Bloodwork" icon={<FlaskConical aria-hidden />} caption={bloodworkCaption(settings, today)} openSignal={signal('bloodwork')}>
@@ -135,11 +125,8 @@ export default function Settings() {
             <WhoopSection today={today} now={now} />
           </Section>
 
-          <Section id="hx-set-imports" title="Imports" icon={<FileUp aria-hidden />} caption={importsCaption()} openSignal={signal('imports')}>
-            <ComingSoon>
-              Workout imports from WHOOP, Strava and an Apple Health export will land here, next to the WHOOP CSV import above. Files are parsed in this
-              browser and never uploaded.
-            </ComingSoon>
+          <Section id="hx-set-imports" title="Imports" icon={<FileUp aria-hidden />} caption={importsCaption(settings, workouts.length, now)} openSignal={signal('imports')}>
+            <ImportsSection now={now} />
           </Section>
 
           <Section id="hx-set-coach" title="Coach & AI" icon={<Bot aria-hidden />} caption={coachCaption(settings)} openSignal={signal('coach')}>

@@ -4,7 +4,7 @@
  * source caption ('Claude' / 'offline' / 'guardrail' / 'error'), the
  * over-120-words hint, and the medical escalation cue above replies to
  * lab / medication / symptom asks (task item 6). Empty state = a short intro
- * from real numbers + the 8 quick-prompt chips (§4).
+ * from real numbers + the quick-prompt chips (COACH_CHIPS, §4).
  *
  * Auto-scroll sticks to the bottom while the reader is there (or has just
  * sent a message) and leaves them alone once they scroll up to re-read.
@@ -74,7 +74,7 @@ function EmptyIntro({ appName, intro, busy, onChip }: Omit<TranscriptProps, 'cha
           <span className="hx-label !text-hx-blue">{appName} Coach</span>
         </div>
         <p className="text-[15px] leading-[22px] text-hx-text">
-          I answer from your own numbers — readiness, HRV baseline, trend weight, macros and sleep. Short replies, one action each.
+          I answer from your own numbers — readiness, HRV baseline, trend weight, macros, sleep, today's session and your stress signals. Short replies, one action each.
         </p>
         <p className="text-[13px] leading-5 text-hx-text2">{intro}</p>
       </div>

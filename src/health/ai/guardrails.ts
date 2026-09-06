@@ -216,6 +216,13 @@ const SYMPTOM_PATTERNS: RegExp[] = [
   /\bcramp/i,
   /\bblurr(y|ed)\s+vision\b/i,
   /\bfeel(ing|s)?\s+(sick|unwell|ill|weak|shaky)\b/i,
+  // The stress stack's illness flag is a data pattern, and the chips it offers
+  // ("Am I getting sick or just tired?") are symptom questions: they must take
+  // the hold-and-see-a-clinician path rather than a training verdict, and the
+  // flag must never be answered as a diagnosis (§8 GUARDRAILS).
+  /\b(getting|catching|coming\s+down\s+with)\s+(sick|ill|a\s+cold|the\s+flu|something)\b/i,
+  /\bam\s+i\s+(sick|ill|unwell)\b/i,
+  /\bimmune\s+system\b/i,
   /\bsymptom/i,
 ];
 
