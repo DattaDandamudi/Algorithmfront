@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import { DEFAULT_AI, DEFAULT_PROFILE } from '../data/defaults';
-import type { AISettings } from '../data/types';
+import type { AISettings, FoodEstimateItem } from '../data/types';
 import { FOOD_SCHEMA, buildFoodSystemPrompt } from './food';
 import {
   PHOTO_CONFIDENCE_CAP,
@@ -37,7 +37,7 @@ function textResponse(json: unknown, stop_reason = 'end_turn', stop_details: unk
   };
 }
 
-const PLATE = {
+const PLATE: { items: FoodEstimateItem[]; clarify: string | null } = {
   items: [
     { name: 'chicken biryani', grams: 350, kcal: 620, protein_g: 32, fat_g: 22, carbs_g: 72, fiber_g: 3, confidence: 0.9, assumptions: 'restaurant plate', tags: ['poultry', 'grain', 'restaurant'] },
     { name: 'raita', grams: 80, kcal: 60, protein_g: 3, fat_g: 3, carbs_g: 5, fiber_g: 0.5, confidence: 0.4, assumptions: 'estimated from photo, small bowl', tags: ['dairy'] },

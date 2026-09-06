@@ -15,6 +15,7 @@
 import type { Band, BloodMarker, CoachContext, HHMM, Insight, Profile, SessionType, Targets } from '../data/types';
 import { formatClock, hhmmToMinutes, minutesSinceNoon, minutesSinceNoonToHHMM } from '../lib/dates';
 import { fmt, round } from '../lib/format';
+import { BASELINE_READINGS } from './hrv';
 
 /** The 8 coach quick-prompt chips (§4), verbatim and in order. */
 export const COACH_CHIPS: string[] = [
@@ -169,6 +170,7 @@ const recovery: TemplateFn = (ctx) => {
   return card(ctx, 3, 'Recovery high', 'green', `${lead}. You're primed — ${action}`, COACH_CHIPS[0], INSIGHT_PRIORITY.recovery);
 };
 
+/** #4 — also carries the §6.5 "< 0.4 g/kg meal slot" nudge when the last occasion fell short (R3-7). */
 const proteinPace: TemplateFn = (ctx, _profile, targets) => {
   const per = num(ctx.nutrition.proteinPerMealNeeded);
   const left = num(ctx.nutrition.remaining.p) ?? 0;
@@ -176,10 +178,16 @@ const proteinPace: TemplateFn = (ctx, _profile, targets) => {
   if (per === null || left <= 0 || meals <= 0) return null;
   const sofar = num(ctx.nutrition.totals.p) ?? 0;
   const target = num(ctx.nutrition.targets.p) ?? targets.protein;
-  const hard = per > PROTEIN_PER_MEAL_HI;
+  const hard = per > (num(ctx.nutrition.maxPerMeal) ?? PROTEIN_PER_MEAL_HI);
   const suggest = hard ? 'chicken tikka (200 g ≈ 50 g protein)' : 'tandoori prawns or chicken tikka';
-  const body = `You're at ${n0(sofar)} g protein with ${plural(meals, 'meal')} left — you need ~${n0(per)} g each to hit ${n0(target)} g. Lead your next meal with ${suggest}.`;
-  return card(ctx, 4, 'Protein pace', hard ? 'yellow' : 'neutral', body, COACH_CHIPS[1], INSIGHT_PRIORITY.protein);
+  const lastP = num(ctx.nutrition.lastMealProtein);
+  const minMeal = num(ctx.nutrition.minPerMeal);
+  const lowSlot = ctx.nutrition.lastMealBelowMin === true && lastP !== null && minMeal !== null;
+  const lead = `You're at ${n0(sofar)} g protein with ${plural(meals, 'meal')} left — you need ~${n0(per)} g each to hit ${n0(target)} g.`;
+  const body = lowSlot
+    ? `${lead} Your last meal came in at ${n0(lastP as number)} g, under your ${n0(minMeal as number)} g floor — lead your next meal with ${suggest}.`
+    : `${lead} Lead your next meal with ${suggest}.`;
+  return card(ctx, 4, 'Protein pace', hard || lowSlot ? 'yellow' : 'neutral', body, COACH_CHIPS[1], INSIGHT_PRIORITY.protein);
 };
 
 const calories: TemplateFn = (ctx, profile, targets) => {
@@ -245,8 +253,16 @@ const tobacco: TemplateFn = (ctx) => {
   const free = num(ctx.tobacco.hrvSmokeFree);
   const smoking = num(ctx.tobacco.hrvSmoking);
   const delta = free !== null && smoking !== null ? free - smoking : null;
-  // Only cite the HRV difference when it rounds to ≥ 1 ms — "0 ms higher" is noise, not feedback.
-  const hrvClause = delta !== null && Math.round(delta) >= 1 && free !== null ? ` — on smoke-free days your HRV averaged ${n0(free)} ms, ${n0(delta)} ms higher` : '';
+  const free3 = num(ctx.tobacco.hrvFree3);
+  const delta3 = num(ctx.tobacco.hrvDelta3);
+  // §7 #9 quotes the last 3 smoke-free days (R3-11); the 30-day comparison is the fallback.
+  // Only cite a difference that rounds to ≥ 1 ms — "0 ms higher" is noise, not feedback.
+  let hrvClause = '';
+  if (free3 !== null && delta3 !== null && Math.round(delta3) >= 1) {
+    hrvClause = ` — on your last 3 smoke-free days HRV averaged ${n0(free3)} ms, ${n0(delta3)} ms higher`;
+  } else if (delta !== null && Math.round(delta) >= 1 && free !== null) {
+    hrvClause = ` — on smoke-free days your HRV averaged ${n0(free)} ms, ${n0(delta)} ms higher`;
+  }
   const lead = avg === null ? `${n0(today)} today so far` : `${n0(today)} today vs your ${n1(avg)} average`;
   const streak = num(ctx.tobacco.streakDays) ?? 0;
   const action = today > 0 ? 'One fewer keeps the streak alive.' : streak > 0 ? `Stay at zero to extend your ${plural(streak, 'day')} streak.` : 'Stay at zero tonight to start a streak.';
@@ -274,13 +290,21 @@ const weightTrend: TemplateFn = (ctx, _profile, targets) => {
       action = 'Hold your current intake.';
       band = 'green';
       break;
-    case 'below':
+    case 'below': {
       verdict = `under the ${bandStr} target`;
+      // Once the weekly check has a live cut (a full week outside the band — R3-3),
+      // say so instead of "hold one more week", so the card and Trends never disagree.
+      const sugg = num(ctx.expenditure.suggestedKcal);
+      const cut = num(ctx.expenditure.suggestedDelta);
+      const live = ctx.expenditure.valid && sugg !== null && cut !== null && cut < 0;
       action = stallWithShortSleep(ctx)
         ? `Fix sleep before cutting calories: you slept ${n1(num(ctx.sleep.hours) ?? 0)} h, and short sleep turns the deficit into muscle loss.`
-        : `Hold ${kcal} kcal one more week, then trim 100–200 kcal.`;
+        : live
+          ? `Trim to ${n0(sugg as number)} kcal (−${n0(Math.abs(cut as number))}) from tomorrow — the rate has been under the band for a full week.`
+          : `Hold ${kcal} kcal one more week, then trim 100–200 kcal.`;
       band = 'yellow';
       break;
+    }
     case 'above':
       verdict = `faster than the ${bandStr} target`;
       action = 'Add ~150 kcal of carbs on lift days to protect lean mass.';
@@ -449,11 +473,14 @@ export function emptyStates(ctx: CoachContext): EmptyStates {
   if (num(ctx.weight.trend) === null || (num(ctx.weight.weighInsThisWeek) ?? 0) < 5) {
     out.weight = 'Weigh in 5+ days this week so your trend and expenditure calibrate.';
   }
-  const hrvDays = num(ctx.hrv.delta.n) ?? 0;
+  // One "baseline established" gate for the tile and the hero (R3-10): hrv.ts's
+  // 21-readings-in-30-days rule, carried on the context; legacy contexts fall back to the count.
+  const hrvDays = num(ctx.hrv.daysOfData) ?? num(ctx.hrv.delta.n) ?? 0;
+  const established = ctx.hrv.baselineEstablished ?? hrvDays >= BASELINE_READINGS;
   if (num(ctx.hrv.today) === null && num(ctx.hrv.baseline7) === null) {
     out.hrv = 'Log HRV or connect WHOOP to start your baseline.';
-  } else if (ctx.hrv.band === 'insufficient' || hrvDays < 30) {
-    out.hrv = `Baseline forms after ~30 days of HRV — ${plural(hrvDays, 'day')} logged so far.`;
+  } else if (ctx.hrv.band === 'insufficient' || !established) {
+    out.hrv = `Baseline forms after ~3 weeks of HRV — ${plural(hrvDays, 'day')} logged so far.`;
   }
   if (num(ctx.sleep.hours) === null) {
     out.sleep = "Log last night's sleep or connect WHOOP to see hours vs need.";

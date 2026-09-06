@@ -4,6 +4,10 @@
  * call so the result can open the shared EstimateSheet. Shows a busy state
  * while estimating, an inline question when the parser found no food, and a
  * reminder that the offline parser is in use when no AI key is configured.
+ *
+ * While busy the input is `readOnly`, not `disabled`: disabling would throw
+ * focus to <body>, and the estimate Sheet records the focused element as the
+ * place to return focus to on close (review R6-5).
  */
 import type { FormEvent, RefObject } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
@@ -46,7 +50,8 @@ export default function AIBar({ inputRef, value: text, onChange: setText, busy, 
             autoCorrect="off"
             aria-label="Describe what you ate"
             className="w-full h-12 pl-9 pr-3 text-[15px] rounded-2xl"
-            disabled={busy}
+            readOnly={busy}
+            aria-busy={busy || undefined}
           />
         </div>
         <button

@@ -41,13 +41,14 @@ export default function TobaccoCard({ ctx, todayRecord, onAdjust, onSmokeFree }:
         title="Tobacco"
         caption={caption}
         action={
-          <Chip size="sm" active={stamp} color="blue" onClick={() => setStamp((v) => !v)} aria-label="Note the time of each +1">
+          <Chip size="sm" active={stamp} pressed={stamp} color="blue" onClick={() => setStamp((v) => !v)} aria-label="Note the time of each +1">
             Note time
           </Chip>
         }
       />
+      {/* sm stepper (184 px) + the +1 button fit the 324 px card; the lg one overflowed the frame (R6-1). */}
       <div className="flex items-center justify-between gap-3">
-        <Stepper value={count} onChange={(n) => onAdjust(n - count, stamp && n - count === 1)} step={1} min={0} max={99} label="Cigarettes today" size="lg" />
+        <Stepper value={count} onChange={(n) => onAdjust(n - count, stamp && n - count === 1)} step={1} min={0} max={99} label="Cigarettes today" />
         <Button size="lg" icon={<Cigarette aria-hidden />} onClick={() => onAdjust(1, stamp)} className="shrink-0" aria-label="Add one cigarette">
           +1
         </Button>

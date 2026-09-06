@@ -4,16 +4,14 @@
  * tab: a food card's main area adds the default portion at "now"; the small
  * scale button opens the shared portion sheet; the star toggles Favorites.
  *
- * Barcode and Photo are honest placeholders: a Sheet explains they are coming
- * later and hands the user back to the text bar (no fake scanning). The photo
- * sheet carries the depth/portion caveat from the spec's Cal AI evidence.
+ * Barcode and Photo open their own sheets (BarcodeSheet / PhotoSheet), owned
+ * by the Log screen so a result can flow into the shared EstimateSheet.
  */
-import { useState } from 'react';
 import { Barcode, Camera, History, Scale, Star } from 'lucide-react';
 import type { FoodItem, Meal } from '../../data/types';
 import { fmt } from '../../lib/format';
 import { mealOccasions } from '../../engine/nutrition';
-import { Button, SectionHeader, Sheet } from '../../ui';
+import { Button, SectionHeader } from '../../ui';
 
 export interface FastPathsProps {
   yesterdayMeals: Meal[];
@@ -25,14 +23,13 @@ export interface FastPathsProps {
   /** Open the portion sheet for the item. */
   onPortion: (item: FoodItem, src: 'recent' | 'favorite') => void;
   onToggleFavorite: (item: FoodItem) => void;
-  /** Close any placeholder sheet and focus the text bar. */
-  onUseTextBar: () => void;
+  /** Open the barcode sheet (manual code / camera scan). */
+  onBarcode: () => void;
+  /** Open the photo sheet (camera capture → AI estimate). */
+  onPhoto: () => void;
 }
 
-type Placeholder = 'barcode' | 'photo' | null;
-
-export default function FastPaths({ yesterdayMeals, recents, favorites, onRepeatYesterday, onQuickAdd, onPortion, onToggleFavorite, onUseTextBar }: FastPathsProps) {
-  const [placeholder, setPlaceholder] = useState<Placeholder>(null);
+export default function FastPaths({ yesterdayMeals, recents, favorites, onRepeatYesterday, onQuickAdd, onPortion, onToggleFavorite, onBarcode, onPhoto }: FastPathsProps) {
   const favIds = new Set(favorites.map((f) => f.id));
   const yOcc = mealOccasions(yesterdayMeals).length;
   const yKcal = yesterdayMeals.reduce((s, m) => s + (Number(m.kc) || 0), 0);
@@ -88,52 +85,14 @@ export default function FastPaths({ yesterdayMeals, recents, favorites, onRepeat
 
       {/* 4–5. Barcode & Photo (secondary) */}
       <div className="grid grid-cols-2 gap-2">
-        <Button variant="secondary" size="md" icon={<Barcode aria-hidden />} onClick={() => setPlaceholder('barcode')}>
+        <Button variant="secondary" size="md" icon={<Barcode aria-hidden />} onClick={onBarcode}>
           Barcode
         </Button>
-        <Button variant="secondary" size="md" icon={<Camera aria-hidden />} onClick={() => setPlaceholder('photo')}>
+        <Button variant="secondary" size="md" icon={<Camera aria-hidden />} onClick={onPhoto}>
           Photo
         </Button>
       </div>
-
-      <Sheet
-        open={placeholder !== null}
-        onClose={() => setPlaceholder(null)}
-        title={placeholder === 'photo' ? 'Photo logging — coming later' : 'Barcode scanning — coming later'}
-        footer={
-          <div className="flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={() => setPlaceholder(null)}>
-              Close
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={() => {
-                setPlaceholder(null);
-                onUseTextBar();
-              }}
-            >
-              Type it instead
-            </Button>
-          </div>
-        }
-      >
-        {placeholder === 'photo' ? (
-          <div className="space-y-3 text-[14px] leading-6 text-hx-text2">
-            <p>Photo estimates aren't in this build yet, and we won't fake one.</p>
-            <p>
-              Even when they land, a photo can't see depth: a plate of biryani looks the same at 250 g and 450 g, and hidden oil or ghee never shows. Portion size is the biggest
-              error in food logging, so photo estimates will always ask you to confirm grams.
-            </p>
-            <p className="text-hx-text">The fastest accurate path today is the text bar with a weight — "320 g chicken biryani" — which you can then edit before saving.</p>
-          </div>
-        ) : (
-          <div className="space-y-3 text-[14px] leading-6 text-hx-text2">
-            <p>Barcode scanning isn't in this build yet, and there's no camera access to pretend otherwise.</p>
-            <p>Most of what you eat is restaurant food without a barcode anyway. For packaged items, type the label values into the text bar, e.g. "whey scoop 30 g" or "200 g Greek yogurt".</p>
-            <p className="text-hx-text">You can edit any number before saving, so a label is easy to copy across.</p>
-          </div>
-        )}
-      </Sheet>
+      <p className="-mt-3 px-1 text-[12px] leading-4 text-hx-muted">Packaged food by barcode · a plate by photo (portion confirmed by you)</p>
     </div>
   );
 }

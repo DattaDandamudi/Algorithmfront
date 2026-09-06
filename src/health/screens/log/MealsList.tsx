@@ -13,7 +13,7 @@ import { Pencil, Trash2, Utensils } from 'lucide-react';
 import type { Macros, Meal } from '../../data/types';
 import { confidenceBand } from '../../ai/foodLocal';
 import { formatClock } from '../../lib/dates';
-import { fmt } from '../../lib/format';
+import { fmt, round } from '../../lib/format';
 import { EmptyState, SectionHeader, bandText } from '../../ui';
 import { groupMealsByTime } from './logUtils';
 
@@ -92,22 +92,39 @@ export default function MealsList({ meals, totals, targets, onEdit, onDelete, on
 }
 
 function TotalsRow({ totals, targets }: { totals: Macros; targets: Macros }) {
-  const cells: Array<{ label: string; v: number; t: number; dp?: number }> = [
-    { label: 'kcal', v: totals.kc, t: targets.kc },
-    { label: 'Protein', v: totals.p, t: targets.p },
-    { label: 'Fat', v: totals.f, t: targets.f },
-    { label: 'Carbs', v: totals.c, t: targets.c },
-    { label: 'Fiber', v: totals.fi, t: targets.fi },
+  // Labels are the 12 px `hx-label` style (R6-15); "Prot" keeps five columns
+  // legible at 390 px, the sr-only word carries the full name.
+  const cells: Array<{ key: 'kc' | 'p' | 'f' | 'c' | 'fi'; label: string; full: string; v: number; t: number }> = [
+    { key: 'kc', label: 'kcal', full: 'Calories', v: totals.kc, t: targets.kc },
+    { key: 'p', label: 'Prot', full: 'Protein', v: totals.p, t: targets.p },
+    { key: 'f', label: 'Fat', full: 'Fat', v: totals.f, t: targets.f },
+    { key: 'c', label: 'Carbs', full: 'Carbs', v: totals.c, t: targets.c },
+    { key: 'fi', label: 'Fiber', full: 'Fiber', v: totals.fi, t: targets.fi },
   ];
   return (
     <div className="hx-card px-3 py-3 grid grid-cols-5 gap-1" role="group" aria-label="Running totals versus targets">
       {cells.map((c) => {
-        const over = c.v > c.t && c.label !== 'Protein' && c.label !== 'Fiber';
+        // Protein and fiber are floors, not ceilings — only kcal/fat/carbs can be "over".
+        const over = c.v > c.t && c.key !== 'p' && c.key !== 'fi';
+        const by = round(c.v - c.t);
         return (
-          <div key={c.label} className="min-w-0 text-center">
-            <div className="text-[10px] leading-3 uppercase tracking-wider text-hx-muted truncate">{c.label}</div>
-            <div className={`mt-1 text-[15px] leading-5 font-semibold ${over ? 'text-hx-red' : 'text-hx-text'}`}>{fmt(c.v, c.dp ?? 0)}</div>
-            <div className="text-[11px] leading-4 text-hx-text2">/ {fmt(c.t)}</div>
+          <div key={c.key} className="min-w-0 text-center">
+            <div className="hx-label truncate" aria-hidden>
+              {c.label}
+            </div>
+            <span className="sr-only">{c.full}</span>
+            <div className={`mt-1 text-[15px] leading-5 font-semibold ${over ? 'text-hx-red' : 'text-hx-text'}`}>{fmt(c.v)}</div>
+            {over ? (
+              // Colour is never the only carrier (R6-12): the overshoot is written out.
+              <div className="text-[11px] leading-4 text-hx-red truncate">
+                <span aria-hidden>+{fmt(by)} over</span>
+                <span className="sr-only">
+                  over target by {fmt(by)}, target {fmt(c.t)}
+                </span>
+              </div>
+            ) : (
+              <div className="text-[11px] leading-4 text-hx-text2">/ {fmt(c.t)}</div>
+            )}
           </div>
         );
       })}

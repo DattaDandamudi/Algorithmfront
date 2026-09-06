@@ -301,7 +301,10 @@ function tobacco(ctx: CoachContext): Parts {
   if (t.streakDays > 0) lead += `, with a ${plural(t.streakDays, 'day')} smoke-free streak`;
   lead += '.';
   const details: string[] = [];
-  if (has(t.hrvSmokeFree) && has(t.hrvSmoking)) {
+  if (has(t.hrvFree3) && has(t.hrvDelta3) && t.hrvDelta3 >= 1) {
+    // §7 #9 wording — the last 3 smoke-free mornings (R3-11); the 30-day comparison is the fallback.
+    details.push(`On your last 3 smoke-free days your HRV averaged ${r0(t.hrvFree3)} ms — ${r0(t.hrvDelta3)} ms higher than after smoking days, recovery you keep by skipping.`);
+  } else if (has(t.hrvSmokeFree) && has(t.hrvSmoking)) {
     details.push(`On smoke-free days your HRV averages ${r0(t.hrvSmokeFree)} ms vs ${r0(t.hrvSmoking)} ms after smoking — ${r0(t.hrvSmokeFree - t.hrvSmoking)} ms of recovery you keep by skipping.`);
   } else {
     details.push("I don't have enough smoke-free vs smoking days yet to show your own HRV difference.");

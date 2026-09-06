@@ -74,6 +74,13 @@ export interface EstimateSheetProps {
  */
 const QUICK_ANSWERS = ['about 150 g', 'about 250 g', 'about 400 g', 'home-cooked', 'restaurant'] as const;
 
+/** §9 confidence badge — a static pill, not a button (R6-11), same washes as Chip's active state. */
+const BADGE: Record<'green' | 'yellow' | 'neutral', string> = {
+  green: 'bg-hx-green/15 text-hx-green border-hx-green/40',
+  yellow: 'bg-hx-yellow/15 text-hx-yellow border-hx-yellow/40',
+  neutral: 'bg-hx-neutral/15 text-hx-text border-hx-neutral/40',
+};
+
 /** Quick portion-confirm multipliers relative to the original estimate (§2 small/medium/large vocabulary). */
 const PORTIONS: Array<{ label: string; k: number }> = [
   { label: 'Small', k: 0.75 },
@@ -249,9 +256,10 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
           disabled={disabled}
         />
         {showConfidence && (
-          <Chip size="sm" active color={band.color} aria-label={`Confidence ${band.label}`} className="pointer-events-none mt-0.5" tabIndex={-1}>
+          <span className={`mt-1.5 shrink-0 inline-flex items-center h-8 px-3 rounded-full border text-[13px] font-medium ${BADGE[band.color]}`}>
+            <span className="sr-only">Confidence </span>
             {band.label}
-          </Chip>
+          </span>
         )}
         {onRemove && (
           <button
@@ -286,9 +294,9 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
       {showRange && row.estimatedGrams > 0 && (
         <div className="flex gap-2 flex-wrap" role="group" aria-label="Quick portion">
           {PORTIONS.map((p) => {
-            const near = Math.abs(k - p.k) < 0.02;
+            const selected = Math.abs(k - p.k) < 0.02 && (!forceRange || row.gramsConfirmed);
             return (
-              <Chip key={p.label} size="sm" active={near && (!forceRange || row.gramsConfirmed)} onClick={() => onChange(setRowGrams(row, row.estimatedGrams * p.k))} disabled={disabled}>
+              <Chip key={p.label} size="sm" active={selected} pressed={selected} onClick={() => onChange(setRowGrams(row, row.estimatedGrams * p.k))} disabled={disabled}>
                 {p.label} · {fmt(round(row.estimatedGrams * p.k))} g
               </Chip>
             );
@@ -348,7 +356,7 @@ function NumField({ label, ariaLabel, value, dp, range, onCommit, disabled }: Nu
 
   return (
     <label className="flex flex-col items-stretch gap-1 min-w-0">
-      <span className="text-[11px] leading-3 uppercase tracking-wider text-hx-muted text-center truncate">{label}</span>
+      <span className="hx-label block text-center truncate">{label}</span>
       <input
         type="text"
         inputMode="decimal"

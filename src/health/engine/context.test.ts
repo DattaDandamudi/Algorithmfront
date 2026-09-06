@@ -500,6 +500,9 @@ describe('engine barrel', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildCoachContext — R3 findings', () => {
+  const records = synthetic();
+  const ctx = build(records);
+
   it('R3-9: the steps baseline is the previous 30 days, never today\'s partial count', () => {
     const recs: DailyRecord[] = Array.from({ length: 29 }, (_, i) => ({ d: dayOf(DAYS - 30 + i), st: 8000 }));
     recs.push({ d: TODAY, st: 4200 });

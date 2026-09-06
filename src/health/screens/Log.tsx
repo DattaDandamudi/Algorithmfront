@@ -11,36 +11,46 @@
  * — never rebuilt on a keystroke. Nothing is written until the user taps
  * Save / +1 / a food card (§2 "every AI estimate is editable before save").
  *
- * One EstimateSheet serves three flows so "edit" looks like "log":
+ * One EstimateSheet serves five flows so "edit" looks like "log":
  *  - 'ai'      text bar result (N items, clarify row, source note)
  *  - 'portion' a favourite / recent with a grams stepper
+ *  - 'barcode' a packaged food from Open Food Facts (ai/barcode.ts)
+ *  - 'photo'   Claude's read of a photo (ai/foodImage.ts) with a mandatory grams confirm
  *  - 'edit'    an existing entry (plus Delete)
+ * Barcode and Photo first open their own secondary sheet (code / camera);
+ * the result closes it and opens the EstimateSheet (nested sheets are not
+ * supported, so it is a hand-off, not a stack).
  *
  * Deep links: `useNav().logSection` scrolls the matching section into view,
  * focuses its field ('meal' → the AI bar, 'weight' → the weight input) and
  * flashes a ring, then is consumed so the next visit starts at the top.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { FoodEstimateItem, FoodItem, HHMM, Meal, MealSource } from '../data/types';
+import type { FoodEstimate, FoodEstimateItem, FoodItem, HHMM, Meal, MealSource } from '../data/types';
 import { useHealth, useNow, useRecords } from '../data/store';
 import { buildCoachContext, mealOccasions } from '../engine';
 import { createClient, isAIConfigured } from '../ai/client';
 import { estimateFood } from '../ai/food';
+import { estimateFoodFromImage } from '../ai/foodImage';
 import { foodItemToEstimate, itemToMeal } from '../ai/foodLocal';
 import { addDays, formatClock, formatDateShort, nowHHMM, parseISODate, toISODate } from '../lib/dates';
 import { fmt, fmtWeight } from '../lib/format';
 import { toast } from '../ui';
 import { useNav, type LogSection } from '../nav';
 import AIBar from './log/AIBar';
+import BarcodeSheet from './log/BarcodeSheet';
 import BedtimeCard from './log/BedtimeCard';
 import EstimateSheet from './log/EstimateSheet';
 import FastPaths from './log/FastPaths';
 import HydrationCard from './log/HydrationCard';
 import MealsList from './log/MealsList';
+import PhotoSheet from './log/PhotoSheet';
 import TobaccoCard from './log/TobaccoCard';
 import WeightCard from './log/WeightCard';
 import {
+  BARCODE_NOTE,
   ESTIMATE_MEAL_SRC,
+  PHOTO_NOTE,
   appendClarification,
   appendNote,
   bedtimeRecordDate,
@@ -57,7 +67,9 @@ import {
 // Sheet state
 // ---------------------------------------------------------------------------
 
-type SheetKind = 'ai' | 'portion' | 'edit';
+type SheetKind = 'ai' | 'portion' | 'edit' | 'barcode' | 'photo';
+/** The secondary (code / camera) sheets that precede the estimate sheet. */
+type Secondary = 'barcode' | 'photo' | null;
 
 interface SheetState {
   open: boolean;
@@ -75,12 +87,16 @@ interface SheetState {
   libItem?: FoodItem;
   /** 'edit': the entry being edited. */
   meal?: Meal;
+  /** 'photo': the capture and hint, so a clarification can re-run with a fuller hint. */
+  photo?: { file: File; hint: string };
 }
 
 const CLOSED: SheetState = { open: false, kind: 'ai', title: '', items: [], time: '12:00', clarify: null, note: null, src: 'manual' };
 
 /** Copy for a text-bar submit the parser could not turn into food. */
 const NO_FOOD_QUESTION = 'Could not find a food in that — add a dish name and an amount, e.g. "250 g biryani".';
+/** Copy when Claude saw no food in the photo and asked nothing. */
+const NO_FOOD_IN_PHOTO = 'No food recognised in that photo — try a closer shot of the plate, or type it.';
 
 /** How long a deep-linked section keeps its highlight ring. */
 const FLASH_MS = 1600;
@@ -96,7 +112,7 @@ export default function Log() {
   const { state, actions } = useHealth();
   const records = useRecords();
   const wall = useNow();
-  const { logSection, consumeLogSection } = useNav();
+  const { logSection, consumeLogSection, openSettings } = useNav();
 
   // A Date whose identity changes once a minute so it can key the context memo.
   const today = toISODate(wall);
@@ -183,7 +199,80 @@ export default function Log() {
     [settings.ai, profile, library, client],
   );
 
+  // --- Barcode / Photo (secondary sheets → estimate sheet) --------------------
+  const [secondary, setSecondary] = useState<Secondary>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const closeSecondary = useCallback(() => {
+    setSecondary(null);
+    setPhotoError(null);
+  }, []);
+
+  const onBarcodeResult = (est: FoodEstimate, code: string) => {
+    setSecondary(null);
+    setSheet({
+      open: true,
+      kind: 'barcode',
+      title: est.items[0]?.name ?? `Barcode ${code}`,
+      items: est.items,
+      time: clockNow(),
+      clarify: null,
+      note: BARCODE_NOTE,
+      src: 'barcode',
+    });
+  };
+
+  /**
+   * Estimate a photo and open the sheet with a mandatory grams confirm.
+   * `keepTime` marks a clarification round-trip (the sheet is already open):
+   * an empty result then asks there, and errors go to a toast.
+   */
+  const runPhoto = useCallback(
+    async (file: File, hint: string, keepTime?: HHMM) => {
+      if (!client) {
+        setPhotoError('Add an AI key in Settings to estimate from photos.');
+        return;
+      }
+      setPhotoBusy(true);
+      setPhotoError(null);
+      try {
+        const est = await estimateFoodFromImage(file, settings.ai, profile, client, hint);
+        if (!alive.current) return;
+        if (est.items.length === 0) {
+          const q = est.clarify ?? NO_FOOD_IN_PHOTO;
+          if (keepTime) setSheet((s) => (s.open ? { ...s, clarify: q } : s));
+          else setPhotoError(q);
+          return;
+        }
+        setSecondary(null);
+        setSheet({
+          open: true,
+          kind: 'photo',
+          title: est.items.length > 1 ? `Confirm ${est.items.length} items` : 'Confirm the photo estimate',
+          items: est.items,
+          time: keepTime ?? clockNow(),
+          clarify: est.clarify,
+          note: PHOTO_NOTE,
+          src: 'photo',
+          photo: { file, hint },
+        });
+      } catch (e) {
+        if (!alive.current) return;
+        const msg = e instanceof Error && e.message ? e.message : 'Photo estimate failed — try again or type it';
+        if (keepTime) toast(msg, 'error');
+        else setPhotoError(msg);
+      } finally {
+        if (alive.current) setPhotoBusy(false);
+      }
+    },
+    [client, settings.ai, profile],
+  );
+
   const onClarify = (answer: string) => {
+    if (sheet.kind === 'photo' && sheet.photo) {
+      void runPhoto(sheet.photo.file, appendClarification(sheet.photo.hint, answer).trim(), sheet.time);
+      return;
+    }
     if (!sheet.text) return;
     void runEstimate(appendClarification(sheet.text, answer), sheet.time);
   };
@@ -320,8 +409,9 @@ export default function Log() {
     toast('Bedtime cleared');
   };
 
-  const logCaffeine = () => {
-    const t = clockNow();
+  /** `picked` is the user's time from the card, or null for the wall clock at the tap (R1-15). */
+  const logCaffeine = (picked: HHMM | null) => {
+    const t = picked ?? clockNow();
     actions.logCaffeine(today, t);
     if (isAfterCutoff(t, profile.caffeineCutoff)) toast(`Caffeine at ${formatClock(t)} — after your ${formatClock(profile.caffeineCutoff)} cutoff`, 'warn');
     else toast(`Caffeine logged · ${formatClock(t)}`);
@@ -411,7 +501,8 @@ export default function Log() {
           onQuickAdd={quickAdd}
           onPortion={openPortion}
           onToggleFavorite={toggleFavorite}
-          onUseTextBar={() => focusBar(FOCUS_AFTER_SHEET_MS)}
+          onBarcode={() => setSecondary('barcode')}
+          onPhoto={() => setSecondary('photo')}
         />
       </section>
 
@@ -464,19 +555,46 @@ export default function Log() {
         <p className="text-[11px] leading-4 text-hx-muted">Wellness information only — not medical advice.</p>
       </footer>
 
+      <BarcodeSheet
+        open={secondary === 'barcode'}
+        onClose={closeSecondary}
+        onResult={onBarcodeResult}
+        onUseTextBar={() => {
+          closeSecondary();
+          focusBar(FOCUS_AFTER_SHEET_MS);
+        }}
+      />
+      <PhotoSheet
+        open={secondary === 'photo'}
+        onClose={closeSecondary}
+        aiConfigured={aiConfigured}
+        busy={photoBusy}
+        error={photoError}
+        onPick={(file, hint) => void runPhoto(file, hint)}
+        onUseTextBar={() => {
+          closeSecondary();
+          focusBar(FOCUS_AFTER_SHEET_MS);
+        }}
+        onOpenAISettings={() => {
+          closeSecondary();
+          openSettings('coach');
+        }}
+      />
+
       <EstimateSheet
         open={sheet.open}
         title={sheet.title}
         items={sheet.items}
         time={sheet.time}
-        clarify={sheet.kind === 'ai' ? sheet.clarify : null}
+        clarify={sheet.kind === 'ai' || sheet.kind === 'photo' ? sheet.clarify : null}
         note={sheet.note}
-        busy={busy && sheet.open}
+        busy={(busy || photoBusy) && sheet.open}
         mode={sheet.kind === 'edit' ? 'edit' : 'new'}
+        requireGramsConfirm={sheet.kind === 'photo'}
         onClose={closeSheet}
         onSave={onSheetSave}
         onDelete={sheet.kind === 'edit' ? onSheetDelete : undefined}
-        onClarify={sheet.kind === 'ai' ? onClarify : undefined}
+        onClarify={sheet.kind === 'ai' || sheet.kind === 'photo' ? onClarify : undefined}
       />
     </div>
   );

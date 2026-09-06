@@ -18,8 +18,8 @@ import { modelPillLabel } from './coach/text';
 import { introLine } from './coach/turn';
 import { useCoachChat } from './coach/useCoachChat';
 
-/** Short enough to never truncate inside the 390 px header pill (review R6-17); the aria-label adds "Open Settings". */
-const OFFLINE_STATUS = 'Offline · add a key';
+/** Fits the 390 px header pill now that its column is flex-1 (review R6-17); the aria-label adds "Open Settings". */
+const OFFLINE_STATUS = 'Offline · add a key in Settings';
 
 export default function Coach() {
   const c = useCoachChat();

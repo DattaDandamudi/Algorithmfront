@@ -49,10 +49,11 @@ export default function WeightCard({ ctx, records, today, todayRecord, profile, 
   return (
     <div className="hx-card p-4 space-y-3">
       <SectionHeader title="Weight" caption={todayLb !== null ? `Logged today · ${fmtWeight(todayLb, units)}` : 'Weigh in first thing, after the bathroom, before coffee.'} />
-      <div className="flex items-center justify-between gap-3">
+      {/* The lg stepper is 240 px; with a button beside it the row overflowed the 324 px card (R6-1), so the button sits underneath. */}
+      <div className="flex flex-col gap-3">
         <Stepper value={value} onChange={setValue} step={0.1} dp={1} min={0} max={units === 'kg' ? 400 : 900} unit={units} label={`Weight in ${units}`} size="lg" />
-        <Button size="lg" icon={<Scale aria-hidden />} onClick={() => onSave(displayToLb(value, units))} disabled={!changed || value <= 0} className="shrink-0">
-          {todayLb !== null ? 'Update' : 'Save'}
+        <Button size="lg" fullWidth icon={<Scale aria-hidden />} onClick={() => onSave(displayToLb(value, units))} disabled={!changed || value <= 0}>
+          {todayLb !== null ? 'Update weight' : 'Save weight'}
         </Button>
       </div>
       <div className="grid grid-cols-2 gap-3 text-[13px] leading-5">

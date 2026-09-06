@@ -198,6 +198,11 @@ export function estimateOrigin(est: FoodEstimate): EstimateOrigin {
 export const LOCAL_ESTIMATE_NOTE = 'Local estimate — connect an AI key in Settings for better accuracy';
 export const AI_FALLBACK_NOTE = 'AI unavailable right now — this is the local estimate. Check the numbers before saving.';
 
+/** Note under a barcode result — label values are per serving; the grams still need a look. */
+export const BARCODE_NOTE = 'Label values via Open Food Facts — check the serving grams match what you ate';
+/** Note under a photo result (§2 depth/portion caveat). */
+export const PHOTO_NOTE = 'Photo estimate — the portion is a guess (no depth, hidden oil): confirm the grams before saving';
+
 export function estimateNote(origin: EstimateOrigin): string | null {
   if (origin === 'local') return LOCAL_ESTIMATE_NOTE;
   if (origin === 'ai-fallback') return AI_FALLBACK_NOTE;

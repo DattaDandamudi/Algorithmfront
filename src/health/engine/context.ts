@@ -236,6 +236,8 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       // not move the target (§6.2), so the coach sees "no suggestion", not "hold".
       suggestedKcal: exp.valid ? rec2.kcal : null,
       suggestedDelta: exp.valid ? rec2.delta : null,
+      calibrating: exp.calibrating,
+      nextUpdate: exp.nextUpdate,
     },
     nutrition: {
       totals,

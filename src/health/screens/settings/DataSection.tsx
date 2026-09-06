@@ -18,7 +18,7 @@ import { Database, FileJson, FileSpreadsheet, FileUp, ShieldCheck, Sparkles, Tra
 import { downloadText, exportFilename, parseImport } from '../../data/export';
 import { QUOTA_BYTES } from '../../data/storage';
 import { useHealth, useRecords } from '../../data/store';
-import type { ImportResult, IntegrityReport } from '../../data/types';
+import type { ImportResult } from '../../data/types';
 import { yearMonthOf } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { Banner, Button, SegmentedControl, toast, type Tone } from '../../ui';
@@ -49,7 +49,9 @@ export default function DataSection({ now }: { now: number }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<ImportMode>('merge');
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [report, setReport] = useState<IntegrityReport | null>(storage.integrity);
+  // Read straight from the store: `actions.checkIntegrity()` and the load-time
+  // heal both write `storage.integrity`, so the list never goes stale while open.
+  const report = storage.integrity;
 
   const months = useMemo(() => new Set(records.map((r) => yearMonthOf(r.d))).size, [records]);
   const ratio = Math.min(1, storage.bytesUsed / QUOTA_BYTES);
@@ -118,7 +120,6 @@ export default function DataSection({ now }: { now: number }) {
   // --- Integrity / demo / clear ------------------------------------------------
   const runIntegrity = () => {
     const r = actions.checkIntegrity();
-    setReport(r);
     if (r.problems.length) toast(`${r.problems.length} problem${r.problems.length === 1 ? '' : 's'} found`, 'warn');
     else toast('Storage looks consistent');
   };

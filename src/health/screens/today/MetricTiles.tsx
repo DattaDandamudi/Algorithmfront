@@ -111,7 +111,13 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
   const proteinLeft = Math.max(0, n.remaining.p);
   const proteinTarget = n.targets.p;
   const soFar = n.totals.p;
-  const maxPerMeal = round(PROTEIN_PER_MEAL_GKG[1] * lbToKg(bodyWeightLb));
+  // The engine's per-meal band (from the same reference weight as the pacing) wins; the
+  // prop-derived figure is the fallback for contexts built before it existed.
+  const maxPerMeal = isNum(n.maxPerMeal) ? n.maxPerMeal : round(PROTEIN_PER_MEAL_GKG[1] * lbToKg(bodyWeightLb));
+  const minPerMeal = isNum(n.minPerMeal) ? n.minPerMeal : round(PROTEIN_PER_MEAL_GKG[0] * lbToKg(bodyWeightLb));
+  // §6.5 "nudge if a meal slot lands < 31 g" (R3-7).
+  const lowSlot = n.lastMealBelowMin === true && isNum(n.lastMealProtein);
+  const mealsLeftText = `${n.mealsLeft} ${n.mealsLeft === 1 ? 'meal' : 'meals'} left`;
   let proteinBand: Band | undefined;
   let pacing: string;
   if (n.remaining.p <= 0) {
@@ -121,10 +127,12 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
     proteinBand = 'red';
     pacing = 'No meal slots left before bed';
   } else if (isNum(n.proteinPerMealNeeded)) {
-    proteinBand = n.proteinPerMealNeeded > maxPerMeal ? 'yellow' : undefined;
-    pacing = `~${fmt(n.proteinPerMealNeeded)} g × ${n.mealsLeft} ${n.mealsLeft === 1 ? 'meal' : 'meals'} left`;
+    proteinBand = n.proteinPerMealNeeded > maxPerMeal || lowSlot ? 'yellow' : undefined;
+    const perMeal = `~${fmt(n.proteinPerMealNeeded)} g × ${mealsLeftText}`;
+    pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor · ${perMeal}` : perMeal;
   } else {
-    pacing = `${n.mealsLeft} ${n.mealsLeft === 1 ? 'meal' : 'meals'} left`;
+    proteinBand = lowSlot ? 'yellow' : undefined;
+    pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor · ${mealsLeftText}` : mealsLeftText;
   }
   const proteinPct = proteinTarget > 0 ? Math.round((soFar / proteinTarget) * 100) : 0;
 

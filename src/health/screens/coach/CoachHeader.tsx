@@ -1,7 +1,8 @@
 /**
  * Coach header (task item 1): "<appName> Coach", the provider status pill
- * ("Claude · Opus 5" or "Offline · add a key" — both open Settings; the copy
- * is kept short so it never truncates at 390 px, review R6-17), the
+ * ("Claude · Opus 5" or "Offline · add a key in Settings" — both open
+ * Settings; the pill's column is flex-1 so it never truncates at 390 px,
+ * review R6-17), the
  * Conversational / Direct tone toggle (§4, Oura pattern) and
  * the clear-conversation action (task item 8; the screen owns the confirm).
  *
@@ -32,7 +33,8 @@ export default function CoachHeader({ appName, tone, onTone, statusLabel, config
   return (
     <header className="shrink-0 px-4 pt-4 pb-3 border-b border-hx-border bg-hx-base/95 backdrop-blur">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        {/* flex-1: the pill may use the full header width, not just the title's (it truncated at 390 px — review R6-17). */}
+        <div className="min-w-0 flex-1">
           <h1 className="text-[20px] leading-6 font-semibold text-hx-text truncate">{appName} Coach</h1>
           {/* 44 px hit area around a compact pill. */}
           <button
