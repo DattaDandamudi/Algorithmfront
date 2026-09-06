@@ -57,7 +57,11 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend,
 
   const byDate = new Map(days.map((x) => [x.d, x]));
   const latest = end ?? days.reduce<ISODate | null>((m, x) => (m === null || x.d > m ? x.d : m), null);
-  const cols = Math.max(1, Math.round(weeks));
+  // Keep every cell a ≥ 24 px target: show fewer weeks rather than smaller cells (review R6-2/R6-4).
+  const MIN_CELL = 24;
+  const requested = Math.max(1, Math.round(weeks));
+  const fitCols = width > LEFT + MIN_CELL ? Math.max(1, Math.floor((width - LEFT + GAP) / (MIN_CELL + GAP))) : requested;
+  const cols = Math.min(requested, fitCols);
 
   if (!latest) {
     return (
@@ -70,7 +74,7 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend,
   // Columns are Monday-start weeks ending with the week containing `latest`.
   const lastMonday = bucketStart(latest, 'week');
   const firstMonday = addDays(lastMonday, -(cols - 1) * 7);
-  const cell = Math.min(24, Math.max(10, Math.floor((width - LEFT - GAP * (cols - 1)) / cols)));
+  const cell = Math.min(28, Math.max(MIN_CELL, Math.floor((width - LEFT - GAP * (cols - 1)) / cols)));
   const pitch = cell + GAP;
   const svgW = LEFT + cols * pitch - GAP;
   const svgH = TOP + 7 * pitch - GAP;
@@ -95,6 +99,9 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend,
     const d = dateAt(c, r);
     if (d <= latest) cellsInOrder.push(d);
   }
+
+  // Roving tabindex: the grid is ONE tab stop (the latest day); arrow keys move focus (review R6-4).
+  const tabStop = cellsInOrder[cellsInOrder.length - 1];
 
   const focusCell = (d: ISODate) => {
     setActive(d);
@@ -200,7 +207,7 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend,
                 fillOpacity={level === null ? 1 : LEVEL_OPACITY[level]}
                 stroke={isActive ? TOKEN.text2 : level === null ? TOKEN.border : 'none'}
                 strokeWidth={1}
-                tabIndex={0}
+                tabIndex={d === tabStop ? 0 : -1}
                 role="img"
                 aria-label={`${formatDateShort(d)}: ${title}`}
                 className="outline-none"
@@ -229,7 +236,7 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend,
         />
       ) : null}
 
-      <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-hx-muted" aria-hidden>
+      <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-hx-muted" aria-hidden>
         <li className="flex items-center gap-1.5">
           <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-hx-border" />
           <span>Not logged</span>

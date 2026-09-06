@@ -174,6 +174,7 @@ describe('buildCoachContext — empty records (fresh install)', () => {
       targetLbPerWk: [0.86, 1.72], // 172 lb × 0.5–1.0 %BW/wk (§6.1)
       inBand: null,
       weighInsThisWeek: 0,
+      weeksOutsideBand: 0,
     });
 
     expect(ctx.expenditure.valid).toBe(false);
@@ -196,7 +197,7 @@ describe('buildCoachContext — empty records (fresh install)', () => {
     expect(ctx.nutrition.hydrationTargetCups).toBe(10); // 78 kg × 32 ml ≈ 2.5 L
     expect(ctx.nutrition.caffeineAfterCutoff).toBeNull();
 
-    expect(ctx.tobacco).toEqual({ today: 0, avg7: null, avg30: null, streakDays: 0, hrvSmokeFree: null, hrvSmoking: null });
+    expect(ctx.tobacco).toEqual({ today: 0, avg7: null, avg30: null, streakDays: 0, hrvSmokeFree: null, hrvSmoking: null, hrvFree3: null, hrvDelta3: null });
     expect(ctx.frequency).toEqual({ redMeatServings7d: 0, fishServings7d: 0, restaurantPct7d: null, fiberAvg7d: null, homeCookedPct7d: null });
     expect(ctx.adherence).toEqual({ loggingStreak: 0, proteinHitDays30: 0, kcalHitDays30: 0, weighInDays30: 0 });
     expect(ctx.bloodwork).toEqual(DEFAULT_BLOODWORK);
@@ -303,39 +304,48 @@ describe('buildCoachContext — 40-day synthetic dataset', () => {
     expect(ctx.todayRecord?.meals?.length).toBe(2);
   });
 
-  it('readiness defers to WHOOP recovery when today has `rec`, with the HRV forcing rule applied', () => {
+  it('R3-1: readiness defers to WHOOP recovery; one low HRV reading does not force a light day', () => {
     expect(ctx.readiness.source).toBe('whoop');
     expect(ctx.readiness.score).toBe(71); // the score is the data — never altered
-    // Today's synthetic HRV (46 ms) sits below the lower SWC → band 'low' forces red
-    // over a 71 % recovery (§6.3 thresholds; the same HrvStatus feeds both blocks).
-    expect(ctx.hrv.band).toBe('low');
-    expect(ctx.readiness.band).toBe('red');
-    expect(ctx.readiness.forced).toBe(true);
-    expect(ctx.readiness.training).toBe('Light day');
+    // Today's synthetic HRV (46 ms) is a single dip; the 7-day mean stays inside the
+    // SWC, so the 71 % recovery stands (the old construction banded the one reading
+    // and forced 'Light day' here).
+    expect(ctx.hrv.today).toBe(46);
+    expect(ctx.hrv.band).not.toBe('low');
+    expect(ctx.readiness.band).toBe('green');
+    expect(ctx.readiness.forced).toBeFalsy();
+    expect(ctx.readiness.training).toBe('Progress');
 
-    // With HRV back inside its range the WHOOP band stands on its own.
-    const healthy = records.map((r) => (r.d === TODAY ? { ...r, hrv: 52 } : r));
-    const c = build(healthy);
+    // A whole week 20 % under the baseline is a genuine 'low' and forces red over WHOOP.
+    const depressed = records.map((r) => (r.d > addDays(TODAY, -7) ? { ...r, hrv: Math.round((r.hrv as number) * 0.8) } : r));
+    const c = build(depressed);
     expect(c.readiness.source).toBe('whoop');
     expect(c.readiness.score).toBe(71);
-    expect(c.hrv.band).not.toBe('low');
-    expect(c.readiness.band).toBe('green');
-    expect(c.readiness.forced).toBeFalsy();
+    expect(c.hrv.band).toBe('low');
+    expect(c.hrv.baselineEstablished).toBe(true);
+    expect(c.readiness.band).toBe('red');
+    expect(c.readiness.forced).toBe(true);
+    expect(c.readiness.training).toBe('Light day');
   });
 
   it('hrv block maps HrvStatus and counts 30-day readings in delta.n', () => {
     expect(ctx.hrv.today).toBe(records[DAYS - 1].hrv);
     expect(ctx.hrv.baseline7).not.toBeNull();
-    expect(ctx.hrv.swcLower as number).toBeLessThan(ctx.hrv.baseline7 as number);
-    expect(ctx.hrv.baseline7 as number).toBeLessThan(ctx.hrv.swcUpper as number);
+    // The SWC is centred on the long-term baseline (R3-1), not on the 7-day mean.
+    expect(ctx.hrv.swcLower as number).toBeLessThan(ctx.hrv.baseline28 as number);
+    expect(ctx.hrv.baseline28 as number).toBeLessThan(ctx.hrv.swcUpper as number);
     expect(ctx.hrv.lnMean7).toBeCloseTo(Math.log(ctx.hrv.baseline7 as number), 2);
     expect(ctx.hrv.band).not.toBe('insufficient');
     expect(ctx.hrv.cv7).not.toBeNull();
     expect(ctx.hrv.delta.n).toBe(30);
     expect(ctx.hrv.delta.today).toBe(records[DAYS - 1].hrv);
     expect(ctx.hrv.delta.baseline).not.toBeNull();
-    // The same HrvStatus fed readiness — the detail quotes the same 7-day baseline.
-    expect(ctx.readiness.detail).toContain(`baseline ${Math.round(ctx.hrv.baseline7 as number)}`);
+    // R3-10: one baseline gate, exposed for the tile's empty state.
+    expect(ctx.hrv.baselineEstablished).toBe(true);
+    expect(ctx.hrv.daysOfData).toBe(30);
+    expect(ctx.hrv.overreaching).toBe(false);
+    // The same HrvStatus fed readiness — the detail quotes the same long-term baseline.
+    expect(ctx.readiness.detail).toContain(`baseline ${Math.round(ctx.hrv.baseline28 as number)}`);
   });
 
   it('rhr uses a 28-day baseline, sleep and steps map from their modules', () => {
@@ -351,7 +361,7 @@ describe('buildCoachContext — 40-day synthetic dataset', () => {
     expect(ctx.sleep.delta.n).toBe(30);
 
     expect(ctx.steps.today).toBe(4200);
-    expect(ctx.steps.n).toBe(30); // includeToday
+    expect(ctx.steps.n).toBe(30); // the 30 days before today (R3-9: today is never in its own baseline)
     expect(ctx.steps.delta as number).toBeLessThan(0);
   });
 
@@ -362,10 +372,11 @@ describe('buildCoachContext — 40-day synthetic dataset', () => {
     expect(ctx.weight.weeklyRatePct as number).toBeLessThan(0);
     expect(ctx.weight.inBand).toBe('in'); // ~1 lb/wk on ~171 lb ≈ 0.6 %BW/wk
     expect(ctx.weight.weighInsThisWeek).toBe(7);
-    // Body weight for the band is the latest scale weight (≈ 170.7 lb), not the profile's 172.
+    // Body weight for the band is the EWMA trend (R3-12), not the scale dot or the profile's 172.
     const [lo, hi] = ctx.weight.targetLbPerWk;
-    expect(lo).toBeCloseTo((ctx.weight.latest as number) * 0.005, 2);
-    expect(hi).toBeCloseTo((ctx.weight.latest as number) * 0.01, 2);
+    expect(lo).toBeCloseTo((ctx.weight.trend as number) * 0.005, 2);
+    expect(hi).toBeCloseTo((ctx.weight.trend as number) * 0.01, 2);
+    expect(ctx.weight.weeksOutsideBand).toBe(0); // rate is in band
   });
 
   it('expenditure is valid with 7 weigh-ins and 7 intake days in the final week', () => {
@@ -377,9 +388,10 @@ describe('buildCoachContext — 40-day synthetic dataset', () => {
     expect(ctx.expenditure.reason).toMatch(/Hold at 1,950 kcal/);
   });
 
-  it('exposes the last calibrated estimate in the reason when this week fails the gate', () => {
-    // Drop this week's weigh-ins so the current block is invalid but earlier blocks calibrated.
-    const sparse = records.map((r) => (r.d > addDays(TODAY, -7) ? { ...r, w: undefined } : r));
+  it('exposes the last calibrated estimate in the reason when the latest block fails the gate', () => {
+    // Drop the last 12 days of weigh-ins: the latest completed block (days 28–34 from the
+    // first weigh-in) is invalid while earlier blocks calibrated.
+    const sparse = records.map((r) => (r.d >= dayOf(28) ? { ...r, w: undefined } : r));
     const c = build(sparse);
     expect(c.expenditure.valid).toBe(false);
     expect(c.expenditure.tdee).toBeNull();
@@ -460,8 +472,8 @@ describe('buildCoachContext — 40-day synthetic dataset', () => {
 
 describe('engine barrel', () => {
   it('re-exports every engine module and the context builder', () => {
-    expect(ENGINE_VERSION).toBe('1');
-    expect(engine.ENGINE_VERSION).toBe('1');
+    expect(ENGINE_VERSION).toBe('2'); // bumped for the R3 semantics changes (HRV banding, sleep debt, weekly TDEE cadence)
+    expect(engine.ENGINE_VERSION).toBe('2');
     expect(engine.buildCoachContext).toBe(buildCoachContext);
     expect(engine.buildInsights).toBe(buildInsights);
     expect(engine.contextForDate).toBe(contextForDate);
@@ -480,5 +492,89 @@ describe('engine barrel', () => {
     ]) {
       expect(typeof fn).toBe('function');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 3 findings (context-level)
+// ---------------------------------------------------------------------------
+
+describe('buildCoachContext — R3 findings', () => {
+  it('R3-9: the steps baseline is the previous 30 days, never today\'s partial count', () => {
+    const recs: DailyRecord[] = Array.from({ length: 29 }, (_, i) => ({ d: dayOf(DAYS - 30 + i), st: 8000 }));
+    recs.push({ d: TODAY, st: 4200 });
+    const ctx = build(recs);
+    expect(ctx.steps.today).toBe(4200);
+    expect(ctx.steps.baseline).toBe(8000);
+    expect(ctx.steps.delta).toBe(-3800);
+    expect(ctx.steps.n).toBe(29);
+  });
+
+  it('R3-3: the intake suggestion waits for a full week outside the band, then steps 100 kcal', () => {
+    // 70 fully-logged days: the trend falls 1.3 lb/wk (in band) then the loss slows to 0.4 lb/wk.
+    const N = 70;
+    const recs: DailyRecord[] = [];
+    let w = 178;
+    for (let i = 0; i < N; i++) {
+      w -= (i < 45 ? 1.3 : 0.4) / 7;
+      recs.push({ d: addDays(TODAY, i - (N - 1)), w, kc: 1900, p: 180, f: 65, c: 100, fi: 30 });
+    }
+    // Find the first day the weekly rate leaves the band.
+    let cross: string | null = null;
+    for (let i = 46; i < N && cross === null; i++) {
+      const d = addDays(TODAY, i - (N - 1));
+      if (contextForDate(recs, SETTINGS, d, NOW).weight.inBand === 'below') cross = d;
+    }
+    expect(cross).not.toBeNull();
+    const first = contextForDate(recs, SETTINGS, cross as string, NOW);
+    expect(first.expenditure.valid).toBe(true);
+    expect(first.weight.weeksOutsideBand).toBe(0);
+    expect(first.expenditure.suggestedDelta).toBe(0); // hold — not a full week yet
+    expect(first.expenditure.reason).toMatch(/hold for a full week/);
+    const week = contextForDate(recs, SETTINGS, addDays(cross as string, 7), NOW);
+    expect(week.weight.inBand).toBe('below');
+    expect(week.weight.weeksOutsideBand).toBe(1);
+    expect(week.expenditure.valid).toBe(true);
+    expect(week.expenditure.suggestedDelta).toBe(-100);
+    expect(week.expenditure.suggestedKcal).toBe(1850);
+  });
+
+  it('R3-7: surfaces the last eating occasion under the 0.4 g/kg floor', () => {
+    expect(ctx.nutrition.lastMealBelowMin).toBe(false); // last occasion: chicken tikka, 60 g
+    expect(ctx.nutrition.lastMealProtein).toBe(60);
+    expect(ctx.nutrition.minPerMeal).toBe(31); // 0.4 g/kg × ~77 kg trend weight
+    expect(ctx.nutrition.maxPerMeal).toBe(43);
+    const snack: Meal = { id: 'snack', t: '15:00', n: 'roti', g: 60, kc: 180, p: 5, f: 3, c: 36, fi: 2, tags: ['grain', 'home'] };
+    const withSnack = records.map((r) => (r.d === TODAY ? { ...r, meals: [...(r.meals ?? []), snack] } : r));
+    const c = build(withSnack, TODAY, new Date(2026, 8, 6, 16, 0, 0));
+    expect(c.nutrition.lastMealBelowMin).toBe(true);
+    expect(c.nutrition.lastMealProtein).toBe(5);
+    expect(c.nutrition.lastMealTime).toBe('15:00');
+  });
+
+  it('R3-11: carries the last-3-smoke-free-days HRV figures from tobaccoInsightNumbers', () => {
+    const nums = engine.tobaccoInsightNumbers(records, TODAY);
+    expect(nums.hrvFree).not.toBeNull();
+    expect(ctx.tobacco.hrvFree3).toBe(nums.hrvFree);
+    expect(ctx.tobacco.hrvDelta3).toBe(nums.delta);
+    // The 30-day comparison is still there for the coach.
+    expect(ctx.tobacco.hrvSmokeFree).not.toBeNull();
+  });
+
+  it('R3-12: %BW band math uses the EWMA trend, not the latest scale dot', () => {
+    // 20 days at 170 lb, then a +2 lb glycogen bump on the scale today.
+    const recs: DailyRecord[] = Array.from({ length: 20 }, (_, i) => ({ d: dayOf(DAYS - 21 + i), w: 170 }));
+    recs.push({ d: TODAY, w: 172 });
+    const ctx = build(recs);
+    expect(ctx.weight.latest).toBe(172);
+    const trend = ctx.weight.trend as number;
+    expect(trend).toBeGreaterThan(170);
+    expect(trend).toBeLessThan(170.5);
+    const [lo, hi] = ctx.weight.targetLbPerWk;
+    expect(lo).toBeCloseTo(Math.round(trend * 0.5) / 100, 2);
+    expect(hi).toBeCloseTo(Math.round(trend * 1) / 100, 2);
+    expect(lo).not.toBeCloseTo(0.86, 2); // 172 × 0.5 %
+    // Per-kg protein math follows the same reference weight.
+    expect(ctx.nutrition.minPerMeal).toBe(Math.round(0.4 * (trend / 2.2046226218)));
   });
 });

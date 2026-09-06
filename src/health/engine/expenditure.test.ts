@@ -41,16 +41,34 @@ const LAST = 99; // ramp(100) runs day(0)..day(99)
 const ASOF = day(LAST);
 
 describe('weeklyExpenditure — windows', () => {
-  it('returns `weeks` consecutive non-overlapping 7-day blocks ending at asOf, oldest first', () => {
+  it('R3-4: blocks are anchored to 7-day boundaries from the first weigh-in; the latest is the last COMPLETED block', () => {
+    // First weigh-in day(0); asOf day(99) sits inside block 14 (days 98–104), which is still in progress.
     const r = weeklyExpenditure(ramp(100), ASOF);
+    expect(r.firstWeighIn).toBe(day(0));
     expect(r.weeks).toHaveLength(6);
-    expect(r.weeks[5].end).toBe(ASOF);
-    expect(r.weeks[5].start).toBe(day(LAST - 6));
-    expect(r.weeks[0].end).toBe(day(LAST - 35));
-    expect(r.weeks[0].start).toBe(day(LAST - 41));
+    expect(r.weeks[5].end).toBe(day(97));
+    expect(r.weeks[5].start).toBe(day(91));
+    expect(r.weeks[0].end).toBe(day(62));
+    expect(r.weeks[0].start).toBe(day(56));
     for (let i = 1; i < r.weeks.length; i++) {
       expect(r.weeks[i].start).toBe(addDays(r.weeks[i - 1].end, 1));
     }
+    // The in-progress block publishes the morning after its 7th day.
+    expect(r.nextUpdate).toBe(day(105));
+    // Gate counters describe the in-progress block (days 98–99 so far) for the empty-state nudge.
+    expect(r.weighInsThisWeek).toBe(2);
+    expect(r.intakeDaysThisWeek).toBe(2);
+  });
+
+  it('R3-4: the published estimate changes weekly, not daily', () => {
+    // Alternating intake makes every block's mean differ from its neighbour's.
+    const recs = ramp(100).map((r, i) => ({ ...r, kc: i % 2 ? 2150 : 1650 }));
+    const tdee = (i: number) => weeklyExpenditure(recs, day(i)).tdee;
+    const changes: number[] = [];
+    for (let i = 70; i < 99; i++) if (tdee(i) !== tdee(i + 1)) changes.push(i + 1);
+    expect(changes.length).toBeGreaterThan(0);
+    for (const c of changes) expect(c % 7).toBe(0); // only on a block boundary
+    for (let i = 70; i < 99; i++) if ((i + 1) % 7 !== 0) expect(tdee(i)).toBe(tdee(i + 1));
   });
 
   it('honours the `weeks` option', () => {
@@ -66,8 +84,8 @@ describe('weeklyExpenditure — TDEE math (§6.2)', () => {
     expect(r.tdee).not.toBeNull();
     expect(Math.abs(r.tdee! - 2400)).toBeLessThanOrEqual(6);
     expect(r.smoothedTdee).toBe(r.tdee);
-    expect(r.weighInsThisWeek).toBe(7);
-    expect(r.intakeDaysThisWeek).toBe(7);
+    expect(r.weighInsThisWeek).toBe(2); // in-progress block: days 98–99
+    expect(r.intakeDaysThisWeek).toBe(2);
     for (const wk of r.weeks) {
       expect(wk.valid).toBe(true);
       expect(wk.weighIns).toBe(7);
@@ -77,15 +95,15 @@ describe('weeklyExpenditure — TDEE math (§6.2)', () => {
       expect(Math.abs(wk.tdee! - 2400)).toBeLessThanOrEqual(6);
       expect(wk.smoothedTdee).not.toBeNull();
     }
-    expect(r.reason).toMatch(/Calibrated from 6 valid weeks/);
+    expect(r.reason).toMatch(/Calibrated from 12 valid weeks/); // blocks 2–13 (0–1 are calibrating)
   });
 
   it('uses trend(end) − trend(day before start) so Δ spans 7 trend updates', () => {
     const r = weeklyExpenditure(ramp(100), ASOF);
-    const wk = r.weeks[5];
-    // trend_t = 172 − t/7 → day 92 = 158.857, day 99 = 157.857
-    expect(wk.trendStart).toBeCloseTo(172 - 92 / 7, 1);
-    expect(wk.trendEnd).toBeCloseTo(172 - 99 / 7, 1);
+    const wk = r.weeks[5]; // block 13: days 91–97
+    // trend_t = 172 − t/7 → day 90 = 159.143, day 97 = 158.143
+    expect(wk.trendStart).toBeCloseTo(172 - 90 / 7, 1);
+    expect(wk.trendEnd).toBeCloseTo(172 - 97 / 7, 1);
   });
 
   it('a gaining trend lowers the TDEE estimate', () => {
@@ -93,31 +111,59 @@ describe('weeklyExpenditure — TDEE math (§6.2)', () => {
     expect(Math.abs(r.tdee! - 1400)).toBeLessThanOrEqual(6);
   });
 
-  it('falls back to the window start when the day before is before the first weigh-in', () => {
-    const r = weeklyExpenditure(ramp(7), day(6), { weeks: 1 });
-    const wk = r.weeks[0];
-    expect(wk.trendStart).toBe(172); // seed weigh-in on day 0
-    expect(wk.deltaLb).toBeCloseTo(-6 / 7, 2); // only 6 updates inside the window
-    expect(wk.valid).toBe(true);
-    expect(r.valid).toBe(true);
+  it('R3-5: the first two weeks are calibrating — no published estimate before ~3 weeks of weigh-ins', () => {
+    // Block 0 completes on day 7: its Δ starts from the seed weigh-in, so it is computed but never published.
+    const wk1 = weeklyExpenditure(ramp(8), day(7), { weeks: 1 });
+    expect(wk1.weeks[0]).toMatchObject({ start: day(0), end: day(6), calibrating: true, valid: false, trendStart: 172 });
+    expect(wk1.weeks[0].deltaLb).toBeCloseTo(-6 / 7, 2);
+    expect(wk1.weeks[0].reason).toMatch(/Calibrating/);
+    expect(wk1.valid).toBe(false);
+    expect(wk1.calibrating).toBe(true);
+    expect(wk1.tdee).toBeNull();
+    expect(wk1.smoothedTdee).toBeNull();
+    expect(wk1.reason).toMatch(/^Calibrating — .*day 8 of 21/);
+    expect(wk1.nextUpdate).toBe(day(21));
+    // Day 20: block 1 is complete but still calibrating; block 2 is in progress.
+    const d20 = weeklyExpenditure(ramp(21), day(20));
+    expect(d20.valid).toBe(false);
+    expect(d20.calibrating).toBe(true);
+    expect(d20.reason).toMatch(/day 21 of 21/);
+    // Day 21: block 2 (days 14–20, starting ≥ 14 days after the first weigh-in) publishes.
+    const d21 = weeklyExpenditure(ramp(22), day(21));
+    expect(d21.valid).toBe(true);
+    expect(d21.calibrating).toBe(false);
+    expect(d21.weeks[d21.weeks.length - 1]).toMatchObject({ start: day(14), end: day(20), calibrating: false, valid: true });
+    expect(Math.abs(d21.tdee! - 2400)).toBeLessThanOrEqual(6);
+    expect(d21.reason).toMatch(/^Calibrated from 1 valid week —/);
+  });
+
+  it('R3-5: gating hides the seed-lagged weeks of a real (un-lagged) linear loss', () => {
+    // True loss 1 lb/wk at 1,900 kcal → true TDEE 2,400; the EWMA seeded at the first weigh-in lags.
+    const real: DailyRecord[] = Array.from({ length: 22 }, (_, t) => ({ d: day(t), w: 172 - t / 7, kc: 1900 }));
+    const wk1 = weeklyExpenditure(real, day(7), { weeks: 1 }).weeks[0];
+    expect(wk1.tdee as number).toBeLessThan(2100); // ≈ 2,027 — the seed-lag error the gate keeps off the screen
+    expect(wk1.valid).toBe(false);
+    const d21 = weeklyExpenditure(real, day(21));
+    expect(d21.valid).toBe(true);
+    expect(Math.abs(d21.tdee! - 2400)).toBeLessThan(120); // ≈ 2,315 and converging
   });
 
   it('counts only kc > 0 as intake days', () => {
     const recs = ramp(100).map((r) => (r.d === day(LAST) ? { ...r, kc: 0 } : r));
     const r = weeklyExpenditure(recs, ASOF);
-    expect(r.intakeDaysThisWeek).toBe(6);
+    expect(r.intakeDaysThisWeek).toBe(1); // in-progress block: day 98 only
     expect(r.weeks[5].meanIntake).toBe(1900);
   });
 });
 
 describe('weeklyExpenditure — gating', () => {
-  it('<5 weigh-ins in the current week → invalid, tdee null, empty-state reason; last calibration kept', () => {
-    const recs = without(ramp(100), 'w', [LAST - 6, LAST - 5, LAST - 4, LAST - 3]); // 3 weigh-ins left
+  it('<5 weigh-ins in the latest completed block → invalid, tdee null, empty-state reason; last calibration kept', () => {
+    const recs = without(ramp(100), 'w', [LAST - 6, LAST - 5, LAST - 4, LAST - 3]); // days 93–96 → block 13 keeps 3
     const r = weeklyExpenditure(recs, ASOF);
     expect(r.valid).toBe(false);
     expect(r.tdee).toBeNull();
-    expect(r.reason).toBe('Weigh in 5+ days this week so your trend and expenditure calibrate.');
-    expect(r.weighInsThisWeek).toBe(3);
+    expect(r.reason).toBe('Only 3 of 5 weigh-ins in your last full week. Weigh in 5+ days this week so your trend and expenditure calibrate.');
+    expect(r.weighInsThisWeek).toBe(2); // the in-progress block (days 98–99)
     expect(r.weeks[5].valid).toBe(false);
     expect(r.weeks[5].reason).toBe('Only 3 of 5 weigh-ins');
     expect(r.weeks[5].smoothedTdee).toBeNull();
@@ -127,14 +173,14 @@ describe('weeklyExpenditure — gating', () => {
     expect(r.weeks[4].valid).toBe(true);
   });
 
-  it('<5 intake days in the current week → invalid with the intake nudge', () => {
+  it('<5 intake days in the latest completed block → invalid with the intake nudge', () => {
     const recs = without(ramp(100), 'kc', [LAST - 6, LAST - 5, LAST - 4, LAST - 3]);
     const r = weeklyExpenditure(recs, ASOF);
     expect(r.valid).toBe(false);
     expect(r.tdee).toBeNull();
-    expect(r.intakeDaysThisWeek).toBe(3);
-    expect(r.weighInsThisWeek).toBe(7);
-    expect(r.reason).toBe('Log intake on 5+ days this week so your expenditure can calibrate.');
+    expect(r.intakeDaysThisWeek).toBe(2);
+    expect(r.weighInsThisWeek).toBe(2);
+    expect(r.reason).toBe('Only 3 of 5 intake days in your last full week. Log intake on 5+ days this week so your expenditure can calibrate.');
     expect(r.weeks[5].reason).toBe('Only 3 of 5 intake days');
   });
 
@@ -142,8 +188,8 @@ describe('weeklyExpenditure — gating', () => {
     const recs = without(ramp(100), 'w', [LAST - 6, LAST - 5, LAST - 4, LAST - 3]);
     const r = weeklyExpenditure(recs, ASOF, { minWeighIns: 3 });
     expect(r.valid).toBe(true);
-    expect(r.reason).toBe('Calibrated from 6 valid weeks — 3 weigh-ins and 7 intake days this week.');
-    expect(weeklyExpenditure(recs, ASOF, { minWeighIns: 4 }).reason).toMatch(/^Weigh in 4\+ days/);
+    expect(r.reason).toBe('Calibrated from 12 valid weeks — 3 weigh-ins and 7 intake days in your last full week.');
+    expect(weeklyExpenditure(recs, ASOF, { minWeighIns: 4 }).reason).toMatch(/^Only 3 of 4 weigh-ins .* Weigh in 4\+ days/);
   });
 
   it('handles no data at all without throwing', () => {
@@ -154,6 +200,9 @@ describe('weeklyExpenditure — gating', () => {
     expect(r.weeks).toHaveLength(6);
     expect(r.weighInsThisWeek).toBe(0);
     expect(r.intakeDaysThisWeek).toBe(0);
+    expect(r.firstWeighIn).toBeNull();
+    expect(r.calibrating).toBe(false);
+    expect(r.nextUpdate).toBeNull();
     expect(r.reason).toMatch(/^Weigh in 5\+ days/);
     for (const wk of r.weeks) {
       expect(wk.tdee).toBeNull();
@@ -167,6 +216,7 @@ describe('weeklyExpenditure — gating', () => {
     const recs = ramp(100).map((r) => ({ d: r.d, w: r.w }));
     const r = weeklyExpenditure(recs, ASOF);
     expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/^Only 0 of 5 intake days in your last full week/);
     expect(r.weeks[5].meanIntake).toBeNull();
     expect(r.weeks[5].tdee).toBeNull();
     expect(r.weeks[5].deltaLb).toBeCloseTo(-1, 1);
@@ -175,8 +225,8 @@ describe('weeklyExpenditure — gating', () => {
 
 describe('weeklyExpenditure — smoothing', () => {
   it('dampens a one-week spike (α=0.3 over valid weeks, oldest → newest)', () => {
-    // Last week eats 2500 instead of 1900 → raw week TDEE 3000 vs 2400 before.
-    const recs = ramp(100).map((r) => (r.d >= day(LAST - 6) ? { ...r, kc: 2500 } : r));
+    // The last completed block (days 91–97) eats 2500 instead of 1900 → raw week TDEE 3000 vs 2400 before.
+    const recs = ramp(100).map((r) => (r.d >= day(91) && r.d <= day(97) ? { ...r, kc: 2500 } : r));
     const r = weeklyExpenditure(recs, ASOF);
     const wk = r.weeks[5];
     expect(Math.abs(wk.tdee! - 3000)).toBeLessThanOrEqual(6);
@@ -191,7 +241,7 @@ describe('weeklyExpenditure — smoothing', () => {
   });
 
   it('smoothing = 1 disables smoothing; a custom α is honoured', () => {
-    const recs = ramp(100).map((r) => (r.d >= day(LAST - 6) ? { ...r, kc: 2500 } : r));
+    const recs = ramp(100).map((r) => (r.d >= day(91) && r.d <= day(97) ? { ...r, kc: 2500 } : r));
     expect(Math.abs(weeklyExpenditure(recs, ASOF, { smoothing: 1 }).tdee! - 3000)).toBeLessThanOrEqual(6);
     expect(Math.abs(weeklyExpenditure(recs, ASOF, { smoothing: 0.5 }).tdee! - 2700)).toBeLessThanOrEqual(8);
   });
@@ -200,24 +250,24 @@ describe('weeklyExpenditure — smoothing', () => {
     // Invalidate week index 4 via intake days (weights stay, so the trend is
     // unchanged); the spike must still land on the 2400 baseline carried from
     // week 3 — not re-seed at its own raw 3000.
-    const spike = ramp(100).map((r) => (r.d >= day(LAST - 6) ? { ...r, kc: 2500 } : r));
-    const recs = without(spike, 'kc', [LAST - 13, LAST - 12, LAST - 11, LAST - 10]);
+    const spike = ramp(100).map((r) => (r.d >= day(91) && r.d <= day(97) ? { ...r, kc: 2500 } : r));
+    const recs = without(spike, 'kc', [84, 85, 86, 87]); // block 12 (days 84–90) keeps 3 intake days
     const r = weeklyExpenditure(recs, ASOF);
     expect(r.weeks[4].valid).toBe(false);
     expect(r.weeks[4].reason).toBe('Only 3 of 5 intake days');
     expect(r.weeks[4].smoothedTdee).toBeNull();
     expect(Math.abs(r.weeks[3].smoothedTdee! - 2400)).toBeLessThanOrEqual(6);
     expect(Math.abs(r.smoothedTdee! - 2580)).toBeLessThanOrEqual(8);
-    expect(r.reason).toMatch(/Calibrated from 5 valid weeks/);
+    expect(r.reason).toMatch(/Calibrated from 11 valid weeks/);
   });
 });
 
 describe('expenditureSeries', () => {
-  it('one point per valid week at the week end, smoothed value, oldest first', () => {
-    const recs = ramp(100).map((r) => (r.d >= day(LAST - 6) ? { ...r, kc: 2500 } : r));
+  it('one point per valid completed week at the block end, smoothed value, oldest first', () => {
+    const recs = ramp(100).map((r) => (r.d >= day(91) && r.d <= day(97) ? { ...r, kc: 2500 } : r));
     const s = expenditureSeries(recs, ASOF);
     expect(s).toHaveLength(6);
-    expect(s.map((p) => p.d)).toEqual([5, 4, 3, 2, 1, 0].map((k) => day(LAST - 7 * k)));
+    expect(s.map((p) => p.d)).toEqual([5, 4, 3, 2, 1, 0].map((k) => day(97 - 7 * k)));
     expect(Math.abs(s[4].tdee - 2400)).toBeLessThanOrEqual(6);
     expect(Math.abs(s[5].tdee - 2580)).toBeLessThanOrEqual(8);
   });
@@ -226,7 +276,7 @@ describe('expenditureSeries', () => {
     const recs = without(ramp(100), 'w', [LAST - 6, LAST - 5, LAST - 4, LAST - 3]);
     const s = expenditureSeries(recs, ASOF);
     expect(s).toHaveLength(5);
-    expect(s[s.length - 1].d).toBe(day(LAST - 7));
+    expect(s[s.length - 1].d).toBe(day(90));
     expect(expenditureSeries(ramp(100), ASOF, 2)).toHaveLength(2);
     expect(expenditureSeries([], ASOF)).toEqual([]);
   });
@@ -279,6 +329,9 @@ describe('recommendIntake (§6.2 calorie adjustment)', () => {
     weeks: [],
     weighInsThisWeek: 7,
     intakeDaysThisWeek: 7,
+    firstWeighIn: day(0),
+    calibrating: false,
+    nextUpdate: day(105),
   };
   const invalid: ExpenditureResult = {
     ...valid,

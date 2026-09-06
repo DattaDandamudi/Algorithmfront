@@ -18,11 +18,12 @@ import { modelPillLabel } from './coach/text';
 import { introLine } from './coach/turn';
 import { useCoachChat } from './coach/useCoachChat';
 
-const OFFLINE_STATUS = 'Offline rules · add a key in Settings';
+/** Short enough to never truncate inside the 390 px header pill (review R6-17); the aria-label adds "Open Settings". */
+const OFFLINE_STATUS = 'Offline · add a key';
 
 export default function Coach() {
   const c = useCoachChat();
-  const { setTab, coachPrefill, consumeCoachPrefill } = useNav();
+  const { openSettings, coachPrefill, consumeCoachPrefill } = useNav();
   const [draft, setDraft] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -66,7 +67,7 @@ export default function Coach() {
         onTone={c.setTone}
         statusLabel={c.aiConfigured ? modelPillLabel(c.settings.ai) : OFFLINE_STATUS}
         configured={c.aiConfigured}
-        onOpenSettings={() => setTab('settings')}
+        onOpenSettings={() => openSettings('coach')}
         canClear={c.chat.length > 0}
         onClear={() => setConfirmOpen(true)}
       />

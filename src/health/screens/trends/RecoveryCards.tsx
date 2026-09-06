@@ -5,8 +5,11 @@
  * (mean ± 0.5 SD of ln rMSSD) shaded and labelled "normal range for you";
  * readouts carry the band, the range in ms, today's reading vs the 30-day
  * average and the "baseline forming (n/21 days)" note (≥21 readings in 30
- * days before the band is trusted).
- * RHR: dots + 7-day mean + the 28-day baseline as a reference hairline, with
+ * days before the band is trusted). The maths is in ln space (§6.3) and the
+ * chart back-transforms to ms, so the caption says so: the band is
+ * exp(ln mean ± 0.5 SD), asymmetric in ms (review R2-12).
+ * RHR: dots + 7-day mean + the 28-day baseline as a hairline INSIDE its
+ * personal range (28-day mean ± SD, the §3 baseline band — review R2-7), with
  * the ▲/▼ delta vs that baseline (down is good).
  */
 import { HeartPulse } from 'lucide-react';
@@ -16,7 +19,7 @@ import { fmt } from '../../lib/format';
 import { Button, Delta, EmptyState } from '../../ui';
 import { TimeSeriesChart } from '../../ui/charts';
 import { DeltaSub, Note, Readout, TrendCard } from './TrendCard';
-import { bucketDateFormat, hrvBandName, hrvBandTone, type BandedSeries, type LinedSeries, type RangeWindow } from './series';
+import { bucketDateFormat, hrvBandName, hrvBandTone, type BandedSeries, type BaselineBand, type LinedSeries, type RangeWindow } from './series';
 
 const hasData = (pts: Array<{ value: number | null }>) => pts.some((p) => p.value !== null);
 
@@ -60,9 +63,9 @@ export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCa
   return (
     <TrendCard
       title="HRV"
-      caption={`Daily rMSSD · 7-day mean · normal range (mean ± 0.5 SD) · ${win.label}`}
+      caption={`Daily rMSSD · 7-day geometric mean · range = exp(ln mean ± 0.5 SD) · ${win.label}`}
       action={action}
-      meaning="Dots are daily rMSSD; the line is your 7-day mean and the shaded band is your own normal range. Below it, keep training light — and give the baseline ~30 days before acting on it."
+      meaning="Dots are daily rMSSD in ms; the line is your 7-day geometric mean and the shaded band is your smallest worthwhile change, computed in ln(rMSSD) and shown back in ms (so it sits a little wider above the line than below). Below it, keep training light — and give the baseline ~30 days before acting on it."
     >
       <div className="grid grid-cols-2 gap-3">
         <Readout label="7-day mean" value={hrv.baseline7} unit="ms" sub={hrvBandName(hrv.band)} tone={tone} />
@@ -77,7 +80,7 @@ export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCa
         band={series.band}
         unit="ms"
         label="HRV"
-        lineLabel="7-day mean"
+        lineLabel="7-day geo. mean"
         bandLabel="Normal range for you"
         dateFormat={bucketDateFormat(win.bucket)}
         emptyText="Log HRV or connect WHOOP to start your baseline."
@@ -106,11 +109,13 @@ export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCa
 export interface RhrCardProps {
   rhr: BaselineDelta;
   series: LinedSeries;
+  /** 28-day mean ± SD — the personal baseline band; null under 7 readings. */
+  band: BaselineBand | null;
   win: RangeWindow;
   onOpenSettings: () => void;
 }
 
-export function RhrCard({ rhr, series, win, onOpenSettings }: RhrCardProps) {
+export function RhrCard({ rhr, series, band, win, onOpenSettings }: RhrCardProps) {
   if (!hasData(series.dots)) {
     return (
       <TrendCard
@@ -131,8 +136,8 @@ export function RhrCard({ rhr, series, win, onOpenSettings }: RhrCardProps) {
   return (
     <TrendCard
       title="Resting heart rate"
-      caption={`Daily RHR · 7-day mean · 28-day baseline · ${win.label}`}
-      meaning="A resting heart rate creeping above your 28-day baseline usually means fatigue, short sleep or illness — read it together with HRV before adding load."
+      caption={`Daily RHR · 7-day mean · 28-day baseline ± SD · ${win.label}`}
+      meaning="The shaded band is your usual range (28-day mean ± SD) around the baseline line. A resting heart rate creeping above it usually means fatigue, short sleep or illness — read it together with HRV before adding load."
     >
       <div className="grid grid-cols-3 gap-3">
         <Readout label="Today" value={rhr.today} unit="bpm" sub={<DeltaSub value={rhr.delta} good={rhr.good} unit="bpm" caption="vs 28-day baseline" />} />
@@ -145,7 +150,8 @@ export function RhrCard({ rhr, series, win, onOpenSettings }: RhrCardProps) {
         range={win.range}
         data={series.dots}
         line={series.line}
-        reference={rhr.baseline === null ? undefined : { value: rhr.baseline, label: '28-day baseline' }}
+        targetBand={band ? { lo: band.lo, hi: band.hi, label: 'Your usual range' } : undefined}
+        reference={rhr.baseline === null ? undefined : { value: rhr.baseline, label: band ? undefined : '28-day baseline' }}
         unit="bpm"
         label="RHR"
         lineLabel="7-day mean"

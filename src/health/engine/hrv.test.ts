@@ -71,6 +71,7 @@ describe('hrvStatus — SWC on a synthetic series', () => {
     expect(s.cv7).toBeCloseTo(1.06, 2);
     expect(s.cvPrev7).toBeCloseTo(1.06, 2);
     expect(s.cvTrend).toBe('stable');
+    expect(s.cvRef).toBeCloseTo(1.0, 2); // SD_REF / ln 60 × 100
     expect(s.overreachingFlag).toBe(false);
     expect(s.overreachingNote).toBeNull();
     expect(s.bigDrop).toBe(false);
@@ -138,7 +139,7 @@ describe('hrvStatus — SWC on a synthetic series', () => {
     expect(s.mean7Ln as number).toBeGreaterThan(s.swcLowerLn as number);
     expect(s.mean7Ln as number).toBeLessThan(s.swcUpperLn as number);
     expect(s.cvTrend).toBe('rising');
-    expect((s.cv7 as number) / (s.cvPrev7 as number)).toBeGreaterThan(1.5);
+    expect((s.cv7 as number) / (s.cvRef as number)).toBeGreaterThan(2);
     expect(s.overreachingFlag).toBe(true);
     expect(s.overreachingNote).toMatch(/variability is rising .*overreaching flag/);
     expect(s.band).toBe('unbalanced');
@@ -150,13 +151,13 @@ describe('hrvStatus — SWC on a synthetic series', () => {
     const big = [0.05, -0.05, 0.03, -0.03, 0.07, -0.07, 0];
     const s = hrvStatus(fromDevs([0, 0, ...big, ...big, ...big, ...small]), ASOF, { age: 26 });
     expect(s.cvTrend).toBe('falling');
-    expect((s.cv7 as number) * 1.5).toBeLessThan(s.cvPrev7 as number);
+    expect((s.cv7 as number) * 2).toBeLessThan(s.cvRef as number);
     expect(s.overreachingFlag).toBe(true);
     expect(s.overreachingNote).toMatch(/variability is collapsing .*overreaching flag/);
     expect(s.band).toBe('unbalanced');
     expect(s.note).toMatch(/collapsing/);
-    // A modest fall (within 1.5×) is not a flag.
-    const mid = big.map((v) => v * 0.8);
+    // A modest fall (within 2×) is not a flag — a 7-sample CV is too noisy for less.
+    const mid = big.map((v) => v * 0.6);
     const calm = hrvStatus(fromDevs([0, 0, ...big, ...big, ...big, ...mid]), ASOF, { age: 26 });
     expect(calm.overreachingFlag).toBe(false);
     expect(calm.band).toBe('balanced');
@@ -308,11 +309,18 @@ describe('swcBandSeries', () => {
     const recs = fromDevs(shiftLast7(-0.05));
     const band = swcBandSeries(recs, ASOF, 7);
     for (const p of band) {
-      // Reference baseline 60 ms ± 0.5 SD, not "this week's mean ± 0.5 SD".
-      expect(p.lowerMs as number).toBeGreaterThan(58);
-      expect(p.upperMs as number).toBeGreaterThan(60);
-      expect(p.mean7Ms as number).toBeLessThan(p.lowerMs as number);
+      // Reference baseline 60 ms ± 0.5 SD, not "this week's mean ± 0.5 SD"
+      // (earlier days have a slightly smaller reference set, hence the tolerance).
+      expect(p.lowerMs as number).toBeGreaterThanOrEqual(58.7);
+      expect(p.lowerMs as number).toBeLessThanOrEqual(59.1);
+      expect(p.upperMs as number).toBeGreaterThanOrEqual(60.9);
+      expect(p.upperMs as number).toBeLessThanOrEqual(61.3);
     }
+    // Only the last day has a fully shifted week; its mean sits under the (unmoved) band.
+    const last = band[band.length - 1];
+    expect(last.lowerMs).toBe(58.8);
+    expect(last.upperMs).toBe(61.2);
+    expect(last.mean7Ms as number).toBeLessThan(last.lowerMs as number);
   });
 
   it('leaves the band null until 7 readings exist, but still reports the 7-day mean', () => {

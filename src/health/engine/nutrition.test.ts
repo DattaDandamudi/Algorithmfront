@@ -160,16 +160,31 @@ describe('minutesUntilBed / mealClockMinutes', () => {
 });
 
 describe('fatFloorCheck', () => {
-  it('is fine when remaining kcal can cover the gap earlier in the day', () => {
-    const r = fatFloorCheck({ kc: 900, p: 100, f: 20, c: 80, fi: 10 }, 900, DEFAULT_TARGETS, '15:00');
+  it('is fine when ~30% of the remaining kcal can cover the gap earlier in the day', () => {
+    // 20 g logged, 1,500 kcal left → 1,500 × 0.30 / 9 = 50 g coverable ≥ the 40 g gap.
+    const r = fatFloorCheck({ kc: 450, p: 40, f: 20, c: 30, fi: 5 }, 1500, DEFAULT_TARGETS, '15:00');
     expect(r).toEqual({ belowFloor: false, projectedFat: 60, shortBy: 0 });
   });
 
-  it('is below the floor when remaining kcal cannot cover the gap (gap × 9 > remaining)', () => {
+  it('R3-6: projects remaining fat at ~30% of remaining kcal, not as if every kcal were fat', () => {
+    // 17:00, 20 g fat, 600 kcal left → +20 g → 40 g projected (the old rule said 60 g / fine).
+    expect(fatFloorCheck({ kc: 1350, p: 120, f: 20, c: 100, fi: 10 }, 600, DEFAULT_TARGETS, '17:00')).toEqual({
+      belowFloor: true,
+      projectedFat: 40,
+      shortBy: 20,
+    });
+    // 19:30, 25 g fat, 400 kcal left → +13.3 g → 38.3 g projected.
+    const r2 = fatFloorCheck({ kc: 1550, p: 150, f: 25, c: 120, fi: 15 }, 400, DEFAULT_TARGETS, '19:30');
+    expect(r2.belowFloor).toBe(true);
+    expect(r2.projectedFat).toBe(38.3);
+    expect(r2.shortBy).toBe(21.7);
+  });
+
+  it('is below the floor when the remaining kcal cannot cover the gap', () => {
     const r = fatFloorCheck({ kc: 1700, p: 160, f: 20, c: 150, fi: 20 }, 200, DEFAULT_TARGETS, '15:00');
     expect(r.belowFloor).toBe(true);
-    expect(r.projectedFat).toBe(42.2);
-    expect(r.shortBy).toBe(17.8);
+    expect(r.projectedFat).toBe(26.7); // 20 + 200 × 0.30 / 9
+    expect(r.shortBy).toBe(33.3);
   });
 
   it('treats any shortfall as below after 20:00 (including after midnight)', () => {

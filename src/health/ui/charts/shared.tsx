@@ -13,7 +13,7 @@ import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 /** Card content width inside the 390 px frame (358 px card − 2 × 16 px padding). */
 export const DEFAULT_CHART_WIDTH = 326;
 
-export const FONT = { tick: 11, label: 12, small: 10 } as const;
+export const FONT = { tick: 12, label: 12, small: 11 } as const;
 
 /** Design tokens as CSS variables — the only colour form allowed inside SVG. */
 export const TOKEN = {

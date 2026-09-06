@@ -4,6 +4,10 @@
  * inserts a newline on Shift+Enter, Send ↔ Stop while a reply streams, and
  * the persistent medical disclaimer (§4 "Persistent medical disclaimer
  * footer"; DISCLAIMER from ai/guardrails).
+ *
+ * The chip row is a real <ul>/<li> list so each Chip keeps its implicit
+ * `button` role (never forward `role` to the Chip — review R2-2), and chips
+ * use the 44 px `md` size to meet the touch-target floor (R2-13).
  */
 import { useEffect, type KeyboardEvent, type RefObject } from 'react';
 import { Send, Square } from 'lucide-react';
@@ -50,13 +54,15 @@ export default function Composer({ value, onChange, onSend, onStop, busy, showCh
   return (
     <div className="shrink-0 border-t border-hx-border bg-hx-base pt-2">
       {showChips && (
-        <div className="flex gap-2 overflow-x-auto hx-no-scrollbar px-4 pb-2" role="list" aria-label="Quick prompts">
+        <ul className="m-0 p-0 list-none flex gap-2 overflow-x-auto hx-no-scrollbar px-4 pb-2" role="list" aria-label="Quick prompts">
           {COACH_CHIPS.map((c) => (
-            <Chip key={c} size="sm" disabled={busy} onClick={() => onChip(c)} className="shrink-0 whitespace-nowrap" role="listitem">
-              {c}
-            </Chip>
+            <li key={c} className="shrink-0">
+              <Chip size="md" disabled={busy} onClick={() => onChip(c)} className="whitespace-nowrap">
+                {c}
+              </Chip>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
       <form
         className="px-4 pb-2 flex items-end gap-2"

@@ -7,7 +7,11 @@
  * unit, weekly rate in lb/wk (kg/wk for kg users) AND %BW/wk, and the
  * 0.5–1 %BW/wk target band converted to the current weight (172 lb →
  * 0.86–1.72 lb/wk) as a highlighted band with a marker for this week's rate
- * and the band state. Fewer than 5 weigh-ins in the range → the §1 empty state.
+ * and the band state. The §1 empty state shows only while the trend itself is
+ * unavailable (no EWMA yet, or fewer than 5 weigh-ins EVER) — an established
+ * trend is never hidden because the selected range happens to hold few
+ * weigh-ins; that case gets a neutral "N weigh-ins in this range" caption
+ * (review R2-3).
  */
 import { Scale } from 'lucide-react';
 import type { CoachContext, Targets } from '../../data/types';
@@ -18,8 +22,10 @@ import { TimeSeriesChart } from '../../ui/charts';
 import { Note, Readout, TrendCard } from './TrendCard';
 import { bucketDateFormat, rateBandState, weightFactor, type RangeWindow, type WeightSeries, type WeightUnits } from './series';
 
-/** §6.2's weigh-in gate, reused for the chart: under five weigh-ins the trend is not yet meaningful. */
+/** §6.2's weigh-in gate, reused for the chart: under five weigh-ins EVER the trend is not yet meaningful. */
 export const MIN_WEIGH_INS = 5;
+
+const weighInsText = (n: number) => `${n} weigh-in${n === 1 ? '' : 's'}`;
 
 export interface WeightCardProps {
   weight: CoachContext['weight'];
@@ -49,11 +55,12 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
     </Button>
   );
 
-  if (series.weighIns < MIN_WEIGH_INS) {
+  const trendReady = weight.trend !== null && series.totalWeighIns >= MIN_WEIGH_INS;
+  if (!trendReady) {
     return (
       <TrendCard
         title="Weight"
-        caption={`${series.weighIns} weigh-in${series.weighIns === 1 ? '' : 's'} in the ${win.label}`}
+        caption={`${weighInsText(series.totalWeighIns)} so far · needs ${MIN_WEIGH_INS}`}
         action={action}
         empty={
           <EmptyState
@@ -70,7 +77,7 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
   return (
     <TrendCard
       title="Weight"
-      caption={`EWMA trend (α ${targets.ewmaAlpha}) over ${series.weighIns} weigh-ins · ${win.label}`}
+      caption={`EWMA trend (α ${targets.ewmaAlpha}) · ${weighInsText(series.weighIns)} in the ${win.label}`}
       action={action}
       meaning={`Trust the line, not the dots — day-to-day swings inside the ±${fmt(series.noise, 1)} ${units} band are water and glycogen, not fat.`}
     >
@@ -105,6 +112,12 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
         dateFormat={bucketDateFormat(win.bucket)}
         emptyText="Weigh in to start your trend."
       />
+
+      {series.weighIns < MIN_WEIGH_INS && (
+        <Note tone="neutral">
+          {weighInsText(series.weighIns)} in this range — the line carries your trend forward from earlier weigh-ins; weigh in {MIN_WEIGH_INS}+ days a week to keep expenditure calibrating.
+        </Note>
+      )}
 
       <RateBand lo={lo} hi={hi} loss={loss} unit={units} tone={state.tone} pctBand={targets.weeklyRatePct} stateText={state.text} />
     </TrendCard>

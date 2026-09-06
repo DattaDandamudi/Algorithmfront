@@ -11,6 +11,7 @@ import {
   trendAt,
   weeklyRate,
   weighInsInWeek,
+  weeksOutsideBand,
 } from './weight';
 
 const D0 = '2026-08-01';
@@ -197,5 +198,46 @@ describe('weighInsInWeek / latestWeight', () => {
     expect(latestWeight(recs, day(5))).toEqual({ d: day(3), w: 171 });
     expect(latestWeight(recs, day(-1))).toBeNull();
     expect(latestWeight([], day(0))).toBeNull();
+  });
+});
+
+describe('weeksOutsideBand (R3-3 — a full week outside before intake changes)', () => {
+  /** Trend map whose weekly rate on day i is exactly rates[i] (recursive: trend(i) = trend(i − 7) + rate). */
+  function trendWithRates(rates: Array<number | null>, start = '2026-06-01'): Map<string, number> {
+    const m = new Map<string, number>();
+    for (let i = 0; i < rates.length; i++) {
+      const rate = rates[i];
+      const prior = m.get(addDays(start, i - 7));
+      m.set(addDays(start, i), i < 7 || rate === null || prior === undefined ? 172 : prior + rate);
+    }
+    return m;
+  }
+  const band: [number, number] = [0.5, 1.0]; // 0.86–1.72 lb/wk at 172 lb
+  const last = (rates: Array<number | null>) => addDays('2026-06-01', rates.length - 1);
+
+  it('is 0 while the rate has been outside for fewer than 7 daily evaluations', () => {
+    const rates = [...Array(7).fill(null), ...Array(18).fill(-1.2), ...Array(6).fill(-0.5)]; // in ×18, below ×6
+    expect(weeksOutsideBand(trendWithRates(rates), last(rates), 172, band)).toBe(0);
+  });
+
+  it('counts whole weeks of consecutive daily evaluations outside in the same direction', () => {
+    const one = [...Array(7).fill(null), ...Array(18).fill(-1.2), ...Array(7).fill(-0.5)];
+    expect(weeksOutsideBand(trendWithRates(one), last(one), 172, band)).toBe(1);
+    const two = [...one, ...Array(7).fill(-0.4)];
+    expect(weeksOutsideBand(trendWithRates(two), last(two), 172, band)).toBe(2);
+    // A day inside the band breaks the run; a switch of direction does too.
+    const broken = [...one, -1.0, ...Array(6).fill(-0.5)];
+    expect(weeksOutsideBand(trendWithRates(broken), last(broken), 172, band)).toBe(0);
+    const flipped = [...one.slice(0, -1), -2.5];
+    expect(weeksOutsideBand(trendWithRates(flipped), last(flipped), 172, band)).toBe(0);
+  });
+
+  it('is 0 when the rate is inside the band or unknown, and is capped', () => {
+    const inBand = [...Array(7).fill(null), ...Array(20).fill(-1.2)];
+    expect(weeksOutsideBand(trendWithRates(inBand), last(inBand), 172, band)).toBe(0);
+    expect(weeksOutsideBand(new Map(), '2026-06-30', 172, band)).toBe(0);
+    const long = [...Array(7).fill(null), ...Array(100).fill(-0.3)];
+    expect(weeksOutsideBand(trendWithRates(long), last(long), 172, band)).toBe(8);
+    expect(weeksOutsideBand(trendWithRates(long), last(long), 172, band, 3)).toBe(3);
   });
 });

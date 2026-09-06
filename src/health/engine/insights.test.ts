@@ -303,6 +303,51 @@ describe('generateInsights — ranking & promotion', () => {
   });
 });
 
+describe('review round 3 — copy and gates', () => {
+  it('R3-7: #4 names a last meal under the per-meal floor and turns yellow', () => {
+    const c = only(
+      makeCtx({ nutrition: { totals: { p: 40 }, remaining: { p: 140 }, mealsLogged: 2, mealsLeft: 3, proteinPerMealNeeded: 47, lastMealBelowMin: true, lastMealProtein: 18, minPerMeal: 31 } }),
+      4,
+    )!;
+    expect(c.body).toContain("You're at 40 g protein with 3 meals left — you need ~47 g each to hit 180 g.");
+    expect(c.body).toContain('Your last meal came in at 18 g, under your 31 g floor — lead your next meal with');
+    expect(c.band).toBe('yellow');
+    expect(c.body.split(/(?<=[.!?])\s+(?=[A-Z0-9])/).length).toBeLessThanOrEqual(2);
+    const plain = only(makeCtx({ nutrition: { totals: { p: 40 }, remaining: { p: 140 }, mealsLeft: 3, proteinPerMealNeeded: 47, lastMealBelowMin: false, lastMealProtein: 45, minPerMeal: 31 } }), 4)!;
+    expect(plain.body).not.toContain('floor');
+    expect(plain.band).toBe('yellow'); // 47 g > 43 g per meal is the existing "hard" case
+  });
+
+  it('R3-11: #9 quotes the last 3 smoke-free days when available, else the 30-day comparison', () => {
+    const c = only(makeCtx({ tobacco: { today: 3, avg7: 4.2, hrvFree3: 58, hrvDelta3: 6, hrvSmokeFree: 55, hrvSmoking: 50 } }), 9)!;
+    expect(c.body).toBe('3 today vs your 4.2 average — on your last 3 smoke-free days HRV averaged 58 ms, 6 ms higher. One fewer keeps the streak alive.');
+    const legacy = only(makeCtx({ tobacco: { today: 3, avg7: 4.2, hrvFree3: null, hrvDelta3: null, hrvSmokeFree: 58, hrvSmoking: 52 } }), 9)!;
+    expect(legacy.body).toContain('on smoke-free days your HRV averaged 58 ms, 6 ms higher');
+    // A sub-1 ms (or negative) 3-day delta is noise: fall back rather than print it.
+    const noise = only(makeCtx({ tobacco: { today: 3, avg7: 4.2, hrvFree3: 52, hrvDelta3: -3, hrvSmokeFree: 58, hrvSmoking: 52 } }), 9)!;
+    expect(noise.body).toContain('on smoke-free days your HRV averaged 58 ms, 6 ms higher');
+  });
+
+  it('R3-10: the HRV empty state follows hrv.baselineEstablished (21 readings) with the ~3 weeks copy', () => {
+    const forming = emptyStates(makeCtx({ hrv: { delta: { n: 12 }, daysOfData: 12, baselineEstablished: false } }));
+    expect(forming.hrv).toBe('Baseline forms after ~3 weeks of HRV — 12 days logged so far.');
+    // 25 readings used to show "forming" (< 30) while the hero already banded and forced on the range.
+    const established = emptyStates(makeCtx({ hrv: { delta: { n: 25 }, daysOfData: 25, baselineEstablished: true } }));
+    expect(established.hrv).toBeUndefined();
+    // Contexts without the flag fall back to the same 21-reading rule.
+    expect(emptyStates(makeCtx({ hrv: { delta: { n: 25 } } })).hrv).toBeUndefined();
+    expect(emptyStates(makeCtx({ hrv: { delta: { n: 20 } } })).hrv).toMatch(/20 days logged/);
+  });
+
+  it('R3-3: #10 aligns with a live intake suggestion instead of "hold one more week"', () => {
+    const w = { trend: 170.4, weeklyRateLb: -0.3, weeklyRatePct: -0.2, inBand: 'below' as const };
+    const c = only(makeCtx({ weight: w, expenditure: { valid: true, tdee: 2300, suggestedKcal: 1850, suggestedDelta: -100 } }), 10)!;
+    expect(c.body).toContain('Trim to 1,850 kcal (−100)');
+    expect(c.body).not.toContain('one more week');
+    expect(only(makeCtx({ weight: w }), 10)!.body).toContain('Hold 1,950 kcal one more week');
+  });
+});
+
 describe('suggestedPrompts / COACH_CHIPS / emptyStates', () => {
   it('exposes the 8 spec chips verbatim in order', () => {
     expect(COACH_CHIPS).toEqual([
@@ -338,7 +383,7 @@ describe('suggestedPrompts / COACH_CHIPS / emptyStates', () => {
     const e = emptyStates(makeCtx({ weight: { weighInsThisWeek: 3 }, hrv: { delta: { n: 12 } }, sleep: { hours: null } }));
     expect(e.protein).toBe('Log your first meal to see protein remaining.');
     expect(e.weight).toBe('Weigh in 5+ days this week so your trend and expenditure calibrate.');
-    expect(e.hrv).toBe('Baseline forms after ~30 days of HRV — 12 days logged so far.');
+    expect(e.hrv).toBe('Baseline forms after ~3 weeks of HRV — 12 days logged so far.');
     expect(e.sleep).toMatch(/sleep/);
     const full = emptyStates(makeCtx({ nutrition: { mealsLogged: 1, totals: { p: 40 } }, weight: { trend: 170, weighInsThisWeek: 5 } }));
     expect(full.protein).toBeUndefined();

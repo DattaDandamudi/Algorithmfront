@@ -151,7 +151,7 @@ describe('readiness — HRV-only source', () => {
     const mk = (v: number): HrvStatus => ({
       todayMs: Math.exp(v - 0.5), todayLn: v - 0.5, mean7Ln: v, mean7Ms: null, baselineLn: (lo + hi) / 2, baselineMs: null,
       nBaseline: 21, sdLn: hi - lo, swcLowerLn: lo, swcUpperLn: hi, swcLowerMs: null, swcUpperMs: null, band: 'balanced',
-      cv7: null, cvPrev7: null, cvTrend: null, overreachingFlag: false, overreachingNote: null, bigDrop: false,
+      cv7: null, cvPrev7: null, cvTrend: null, cvRef: null, overreachingFlag: false, overreachingNote: null, bigDrop: false,
       daysOfData: 30, baselineEstablished: true, note: '',
     });
     for (let v = 3.7; v <= 4.4; v += 0.01) {

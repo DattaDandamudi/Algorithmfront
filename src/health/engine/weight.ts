@@ -151,3 +151,35 @@ export function latestWeight(records: DailyRecord[], asOf: ISODate): { d: ISODat
   }
   return best;
 }
+
+/** Cap for `weeksOutsideBand` — beyond two months the count adds nothing. */
+export const MAX_WEEKS_OUTSIDE = 8;
+
+/**
+ * How many whole weeks the weekly rate has sat outside the target band in the
+ * same direction, counting back from `asOf` over consecutive daily
+ * evaluations (§6.2 adjusts intake only after a *full* week outside — R3-3).
+ * The run ends at the first day that is inside the band, has no rate yet, or
+ * is outside in the other direction; 0 while the run is shorter than 7 days.
+ * `bodyWeightLb` is the caller's reference weight (a % band moves negligibly
+ * over a few weeks, so one weight keeps the answer deterministic).
+ */
+export function weeksOutsideBand(
+  trend: Map<ISODate, number>,
+  asOf: ISODate,
+  bodyWeightLb: number,
+  pctBand: [number, number],
+  maxWeeks = MAX_WEEKS_OUTSIDE,
+): number {
+  const today = weeklyRate(trend, asOf);
+  const dir = rateBand(today ? today.lbPerWk : null, bodyWeightLb, pctBand);
+  if (dir === null || dir === 'in') return 0;
+  const cap = Math.max(1, Math.floor(maxWeeks));
+  let run = 0;
+  while (run < cap * 7) {
+    const rate = weeklyRate(trend, addDays(asOf, -run));
+    if (rateBand(rate ? rate.lbPerWk : null, bodyWeightLb, pctBand) !== dir) break;
+    run++;
+  }
+  return Math.floor(run / 7);
+}

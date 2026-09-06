@@ -9,7 +9,7 @@
  * instead of being clamped silently. Text fields are bound straight to the
  * store (the writer debounces the localStorage flush).
  */
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { round } from '../../lib/format';
 import { bandSoftBg, bandText, type Tone } from '../../ui';
@@ -28,21 +28,32 @@ export interface SectionProps {
   /** One-line live summary shown under the title while collapsed and open. */
   caption?: string;
   defaultOpen?: boolean;
+  /** Set (to a fresh nonce) to open the card and scroll it into view — the Settings deep link. */
+  openSignal?: number;
   children: ReactNode;
 }
 
 /** Collapsible `hx-card`. Content unmounts while collapsed (drafts are cheap to rebuild). */
-export function Section({ id, title, icon, caption, defaultOpen = false, children }: SectionProps) {
+export function Section({ id, title, icon, caption, defaultOpen = false, openSignal, children }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const ref = useRef<HTMLElement>(null);
   const bodyId = `${id}-body`;
   const headId = `${id}-heading`;
+  // Deep link (nav.openSettings(section)): expand and bring the card into view. A
+  // changed nonce re-fires even when the card is already mounted (review R2-10).
+  useEffect(() => {
+    if (!openSignal) return;
+    setOpen(true);
+    const el = ref.current;
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [openSignal]);
   return (
-    <section className="hx-card overflow-hidden" aria-labelledby={headId}>
+    <section ref={ref} className="hx-card overflow-hidden scroll-mt-16" aria-labelledby={headId}>
       <h2 id={headId} className="m-0">
         <button
           type="button"
           aria-expanded={open}
-          aria-controls={bodyId}
+          aria-controls={open ? bodyId : undefined}
           onClick={() => setOpen((o) => !o)}
           className="w-full min-h-[60px] flex items-center gap-3 px-4 py-3 text-left hover:bg-hx-card2/60 transition-colors"
         >
@@ -358,15 +369,18 @@ export function Toggle({ label, checked, onChange, hint }: { label: string; chec
         </label>
         {hint && <p className="text-[12px] leading-4 text-hx-muted">{hint}</p>}
       </div>
+      {/* 44 px hit area (h-11, side padding) around the 48×28 track (review R6-2). */}
       <button
         id={id}
         type="button"
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative w-12 h-7 shrink-0 rounded-full border transition-colors ${checked ? 'bg-hx-green/80 border-hx-green' : 'bg-hx-card2 border-hx-border'}`}
+        className="shrink-0 h-11 px-1 -mr-1 inline-flex items-center rounded-xl"
       >
-        <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-hx-text shadow transition-transform ${checked ? 'translate-x-[22px]' : 'translate-x-0.5'}`} aria-hidden />
+        <span className={`relative block w-12 h-7 rounded-full border transition-colors ${checked ? 'bg-hx-green/80 border-hx-green' : 'bg-hx-card2 border-hx-border'}`} aria-hidden>
+          <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-hx-text shadow transition-transform ${checked ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+        </span>
       </button>
     </div>
   );

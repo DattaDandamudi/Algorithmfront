@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CHAT_CAP,
   KEYS,
+  QUOTA_MESSAGE,
   StorageWriteError,
+  attachFlushListeners,
   checkIntegrity,
   checksum,
   clearAllStorage,
@@ -11,10 +13,14 @@ import {
   estimateBytesUsed,
   isQuotaError,
   loadAll,
+  pruneIndex,
+  readChat,
   readIndex,
+  readSettings,
   readShard,
   resetStorageCache,
   serializeShard,
+  shardMonthFromKey,
   storageAvailable,
   writeChat,
   writeIndex,
@@ -201,6 +207,103 @@ describe('createDebouncedWriter', () => {
   });
 });
 
+describe('createDebouncedWriter — failed writes (R4-7) and listener option (R4-4)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    uninstallWindow();
+    resetStorageCache();
+  });
+
+  it('keeps a failed write pending and retries with back-off (2 s, 5 s, 15 s), then waits for flush()/schedule()', () => {
+    let ok = false;
+    const run = vi.fn(() => ok);
+    const w = createDebouncedWriter(run, 500, 2000, { listeners: false });
+    w.schedule();
+    vi.advanceTimersByTime(500);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(w.pending()).toBe(true); // failed → still pending
+    vi.advanceTimersByTime(1999);
+    expect(run).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(run).toHaveBeenCalledTimes(2); // +2 s
+    vi.advanceTimersByTime(5000);
+    expect(run).toHaveBeenCalledTimes(3); // +5 s
+    vi.advanceTimersByTime(15000);
+    expect(run).toHaveBeenCalledTimes(4); // +15 s
+    vi.advanceTimersByTime(60_000);
+    expect(run).toHaveBeenCalledTimes(4); // no further automatic retries …
+    expect(w.pending()).toBe(true); // … but the write is not forgotten
+    ok = true;
+    w.flush(); // hide/unload/manual flush tries again
+    expect(run).toHaveBeenCalledTimes(5);
+    expect(w.pending()).toBe(false);
+    vi.advanceTimersByTime(60_000);
+    expect(run).toHaveBeenCalledTimes(5);
+  });
+
+  it('a schedule() during back-off retries within `wait`, and a throwing run counts as a failure', () => {
+    let boom = true;
+    const run = vi.fn(() => {
+      if (boom) throw new Error('disk');
+    });
+    const w = createDebouncedWriter(run, 500, 2000, { listeners: false });
+    w.schedule();
+    vi.advanceTimersByTime(500);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(w.pending()).toBe(true);
+    boom = false;
+    w.schedule(); // e.g. the user cleared chat to free space
+    vi.advanceTimersByTime(500);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(w.pending()).toBe(false);
+    // A successful write resets the back-off: the next failure starts at 2 s again.
+    boom = true;
+    w.schedule();
+    vi.advanceTimersByTime(500);
+    expect(run).toHaveBeenCalledTimes(3);
+    vi.advanceTimersByTime(2000);
+    expect(run).toHaveBeenCalledTimes(4);
+  });
+
+  it('cancel() drops a pending (failed) write and its retry timer', () => {
+    const run = vi.fn(() => false);
+    const w = createDebouncedWriter(run, 500, 2000, { listeners: false });
+    w.schedule();
+    vi.advanceTimersByTime(500);
+    expect(w.pending()).toBe(true);
+    w.cancel();
+    expect(w.pending()).toBe(false);
+    vi.advanceTimersByTime(60_000);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('listeners: false attaches nothing; attachFlushListeners returns a working detach', () => {
+    const doc = installWindow(memoryStorage());
+    const win = g.window as { addEventListener: ReturnType<typeof vi.fn>; removeEventListener: ReturnType<typeof vi.fn> };
+    createDebouncedWriter(vi.fn(), 500, 2000, { listeners: false });
+    expect(doc.addEventListener).not.toHaveBeenCalled();
+    expect(win.addEventListener).not.toHaveBeenCalled();
+    const fire = vi.fn();
+    const detach = attachFlushListeners(fire);
+    expect(doc.addEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(win.addEventListener).toHaveBeenCalledWith('pagehide', fire);
+    expect(win.addEventListener).toHaveBeenCalledWith('beforeunload', fire);
+    const onHide = doc.addEventListener.mock.calls.find((c) => c[0] === 'visibilitychange')![1] as () => void;
+    onHide(); // visible → nothing
+    expect(fire).not.toHaveBeenCalled();
+    doc.visibilityState = 'hidden';
+    onHide();
+    expect(fire).toHaveBeenCalledTimes(1);
+    detach();
+    expect(doc.removeEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(win.removeEventListener).toHaveBeenCalledWith('pagehide', fire);
+    expect(win.removeEventListener).toHaveBeenCalledWith('beforeunload', fire);
+  });
+});
+
 describe('localStorage layer', () => {
   let ls: Storage & { failWith?: unknown };
   beforeEach(() => {
@@ -367,5 +470,73 @@ describe('localStorage layer', () => {
     expect(ls.getItem(KEYS.shard('2026-09'))).toBeNull();
     expect(ls.getItem('other-app')).toHaveLength(1000);
     expect(estimateBytesUsed()).toBe(0);
+  });
+
+  it('R4-5: keeps an unreadable shard under hx:corrupt before overwriting or removing it', () => {
+    ls.setItem(KEYS.shard('2026-07'), '{not json');
+    let index = writeShard('2026-07', [{ d: '2026-07-01', w: 175 }], EMPTY_INDEX);
+    expect(ls.getItem(KEYS.corrupt('2026-07'))).toBe('{not json');
+    expect(readShard('2026-07').shard?.days['01'].w).toBe(175);
+    // A readable shard is never copied (the earlier capture stays as is).
+    index = writeShard('2026-07', [{ d: '2026-07-01', w: 176 }], index);
+    expect(ls.getItem(KEYS.corrupt('2026-07'))).toBe('{not json');
+    // Removing an unreadable month (nothing in memory for it) preserves it too.
+    ls.setItem(KEYS.shard('2026-06'), JSON.stringify({ v: 1, ym: '2026-06' }));
+    index = writeShard('2026-06', [], index);
+    expect(ls.getItem(KEYS.shard('2026-06'))).toBeNull();
+    expect(index.shards['2026-06']).toBeUndefined();
+    expect(JSON.parse(ls.getItem(KEYS.corrupt('2026-06')) as string)).toEqual({ v: 1, ym: '2026-06' });
+    // Settings / chat get the same treatment.
+    ls.setItem(KEYS.settings, '{oops');
+    writeSettings(DEFAULT_SETTINGS);
+    expect(ls.getItem(KEYS.corrupt('settings'))).toBe('{oops');
+    ls.setItem(KEYS.chat, '[broken');
+    writeChat([]);
+    expect(ls.getItem(KEYS.corrupt('chat'))).toBe('[broken');
+    // Corrupt copies are app keys: counted in usage, never mistaken for shards, wiped by clearAllStorage.
+    expect(discoverShardMonths()).toEqual(['2026-07']);
+    expect(loadAll().integrity.problems).toEqual([]);
+    clearAllStorage();
+    expect(ls.getItem(KEYS.corrupt('2026-07'))).toBeNull();
+    expect(estimateBytesUsed()).toBe(0);
+  });
+
+  it('R4-5: loadAll returns a rebuilt index (no missing/unreadable months) and lists corruptMonths', () => {
+    let index = writeShard('2026-09', REC_SEP, EMPTY_INDEX);
+    index = writeShard('2026-08', REC_AUG, index);
+    writeIndex({ ...index, shards: { ...index.shards, '2026-05': { count: 4, sum: 1 } } });
+    ls.setItem(KEYS.shard('2026-07'), '{not json');
+    const res = loadAll();
+    expect(Object.keys(res.index.shards).sort()).toEqual(['2026-08', '2026-09']);
+    expect(res.index.shards['2026-09']).toEqual(index.shards['2026-09']);
+    expect(res.corruptMonths).toEqual(['2026-07']);
+    const text = res.integrity.problems.join('\n');
+    expect(text).toMatch(/2026-05 listed in index \(4 days\) but missing/);
+    expect(text).toMatch(/hx:corrupt:2026-07/);
+    expect(pruneIndex(readIndex() as ShardIndex).shards['2026-05']).toBeUndefined();
+    expect(pruneIndex(index)).toBe(index); // nothing stale → same object
+  });
+
+  it('readSettings / readChat / shardMonthFromKey', () => {
+    expect(readSettings()).toBeNull();
+    expect(readChat()).toEqual([]);
+    writeSettings(DEFAULT_SETTINGS);
+    expect(readSettings()?.profile.name).toBe(DEFAULT_SETTINGS.profile.name);
+    ls.setItem(KEYS.settings, '"str"');
+    expect(readSettings()).toBeNull();
+    writeChat([{ id: 'c1', role: 'user', text: 'hi', ts: 1 }]);
+    expect(readChat()).toHaveLength(1);
+    ls.setItem(KEYS.chat, '{"not":"array"}');
+    expect(readChat()).toEqual([]);
+    expect(shardMonthFromKey('hx:log:2026-09')).toBe('2026-09');
+    expect(shardMonthFromKey('hx:log:index')).toBeNull();
+    expect(shardMonthFromKey('hx:corrupt:2026-09')).toBeNull();
+    expect(shardMonthFromKey('hx:settings')).toBeNull();
+  });
+
+  it('R4-7: the quota message tells the user what the UI can actually do', () => {
+    ls.failWith = { name: 'QuotaExceededError' };
+    expect(() => writeChat([])).toThrow(/export a JSON backup, then clear the coach history or all data/);
+    expect(QUOTA_MESSAGE).not.toMatch(/old months/);
   });
 });

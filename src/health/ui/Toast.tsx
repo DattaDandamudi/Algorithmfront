@@ -65,7 +65,7 @@ export function ToastHost() {
               type="button"
               aria-label="Dismiss"
               onClick={() => setItems((xs) => xs.filter((x) => x.id !== t.id))}
-              className="w-9 h-9 inline-flex items-center justify-center rounded-xl text-hx-muted hover:text-hx-text"
+              className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-hx-muted hover:text-hx-text"
             >
               <X className="w-4 h-4" aria-hidden />
             </button>

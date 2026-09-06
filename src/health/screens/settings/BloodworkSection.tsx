@@ -8,7 +8,10 @@
  * the doctor cue, or — for elevated lead — an escalation card that says
  * "Needs physician follow-up" and never a self-care tip. Retest reminders
  * come from `micronutrients.retestReminders` (planned retest date, else
- * tested-on + 90 days for low/elevated markers).
+ * tested-on + 90 days for low/elevated markers). The app never invents a lab
+ * date: a flagged marker with no test date gets an explicit "add your test
+ * date to schedule a retest" row in the same banner, so the reminder is
+ * visible on a fresh install (review R2-5; `util.bloodworkAttention`).
  *
  * The app never interprets a lab as disease; every number rendered here is
  * the user's own marker value.
@@ -22,7 +25,7 @@ import { formatDateShort } from '../../lib/dates';
 import { Banner, Button, toast } from '../../ui';
 import { useConfirm } from './useConfirm';
 import { DateField, Note, NumberField, Pill, SelectField, SubHeading, TextField } from './fields';
-import { MARKER_STATUS_OPTIONS, dueReminders, markerTone, markerValueText, slugKey } from './util';
+import { MARKER_STATUS_OPTIONS, bloodworkAttention, markerTone, markerValueText, slugKey } from './util';
 
 export const GENERAL_RANGES_SENTENCE = 'General ranges for information only — confirm dosing and any changes with your doctor.';
 
@@ -42,7 +45,7 @@ export default function BloodworkSection({ today }: { today: ISODate }) {
   const [adding, setAdding] = useState(false);
 
   const reminders = useMemo(() => retestReminders(markers, today), [markers, today]);
-  const due = useMemo(() => dueReminders(reminders), [reminders]);
+  const { due, undated } = useMemo(() => bloodworkAttention(markers, today), [markers, today]);
   const reminderFor = (key: string) => reminders.find((r) => r.marker.key === key) ?? null;
 
   const save = (next: BloodMarker[]) => actions.updateProfile({ bloodwork: next });
@@ -71,7 +74,7 @@ export default function BloodworkSection({ today }: { today: ISODate }) {
 
   return (
     <>
-      {due.length > 0 && (
+      {(due.length > 0 || undated.length > 0) && (
         <Banner kind={due.some((r) => r.overdue) ? 'warn' : 'info'}>
           <span className="font-semibold">Retest reminders</span>
           <ul className="mt-1 space-y-0.5">
@@ -80,6 +83,13 @@ export default function BloodworkSection({ today }: { today: ISODate }) {
                 {reminderText(r)}
               </li>
             ))}
+            {undated.length > 0 && (
+              <li>
+                <button type="button" onClick={() => setOpenKey(undated[0].key)} className="min-h-[44px] -my-2 py-2 text-left underline decoration-hx-border underline-offset-2 hover:text-hx-text">
+                  {undated.map((m) => m.label).join(', ')}: add your test date to schedule a retest (~90 days for low or elevated markers).
+                </button>
+              </li>
+            )}
           </ul>
         </Banner>
       )}
@@ -129,7 +139,8 @@ function MarkerRow({ marker: m, open, reminder, today, onToggle, onChange, onRem
 
   return (
     <li>
-      <button type="button" aria-expanded={open} aria-controls={panelId} onClick={onToggle} className="w-full min-h-[52px] flex items-center gap-3 px-1 py-2 text-left hover:bg-hx-card2/60 rounded-xl transition-colors">
+      {/* aria-controls only while the panel exists — no dangling ARIA reference when collapsed (review R6-10). */}
+      <button type="button" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle} className="w-full min-h-[52px] flex items-center gap-3 px-1 py-2 text-left hover:bg-hx-card2/60 rounded-xl transition-colors">
         <span className="flex-1 min-w-0">
           <span className="block text-[14px] font-medium text-hx-text truncate">{m.label}</span>
           <span className="block text-[12px] leading-4 text-hx-muted">

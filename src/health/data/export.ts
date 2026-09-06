@@ -1,18 +1,37 @@
 /**
  * §10 Export / import. JSON is the full-fidelity primary format; CSV is a
  * flattened secondary format for spreadsheets (UTF-8 BOM for Excel).
+ *
+ * - The Anthropic API key never leaves the browser: exports omit `ai.apiKey`
+ *   and say so in `exportNote` (R4-2). Everything else round-trips.
+ * - Imported records are normalised (R4-3): meals get ids, missing macros
+ *   become 0, numeric strings become numbers, chat messages get id/role/ts.
+ * - CSV text cells starting with = + - @ TAB CR are prefixed with a quote so a
+ *   meal name or note can't run as a spreadsheet formula (R4-8).
  */
-import type { AppSettings, ChatMessage, DailyRecord, ISODate } from './types';
+import type { AppSettings, ChatMessage, DailyRecord, ISODate, Meal } from './types';
 import { SCHEMA_VERSION } from './types';
 import { mergeSettings } from './defaults';
+import { uid } from '../lib/format';
+
+export const EXPORT_NOTE = 'ai.apiKey is omitted: the Anthropic API key never leaves the browser that stored it. Re-enter it under Settings → Coach after importing on another device.';
 
 export interface ExportBundle {
   app: 'hx';
   version: number;
   exportedAt: string;
+  /** What this file deliberately leaves out (the API key). */
+  exportNote: string;
   settings: AppSettings;
   days: DailyRecord[];
   chat: ChatMessage[];
+}
+
+/** Settings as they may leave the browser: identical, minus the API key. */
+export function stripSecrets(settings: AppSettings): AppSettings {
+  const ai = { ...settings.ai };
+  delete ai.apiKey;
+  return { ...settings, ai };
 }
 
 export function buildExportBundle(settings: AppSettings, days: Record<ISODate, DailyRecord>, chat: ChatMessage[]): ExportBundle {
@@ -20,7 +39,8 @@ export function buildExportBundle(settings: AppSettings, days: Record<ISODate, D
     app: 'hx',
     version: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
-    settings,
+    exportNote: EXPORT_NOTE,
+    settings: stripSecrets(settings),
     days: Object.values(days).sort((a, b) => (a.d < b.d ? -1 : 1)),
     chat,
   };
@@ -83,6 +103,103 @@ function isRecord(x: unknown): x is DailyRecord {
   return !!x && typeof x === 'object' && typeof (x as DailyRecord).d === 'string' && DATE_RE.test((x as DailyRecord).d);
 }
 
+// --- Normalisation (R4-3) ---------------------------------------------------
+
+/** DailyRecord fields that must be numbers when present. */
+const NUMERIC_DAY_KEYS = ['w', 'wt', 'kc', 'p', 'f', 'c', 'fi', 'st', 'rec', 'hrv', 'rhr', 'slh', 'sln', 'dbt', 'strn', 'nap', 'tob', 'h2o'] as const;
+/** Meal fields that must always be numbers (the spec's compact schema may omit f/c/fi). */
+const MEAL_NUMERIC_KEYS = ['g', 'kc', 'p', 'f', 'c', 'fi'] as const;
+
+/** number → itself; numeric string → number; anything else → undefined. */
+function toNumber(v: unknown): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+interface NormStats {
+  droppedFields: number;
+  droppedMeals: number;
+  mealIds: number;
+}
+
+/**
+ * The store deletes/edits meals by `id` and lists key on it, so an id-less meal
+ * (the spec's compact example has none) must get one here — otherwise deleting
+ * one removes every id-less meal of the day.
+ */
+function normalizeMeal(raw: unknown, stats: NormStats): Meal | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const m = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...m };
+  if (typeof m.id !== 'string' || !m.id) {
+    out.id = uid('m');
+    stats.mealIds++;
+  }
+  out.t = typeof m.t === 'string' ? m.t : '';
+  out.n = typeof m.n === 'string' ? m.n : String(m.n ?? '');
+  for (const k of MEAL_NUMERIC_KEYS) out[k] = toNumber(m[k]) ?? 0;
+  return out as unknown as Meal;
+}
+
+function normalizeRecord(rec: DailyRecord, stats: NormStats): DailyRecord {
+  const r = { ...rec } as Record<string, unknown>;
+  for (const k of NUMERIC_DAY_KEYS) {
+    const v = r[k];
+    if (v === undefined || v === null) {
+      delete r[k];
+      continue;
+    }
+    const n = toNumber(v);
+    if (n === undefined) {
+      delete r[k];
+      stats.droppedFields++;
+    } else {
+      r[k] = n;
+    }
+  }
+  if (r.meals !== undefined) {
+    if (!Array.isArray(r.meals)) {
+      delete r.meals;
+      stats.droppedFields++;
+    } else {
+      const meals = (r.meals as unknown[]).map((m) => normalizeMeal(m, stats)).filter((m): m is Meal => m !== null);
+      stats.droppedMeals += (r.meals as unknown[]).length - meals.length;
+      if (meals.length) r.meals = meals;
+      else delete r.meals;
+    }
+  }
+  return r as unknown as DailyRecord;
+}
+
+/** Transcript keys on `id` and updateChat matches by it; the coach needs a real role. */
+function normalizeChat(raw: unknown[], errors: string[]): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  const now = Date.now();
+  let dropped = 0;
+  for (const m of raw) {
+    if (!m || typeof m !== 'object' || typeof (m as ChatMessage).text !== 'string' || !(m as ChatMessage).text.trim()) {
+      dropped++;
+      continue;
+    }
+    const c = m as Partial<ChatMessage> & { text: string };
+    const msg: ChatMessage = {
+      ...c,
+      id: typeof c.id === 'string' && c.id ? c.id : uid('c'),
+      role: c.role === 'user' || c.role === 'assistant' ? c.role : 'assistant',
+      text: c.text,
+      ts: typeof c.ts === 'number' && Number.isFinite(c.ts) ? c.ts : now,
+    };
+    delete msg.streaming; // a persisted "still streaming" flag would spin forever
+    out.push(msg);
+  }
+  if (dropped) errors.push(`${dropped} chat message(s) had no text and were skipped.`);
+  return out;
+}
+
 /**
  * Accepts a full ExportBundle, a bare array of DailyRecord, or an object with a
  * `days` array/map. Invalid records are dropped and reported, never fatal.
@@ -117,18 +234,21 @@ export function parseImport(json: string): ParsedImport {
         errors.push('Settings block could not be read; skipped.');
       }
     }
-    if (Array.isArray(obj.chat)) chat = obj.chat.filter((m): m is ChatMessage => !!m && typeof m === 'object' && typeof (m as ChatMessage).text === 'string');
+    if (Array.isArray(obj.chat)) chat = normalizeChat(obj.chat, errors);
   } else {
     return { ok: false, days: [], settings: null, chat: null, errors: ['Unrecognised file shape.'] };
   }
 
   const days: DailyRecord[] = [];
+  const stats: NormStats = { droppedFields: 0, droppedMeals: 0, mealIds: 0 };
   let dropped = 0;
   for (const r of rawDays) {
-    if (isRecord(r)) days.push(r);
+    if (isRecord(r)) days.push(normalizeRecord(r, stats));
     else dropped++;
   }
   if (dropped) errors.push(`${dropped} record(s) had no valid date and were skipped.`);
+  if (stats.droppedFields) errors.push(`${stats.droppedFields} field(s) with non-numeric values were dropped.`);
+  if (stats.droppedMeals) errors.push(`${stats.droppedMeals} malformed meal(s) were skipped.`);
 
   return { ok: days.length > 0 || settings !== null, days, settings, chat, errors };
 }
@@ -166,9 +286,14 @@ export const CSV_COLUMNS = [
   'note',
 ] as const;
 
-function csvCell(v: unknown): string {
+/** Characters that make a spreadsheet treat a cell as a formula (OWASP CSV injection). */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+export function csvCell(v: unknown): string {
   if (v === undefined || v === null) return '';
-  const s = String(v);
+  let s = String(v);
+  // R4-8: only free text is at risk — numbers (incl. negatives) pass through untouched.
+  if (typeof v === 'string' && FORMULA_LEAD.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

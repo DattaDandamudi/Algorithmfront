@@ -4,24 +4,45 @@
  * One component serves every path so "edit" always looks like "log":
  *   - AI bar result: N items, clarify question, source note, re-estimate busy state
  *   - Favorites / Recents "portion": one item, grams stepper
+ *   - Barcode: the label's serving, grams to confirm
+ *   - Photo: N items with a mandatory grams confirm (`requireGramsConfirm`)
  *   - Meal edit: one item pre-filled from the stored meal, plus Delete
  *
  * §9 rules: confidence chip High ≥0.8 green / Med 0.5–0.79 yellow / Low <0.5
- * neutral (`confidenceBand`); low confidence shows a "±" hint plus quick
- * portion-confirm chips; `assumptions` is a tappable subtitle that expands;
- * every value is editable before save. Grams re-scale macros via `scaleItem`
- * (±10 g steps — he weighs food); the macro fields are free number inputs so
- * a known label can be typed in directly.
+ * neutral (`confidenceBand`); low confidence shows each macro as value ±25 %
+ * next to its editable field plus quick portion-confirm chips; `assumptions`
+ * is a tappable subtitle that expands; every value is editable before save.
+ *
+ * Draft state lives in `estimateDraft.ts` rows: grams re-scale from an
+ * immutable base (never from a zeroed item), each row keeps its own original
+ * under a stable id, the stepper floor is one step and Save is disabled while
+ * any item is 0 g. The macro fields are free number inputs so a label can be
+ * typed in directly — a typed value becomes the new scaling base.
  *
  * Nested sheets are unsupported (INTEGRATION_NOTES) — this sheet never opens
  * another; the time picker is a native <input type="time">.
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useState, type KeyboardEvent } from 'react';
 import { ChevronDown, ChevronUp, Trash2, X } from 'lucide-react';
 import type { FoodEstimateItem, HHMM } from '../../data/types';
-import { confidenceBand, scaleItem } from '../../ai/foodLocal';
+import { confidenceBand } from '../../ai/foodLocal';
 import { fmt, round } from '../../lib/format';
 import { Button, Chip, Sheet, Stepper } from '../../ui';
+import {
+  GRAM_STEP,
+  createDraft,
+  draftItems,
+  macroRange,
+  portionFactor,
+  removeRow,
+  replaceRow,
+  saveBlocker,
+  setRowGrams,
+  setRowMacros,
+  setRowName,
+  type DraftRow,
+  type MacroKey,
+} from './estimateDraft';
 import { estimateTotals, normaliseTime } from './logUtils';
 
 export interface EstimateSheetProps {
@@ -37,6 +58,8 @@ export interface EstimateSheetProps {
   /** True while a re-estimate is in flight. */
   busy?: boolean;
   mode: 'new' | 'edit';
+  /** Photo flow: the portion is a guess, so every item's grams must be set or confirmed before Save. */
+  requireGramsConfirm?: boolean;
   onClose: () => void;
   onSave: (items: FoodEstimateItem[], time: HHMM) => void;
   onDelete?: () => void;
@@ -58,28 +81,27 @@ const PORTIONS: Array<{ label: string; k: number }> = [
   { label: 'Large', k: 1.4 },
 ];
 
-export default function EstimateSheet({ open, title, items, time, clarify, note, busy = false, mode, onClose, onSave, onDelete, onClarify }: EstimateSheetProps) {
-  const [draft, setDraft] = useState<FoodEstimateItem[]>(items);
+export default function EstimateSheet({ open, title, items, time, clarify, note, busy = false, mode, requireGramsConfirm = false, onClose, onSave, onDelete, onClarify }: EstimateSheetProps) {
+  const [rows, setRows] = useState<DraftRow[]>(() => createDraft(items));
   const [draftTime, setDraftTime] = useState<HHMM>(time);
   const [answer, setAnswer] = useState('');
-  const original = useRef<FoodEstimateItem[]>(items);
 
   // A fresh estimate (new identity) replaces the draft; the time only
   // follows the prop when the sheet (re)opens so a user-picked time survives
   // a clarification round-trip.
   useEffect(() => {
-    setDraft(items);
-    original.current = items;
+    setRows(createDraft(items));
     setAnswer('');
   }, [items]);
   useEffect(() => {
     if (open) setDraftTime(time);
   }, [open, time]);
 
-  const update = (i: number, next: FoodEstimateItem) => setDraft((d) => d.map((it, j) => (j === i ? next : it)));
-  const remove = (i: number) => setDraft((d) => d.filter((_, j) => j !== i));
-  const totals = estimateTotals(draft);
-  const canSave = draft.length > 0 && !busy;
+  const update = (next: DraftRow) => setRows((d) => replaceRow(d, next));
+  const remove = (id: string) => setRows((d) => removeRow(d, id));
+  const totals = estimateTotals(draftItems(rows));
+  const blocker = saveBlocker(rows, requireGramsConfirm);
+  const canSave = !blocker && !busy;
 
   const submitAnswer = () => {
     const a = answer.trim();
@@ -92,25 +114,32 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
       onClose={onClose}
       title={title}
       footer={
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 shrink-0">
-            <span className="hx-label">Time</span>
-            <input
-              type="time"
-              value={draftTime}
-              onChange={(e) => setDraftTime(normaliseTime(e.target.value, draftTime))}
-              className="h-11 px-2.5 text-[15px] font-semibold w-[112px]"
-              aria-label="Time eaten"
-            />
-          </label>
-          {mode === 'edit' && onDelete && (
-            <Button variant="danger" size="md" onClick={onDelete} aria-label="Delete this entry" icon={<Trash2 aria-hidden />}>
-              Delete
-            </Button>
+        <div className="space-y-2">
+          {blocker && rows.length > 0 && (
+            <p className="text-[12px] leading-4 text-hx-yellow" role="status">
+              {blocker}
+            </p>
           )}
-          <Button className="flex-1" size="md" loading={busy} disabled={!canSave} onClick={() => onSave(draft, draftTime)}>
-            {mode === 'edit' ? 'Save changes' : draft.length > 1 ? `Save ${draft.length} items` : 'Save'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 shrink-0">
+              <span className="hx-label">Time</span>
+              <input
+                type="time"
+                value={draftTime}
+                onChange={(e) => setDraftTime(normaliseTime(e.target.value, draftTime))}
+                className="h-11 px-2.5 text-[15px] font-semibold w-[112px]"
+                aria-label="Time eaten"
+              />
+            </label>
+            {mode === 'edit' && onDelete && (
+              <Button variant="danger" size="md" onClick={onDelete} aria-label="Delete this entry" icon={<Trash2 aria-hidden />}>
+                Delete
+              </Button>
+            )}
+            <Button className="flex-1" size="md" loading={busy} disabled={!canSave} onClick={() => onSave(draftItems(rows), draftTime)}>
+              {mode === 'edit' ? 'Save changes' : rows.length > 1 ? `Save ${rows.length} items` : 'Save'}
+            </Button>
+          </div>
         </div>
       }
     >
@@ -150,21 +179,21 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
           </div>
         )}
 
-        {draft.length === 0 && <p className="text-[14px] text-hx-muted py-6 text-center">Nothing left to save.</p>}
+        {rows.length === 0 && <p className="text-[14px] text-hx-muted py-6 text-center">Nothing left to save.</p>}
 
-        {draft.map((it, i) => (
+        {rows.map((row) => (
           <ItemEditor
-            key={i}
-            item={it}
-            original={original.current[i] ?? it}
-            showConfidence={mode === 'new' || it.confidence < 1}
-            onChange={(next) => update(i, next)}
-            onRemove={mode === 'new' && draft.length > 1 ? () => remove(i) : undefined}
+            key={row.id}
+            row={row}
+            showConfidence={mode === 'new' || row.item.confidence < 1}
+            forceRange={requireGramsConfirm}
+            onChange={update}
+            onRemove={mode === 'new' && rows.length > 1 ? () => remove(row.id) : undefined}
             disabled={busy}
           />
         ))}
 
-        {draft.length > 1 && (
+        {rows.length > 1 && (
           <div className="flex items-baseline justify-between px-1 pt-1 text-[13px]">
             <span className="hx-label">Total</span>
             <span className="text-hx-text font-semibold">
@@ -182,19 +211,31 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
 // ---------------------------------------------------------------------------
 
 interface ItemEditorProps {
-  item: FoodEstimateItem;
-  original: FoodEstimateItem;
+  row: DraftRow;
   showConfidence: boolean;
-  onChange: (next: FoodEstimateItem) => void;
+  /** Show the ± range and portion chips regardless of band (photo flow). */
+  forceRange: boolean;
+  onChange: (next: DraftRow) => void;
   onRemove?: () => void;
   disabled?: boolean;
 }
 
-function ItemEditor({ item, original, showConfidence, onChange, onRemove, disabled }: ItemEditorProps) {
+const FIELDS: Array<{ key: MacroKey; label: string; aria: string; dp: number }> = [
+  { key: 'kcal', label: 'kcal', aria: 'Calories', dp: 0 },
+  { key: 'protein_g', label: 'P g', aria: 'Protein grams', dp: 1 },
+  { key: 'fat_g', label: 'F g', aria: 'Fat grams', dp: 1 },
+  { key: 'carbs_g', label: 'C g', aria: 'Carb grams', dp: 1 },
+  { key: 'fiber_g', label: 'Fiber', aria: 'Fiber grams', dp: 1 },
+];
+
+function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disabled }: ItemEditorProps) {
   const [expanded, setExpanded] = useState(false);
+  const { item } = row;
   const band = confidenceBand(item.confidence);
   const low = band.band === 'low';
-  const portionK = original.grams > 0 ? round(item.grams / original.grams, 2) : 1;
+  const showRange = low || forceRange;
+  const k = portionFactor(row);
+  const hint = low ? 'Low confidence — values shown ±25 %; confirm the portion' : forceRange ? 'From a photo — the portion is a guess; confirm the grams' : null;
 
   return (
     <div className="hx-card p-3.5 space-y-3">
@@ -202,7 +243,7 @@ function ItemEditor({ item, original, showConfidence, onChange, onRemove, disabl
         <input
           type="text"
           value={item.name}
-          onChange={(e) => onChange({ ...item, name: e.target.value })}
+          onChange={(e) => onChange(setRowName(row, e.target.value))}
           className="flex-1 min-w-0 h-11 px-3 text-[15px] font-semibold"
           aria-label="Food name"
           disabled={disabled}
@@ -238,26 +279,36 @@ function ItemEditor({ item, original, showConfidence, onChange, onRemove, disabl
       )}
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Stepper value={item.grams} onChange={(g) => onChange(scaleItem(item, g))} step={10} min={0} unit="g" label={`Grams of ${item.name || 'item'}`} disabled={disabled} />
-        {low && <span className="text-[12px] leading-4 text-hx-text2">± values could be ~25 % off — confirm the portion</span>}
+        <Stepper value={item.grams} onChange={(g) => onChange(setRowGrams(row, g))} step={GRAM_STEP} min={GRAM_STEP} unit="g" label={`Grams of ${item.name || 'item'}`} disabled={disabled} />
+        {hint && <span className="text-[12px] leading-4 text-hx-text2">{hint}</span>}
       </div>
 
-      {low && (
+      {showRange && row.estimatedGrams > 0 && (
         <div className="flex gap-2 flex-wrap" role="group" aria-label="Quick portion">
-          {PORTIONS.map((p) => (
-            <Chip key={p.label} size="sm" active={Math.abs(portionK - p.k) < 0.02} onClick={() => onChange(scaleItem(item, original.grams * p.k))} disabled={disabled}>
-              {p.label} · {fmt(round(original.grams * p.k))} g
-            </Chip>
-          ))}
+          {PORTIONS.map((p) => {
+            const near = Math.abs(k - p.k) < 0.02;
+            return (
+              <Chip key={p.label} size="sm" active={near && (!forceRange || row.gramsConfirmed)} onClick={() => onChange(setRowGrams(row, row.estimatedGrams * p.k))} disabled={disabled}>
+                {p.label} · {fmt(round(row.estimatedGrams * p.k))} g
+              </Chip>
+            );
+          })}
         </div>
       )}
 
       <div className="grid grid-cols-5 gap-1.5">
-        <NumField label="kcal" value={item.kcal} dp={0} onCommit={(v) => onChange({ ...item, kcal: v })} disabled={disabled} />
-        <NumField label="P g" value={item.protein_g} dp={1} onCommit={(v) => onChange({ ...item, protein_g: v })} disabled={disabled} />
-        <NumField label="F g" value={item.fat_g} dp={1} onCommit={(v) => onChange({ ...item, fat_g: v })} disabled={disabled} />
-        <NumField label="C g" value={item.carbs_g} dp={1} onCommit={(v) => onChange({ ...item, carbs_g: v })} disabled={disabled} />
-        <NumField label="Fiber" value={item.fiber_g} dp={1} onCommit={(v) => onChange({ ...item, fiber_g: v })} disabled={disabled} />
+        {FIELDS.map((f) => (
+          <NumField
+            key={f.key}
+            label={f.label}
+            ariaLabel={f.aria}
+            value={item[f.key]}
+            dp={f.dp}
+            range={showRange ? macroRange(item[f.key], f.dp) : undefined}
+            onCommit={(v) => onChange(setRowMacros(row, { [f.key]: v }))}
+            disabled={disabled}
+          />
+        ))}
       </div>
     </div>
   );
@@ -269,15 +320,19 @@ function ItemEditor({ item, original, showConfidence, onChange, onRemove, disabl
 
 interface NumFieldProps {
   label: string;
+  ariaLabel: string;
   value: number;
   dp: number;
+  /** ± shown under the field (low confidence / photo), in the field's unit. */
+  range?: number;
   onCommit: (v: number) => void;
   disabled?: boolean;
 }
 
 const plain = (n: number, dp: number) => fmt(n, dp).replace(/,/g, '');
 
-function NumField({ label, value, dp, onCommit, disabled }: NumFieldProps) {
+function NumField({ label, ariaLabel, value, dp, range, onCommit, disabled }: NumFieldProps) {
+  const rangeId = useId();
   const [draft, setDraft] = useState(() => plain(value, dp));
   const [editing, setEditing] = useState(false);
   useEffect(() => {
@@ -310,8 +365,14 @@ function NumField({ label, value, dp, onCommit, disabled }: NumFieldProps) {
           }
         }}
         className="h-11 w-full px-1 text-center text-[15px] font-semibold"
-        aria-label={label === 'kcal' ? 'Calories' : label === 'P g' ? 'Protein grams' : label === 'F g' ? 'Fat grams' : label === 'C g' ? 'Carb grams' : 'Fiber grams'}
+        aria-label={ariaLabel}
+        aria-describedby={range !== undefined ? rangeId : undefined}
       />
+      {range !== undefined && (
+        <span id={rangeId} className="text-[11px] leading-3 text-center text-hx-text2 truncate">
+          ±{fmt(range, dp)}
+        </span>
+      )}
     </label>
   );
 }

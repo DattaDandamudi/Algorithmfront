@@ -20,7 +20,7 @@ export default {
           blue: '#3B82F6',
           text: '#F2F5F7',
           text2: '#A9B4BE',
-          muted: '#6B7883',
+          muted: '#8A97A3',
         },
       },
     },

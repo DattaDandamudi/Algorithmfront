@@ -94,9 +94,12 @@ describe('sleepDebt', () => {
     const r = sleepDebt(records, ASOF, profile);
     expect(r.nights).toBe(2);
     expect(r.debtMin).toBe(58);
-    // Debt feeds back into need: 58 min debt adds ~19 min to the next night's need.
+    // f(debt) is a pay-back ask shown in tonight's need, not extra debt: a baseline
+    // night neither grows nor clears the 58 min (R3-2 — the old expectation of 77
+    // compounded the debt by ×4/3 every night).
     const next = sleepDebt([...records, { d: addDays(ASOF, 1), slh: 8 }], addDays(ASOF, 1), profile);
-    expect(next.debtMin).toBe(77);
+    expect(next.debtMin).toBe(58);
+    expect(sleepSummary([...records, { d: addDays(ASOF, 1), slh: 8 }], addDays(ASOF, 1), profile).need).toBeCloseTo(8 + 58 / 3 / 60, 2);
   });
 
   it("prefers an imported dbt on asOf's record", () => {
@@ -219,5 +222,34 @@ describe('sleepSummary', () => {
     expect(s.lastBedtime).toBe('23:30');
     expect(sleepSummary([], ASOF, profile).need).toBe(8);
     expect(sleepSummary([], ASOF, profile).hours30dMean).toBeNull();
+  });
+});
+
+describe('R3-2 — sleep debt accrues against baseline + f(strain) − naps only', () => {
+  it('a user sleeping exactly baseline every night never accrues debt', () => {
+    const recs: DailyRecord[] = Array.from({ length: 14 }, (_, i) => ({ d: day(13 - i), slh: 8 }));
+    expect(sleepDebt(recs, ASOF, profile)).toEqual({ debtMin: 0, nights: 14 });
+  });
+
+  it('one short night is carried, not compounded, and a surplus night pays it down', () => {
+    // Night 1: 7 h on an 8 h baseline (−60); nights 2–13: exactly 8 h.
+    const recs: DailyRecord[] = [{ d: day(13), slh: 7 }, ...Array.from({ length: 12 }, (_, i) => ({ d: day(12 - i), slh: 8 }))];
+    const walked = sleepDebt(recs, day(1), profile);
+    expect(walked.nights).toBe(13);
+    expect(walked.debtMin).toBe(60); // not 80 → 106 → … → 300
+    // The displayed need for a baseline night still carries the pay-back ask (§6.4 f(debt)).
+    const s = sleepSummary(recs, day(1), profile);
+    expect(s.debtMin).toBe(60);
+    expect(s.need).toBeCloseTo(8 + 20 / 60, 2); // 60 min debt → +20 min
+    // A 9 h night clears the 60 min.
+    expect(sleepDebt([...recs, { d: day(0), slh: 9 }], ASOF, profile).debtMin).toBe(0);
+  });
+
+  it('strain still raises the accrual need; naps still lower it', () => {
+    const recs: DailyRecord[] = [
+      { d: day(1), slh: 8, strn: 21, nap: 30 }, // yesterday: hard day + a 30 min nap
+      { d: day(0), slh: 8 }, // need = 8 h + 58.4 min strain − 30 min nap → 28 min short
+    ];
+    expect(sleepDebt(recs, ASOF, profile).debtMin).toBe(28);
   });
 });

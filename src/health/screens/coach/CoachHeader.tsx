@@ -1,7 +1,8 @@
 /**
  * Coach header (task item 1): "<appName> Coach", the provider status pill
- * ("Claude · Opus 5" or "Offline rules · add a key in Settings" — both open
- * Settings), the Conversational / Direct tone toggle (§4, Oura pattern) and
+ * ("Claude · Opus 5" or "Offline · add a key" — both open Settings; the copy
+ * is kept short so it never truncates at 390 px, review R6-17), the
+ * Conversational / Direct tone toggle (§4, Oura pattern) and
  * the clear-conversation action (task item 8; the screen owns the confirm).
  *
  * Purely presentational; the screen wires the store.
@@ -56,7 +57,8 @@ export default function CoachHeader({ appName, tone, onTone, statusLabel, config
           <Trash2 className="w-5 h-5" aria-hidden />
         </button>
       </div>
-      <SegmentedControl<CoachTone> options={TONES} value={tone} onChange={onTone} size="sm" ariaLabel="Coach tone" className="mt-2 w-full" />
+      {/* md = 44 px segments: the touch-target floor (review R2-13). */}
+      <SegmentedControl<CoachTone> options={TONES} value={tone} onChange={onTone} size="md" ariaLabel="Coach tone" className="mt-2 w-full" />
     </header>
   );
 }

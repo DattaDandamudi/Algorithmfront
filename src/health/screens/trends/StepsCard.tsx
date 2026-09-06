@@ -33,7 +33,9 @@ export default function StepsCard({ steps, series, stats, win }: StepsCardProps)
   }
 
   const share = stats.goalDays / stats.loggedDays;
+  // §0 bands (≥67 % / 34–66 % / <34 %); the word travels with the colour so the state is never colour-only (review R6-12).
   const goalTone = share >= 0.67 ? 'green' : share >= 0.34 ? 'yellow' : 'red';
+  const goalWord = goalTone === 'green' ? 'on track' : goalTone === 'yellow' ? 'patchy' : 'low';
 
   return (
     <TrendCard
@@ -44,7 +46,7 @@ export default function StepsCard({ steps, series, stats, win }: StepsCardProps)
       <div className="grid grid-cols-3 gap-3">
         <Readout label="Today" value={steps.today} sub={<DeltaSub value={steps.delta} good={steps.good} />} />
         <Readout label="Average" value={stats.meanSteps} sub={`${stats.loggedDays} logged day${stats.loggedDays === 1 ? '' : 's'}`} />
-        <Readout label="Goal days" value={`${stats.goalDays}/${stats.loggedDays}`} sub={`≥ ${fmt(steps.goalMin)} steps`} tone={goalTone} />
+        <Readout label="Goal days" value={`${stats.goalDays}/${stats.loggedDays}`} sub={`${goalWord} · ≥ ${fmt(steps.goalMin)} steps`} tone={goalTone} />
       </div>
 
       <TimeSeriesChart

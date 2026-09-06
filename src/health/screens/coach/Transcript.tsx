@@ -80,13 +80,16 @@ function EmptyIntro({ appName, intro, busy, onChip }: Omit<TranscriptProps, 'cha
       </div>
       <div>
         <p className="hx-label mb-2">Ask me</p>
-        <div className="flex flex-wrap gap-2">
+        {/* Real list + 44 px chips: button semantics and touch targets (review R2-2 / R2-13). */}
+        <ul className="m-0 p-0 list-none flex flex-wrap gap-2" role="list" aria-label="Quick prompts">
           {COACH_CHIPS.map((c) => (
-            <Chip key={c} size="sm" disabled={busy} onClick={() => onChip(c)}>
-              {c}
-            </Chip>
+            <li key={c} className="max-w-full">
+              <Chip size="md" disabled={busy} onClick={() => onChip(c)} className="max-w-full">
+                {c}
+              </Chip>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </div>
   );

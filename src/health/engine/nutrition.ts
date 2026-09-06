@@ -7,7 +7,9 @@
  * - Protein pacing 0.4–0.55 g/kg per meal across ≥4 meals (Schoenfeld &
  *   Aragon 2018) → 31–43 g/meal for 78 kg; nudge when a slot lands < 31 g.
  * - Fat floor 60 g (Whittaker & Wu 2021 — low-fat diets cut testosterone
- *   10–15 %): warn when the projected daily fat can't reach the floor.
+ *   10–15 %): warn when the projected daily fat can't reach the floor. The
+ *   projection assumes the remaining kcal arrive at a typical ~30 % fat share
+ *   (§6 "fat floor ~28 % kcal"), not that every remaining kcal is fat (R3-6).
  * - Late-eating rule (Vujović 2022): flag ≥ 400 kcal within 3 h of the bed
  *   target and suggest finishing the last substantial meal 3 h before bed.
  * - Hydration 30–35 ml/kg (+250 ml on ≥10k-step days, +250 ml on strain ≥14).
@@ -215,6 +217,8 @@ export interface ProteinPacing {
   perMealNeeded: number | null;
   minPerMeal: number;
   maxPerMeal: number;
+  /** Protein (g) in the most recent eating occasion; null when none is logged. */
+  lastMealProtein: number | null;
   /** The most recent meal delivered less than the 0.4 g/kg minimum. */
   lastMealBelowMin: boolean;
   /** Target is reachable without exceeding 0.55 g/kg in any remaining meal. */
@@ -245,16 +249,23 @@ export function proteinPacing(input: {
   const perMealNeeded = mealsLeft > 0 ? round(Math.max(0, remaining) / mealsLeft) : null;
   // Judge the last *occasion* (all items eaten together), not the last entry.
   const lastOcc = occasions.length ? occasions[occasions.length - 1] : null;
+  const lastMealProtein = lastOcc === null ? null : lastOcc.p;
   const lastMealBelowMin = lastOcc !== null && lastOcc.p < minPerMeal;
   const onPace = perMealNeeded === null ? remaining <= 0 : perMealNeeded <= maxPerMeal;
 
-  return { soFar, remaining, mealsLogged, mealsLeft, perMealNeeded, minPerMeal, maxPerMeal, lastMealBelowMin, onPace };
+  return { soFar, remaining, mealsLogged, mealsLeft, perMealNeeded, minPerMeal, maxPerMeal, lastMealProtein, lastMealBelowMin, onPace };
 }
 
 // ---------------------------------------------------------------------------
 // Fat floor (§6.2/§6.5 — never below 60 g)
 // ---------------------------------------------------------------------------
 
+/**
+ * Share of the remaining kcal assumed to arrive as fat when projecting the
+ * day's total (§6: the 60 g floor is ~28 % of 1,950 kcal). Assuming 100 % made
+ * the warning impossible before 20:00 unless < 9 × gap kcal remained (R3-6).
+ */
+export const FAT_KCAL_SHARE = 0.3;
 /** From this clock time the day's eating is treated as essentially done. */
 const LATE_DAY_START_NOON = minutesSinceNoon('20:00') as number; // 480
 /** …until this morning hour (noon axis), so 00:30 is still "late", 07:00 is not. */
@@ -267,23 +278,23 @@ function isLateInDay(now: HHMM | undefined): boolean {
 
 export interface FatFloorCheck {
   belowFloor: boolean;
-  /** Fat reachable today: current fat plus what the remaining kcal could cover (nothing more after 20:00). */
+  /** Fat projected for the day: current fat plus ~30 % of the remaining kcal as fat (nothing more after 20:00). */
   projectedFat: number;
   /** floor − projectedFat, ≥ 0. */
   shortBy: number;
 }
 
 /**
- * Below the floor when current fat < floor AND the gap can't reasonably be
- * covered by the remaining calories (gap × 9 kcal/g > remaining kcal), or when
- * it is late in the day (after 20:00 any shortfall counts).
+ * Below the floor when current fat < floor AND the projected day — logged so
+ * far plus a typical ~30 % fat share of the remaining kcal — lands under it,
+ * or when it is late in the day (after 20:00 any shortfall counts).
  */
 export function fatFloorCheck(totals: Macros, remainingKcal: number, targets: Targets, nowHHMM?: HHMM): FatFloorCheck {
   const fat = num(totals.f);
   const gap = targets.fatFloor - fat;
   if (gap <= 0) return { belowFloor: false, projectedFat: round(fat, 1), shortBy: 0 };
   const late = isLateInDay(nowHHMM);
-  const coverable = late ? 0 : Math.min(gap, Math.max(0, num(remainingKcal)) / 9);
+  const coverable = late ? 0 : Math.min(gap, (Math.max(0, num(remainingKcal)) * FAT_KCAL_SHARE) / 9);
   const projectedFat = round(fat + coverable, 1);
   const shortBy = round(Math.max(0, targets.fatFloor - projectedFat), 1);
   return { belowFloor: shortBy > 0, projectedFat, shortBy };

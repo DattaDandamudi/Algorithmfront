@@ -392,6 +392,14 @@ export interface CoachContext {
     band: HrvBand;
     cv7: number | null;
     delta: BaselineDelta;
+    /** Long-term geometric mean (ms) the SWC is centred on — engine/hrv.ts (additive, R3-1). */
+    baseline28?: number | null;
+    /** ≥ 21 readings in the last 30 days — the one "baseline established" gate (R3-10). */
+    baselineEstablished?: boolean;
+    /** HRV readings in the last 30 days (R3-10). */
+    daysOfData?: number;
+    /** Day-to-day CV rising or collapsing vs the reference — §6.3 overreaching flag (R3-8). */
+    overreaching?: boolean;
   };
   rhr: BaselineDelta;
   sleep: {
@@ -412,6 +420,8 @@ export interface CoachContext {
     targetLbPerWk: [number, number];
     inBand: 'below' | 'in' | 'above' | null;
     weighInsThisWeek: number;
+    /** Whole weeks the rate has sat outside the band in one direction (0 = < 7 days) — R3-3. */
+    weeksOutsideBand?: number;
   };
   expenditure: {
     tdee: number | null;
@@ -419,6 +429,10 @@ export interface CoachContext {
     reason: string;
     suggestedKcal: number | null;
     suggestedDelta: number | null;
+    /** True while the first ~2 weeks of weigh-ins are still being collected (R3-5). */
+    calibrating?: boolean;
+    /** Day the in-progress weekly block publishes its estimate (R3-4). */
+    nextUpdate?: ISODate | null;
   };
   nutrition: {
     totals: Macros;
@@ -433,6 +447,13 @@ export interface CoachContext {
     hydrationCups: number;
     hydrationTargetCups: number;
     caffeineAfterCutoff: HHMM | null;
+    /** Most recent eating occasion delivered < 0.4 g/kg protein (§6.5 nudge) — R3-7. */
+    lastMealBelowMin?: boolean;
+    /** Protein in that last occasion, g (null when nothing logged). */
+    lastMealProtein?: number | null;
+    /** 0.4 / 0.55 g/kg × reference body weight, g per meal. */
+    minPerMeal?: number;
+    maxPerMeal?: number;
   };
   tobacco: {
     today: number;
@@ -441,6 +462,10 @@ export interface CoachContext {
     streakDays: number;
     hrvSmokeFree: number | null;
     hrvSmoking: number | null;
+    /** Mean next-morning HRV after the last 3 smoke-free days (§7 #9) — R3-11. */
+    hrvFree3?: number | null;
+    /** hrvFree3 − mean next-morning HRV after smoking days. */
+    hrvDelta3?: number | null;
   };
   frequency: {
     redMeatServings7d: number;

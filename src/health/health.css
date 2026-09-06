@@ -11,7 +11,8 @@
   --hx-blue: #3b82f6;
   --hx-text: #f2f5f7;
   --hx-text-2: #a9b4be;
-  --hx-muted: #6b7883;
+  /* #8A97A3 clears 4.5:1 on every surface (6.0:1 on cards); the original #6B7883 failed AA at 13 px. */
+  --hx-muted: #8a97a3;
 
   color-scheme: dark;
   background: var(--hx-base);
@@ -121,6 +122,8 @@
 .hx input,
 .hx textarea,
 .hx select {
+  /* ≥ 16 px stops Mobile Safari auto-zooming the page on focus (review R6-7). */
+  font-size: 16px;
   background: var(--hx-card-2);
   color: var(--hx-text);
   border: 1px solid var(--hx-border);

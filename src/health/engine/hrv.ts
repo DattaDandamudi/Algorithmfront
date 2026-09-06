@@ -28,10 +28,16 @@
  *     Plews/Buchheit (and Garmin) actually do.
  *   • bigDrop — the ONE rule driven by today's single reading: 20×ln fell ≥ 1.5
  *     points vs yesterday's 7-day mean (≈ 7.5 % rMSSD) → suggest low intensity.
- *   • overreachingFlag (R3-8) — day-to-day CV of the last 7 ln values vs the 7
- *     before: rising (cv7 > 1.5 × cvPrev7) OR collapsing (cv7 < cvPrev7 / 1.5),
- *     each with ≥ 4 readings per week. "A rising or collapsing CV flags
- *     non-functional overreaching" (§6.3).
+ *   • overreachingFlag (R3-8) — the day-to-day CV of the last 7 ln values vs the
+ *     CV of the reference set (the readings older than the current week): rising
+ *     (cv7 > 2 × cvRef) OR collapsing (cv7 < cvRef / 2). "A rising or collapsing
+ *     CV flags non-functional overreaching" (§6.3). Why 2× against the reference
+ *     and not 1.5× against last week: a 7-sample CV carries ~29 % relative error,
+ *     so on stationary noise a week-over-week 1.5× rule fires on ~37 % of days
+ *     (rising alone ~19 %) and would make "Unbalanced" the modal band; 2× vs the
+ *     21-reading reference fires on ~6 % (measured on ln ~ N(ln 60, 0.12)), while
+ *     the NFOR case in Plews 2012 is a > 2× collapse (≈ 9 % → 3 %).
+ *     cv7 / cvPrev7 / cvTrend stay exposed as the week-over-week picture.
  *
  * Pure & deterministic: records in, plain numbers/nulls out; never NaN, never
  * throws. Millisecond outputs are geometric (exp of ln means) so they match the
@@ -65,7 +71,9 @@ export interface HrvStatus {
   cv7: number | null;
   cvPrev7: number | null;
   cvTrend: 'rising' | 'falling' | 'stable' | null;
-  /** Rising or collapsing day-to-day CV (§6.3 non-functional overreaching). */
+  /** CV (%) of the reference set (readings older than the current week); null below 7 of them. */
+  cvRef: number | null;
+  /** cv7 ≥ 2 × cvRef (rising) or ≤ cvRef / 2 (collapsing) — §6.3 non-functional overreaching. */
   overreachingFlag: boolean;
   /** Sentence explaining the flag, null when it is down. */
   overreachingNote: string | null;
@@ -99,10 +107,8 @@ export const DEFAULT_SD_WINDOW_DAYS = 28;
 export const BIG_DROP_20LN = 1.5;
 /** CV must move ≥ 20 % relative to the prior week to count as rising/falling. */
 export const CV_TREND_PCT = 20;
-/** Overreaching flag when this week's CV exceeds last week's by this factor… */
-export const CV_RISING_FACTOR = 1.5;
-/** …or falls below last week's by the same factor (a collapsing CV). */
-export const CV_COLLAPSE_FACTOR = 1.5;
+/** Overreaching flag when this week's CV is ≥ this factor above, or below, the reference CV. */
+export const CV_SHIFT_FACTOR = 2;
 /** Need most of a week's readings before trusting a CV (avoids 2-point noise). */
 export const MIN_CV_READINGS = 4;
 
@@ -172,6 +178,8 @@ interface Core {
   nWindow: number;
   /** Mean ln over the whole window (the 28-day geometric mean, for the age-norm check). */
   meanWindowLn: number | null;
+  /** CV of the readings older than the current week (null below MIN_SD_READINGS of them). */
+  cvRef: number | null;
 }
 
 /**
@@ -193,6 +201,7 @@ function coreAt(ln: Array<number | null>, i: number, sdWindow: number): Core {
     nBaseline: ref.length,
     nWindow: win.length,
     meanWindowLn: mean(win),
+    cvRef: older.length >= MIN_SD_READINGS ? cvOf(older) : null,
   };
 }
 
@@ -205,14 +214,14 @@ function cvTrendOf(cv7: number | null, cvPrev7: number | null): HrvStatus['cvTre
   return 'stable';
 }
 
-/** §6.3 overreaching flag: CV rising > 1.5× or collapsing < 1/1.5× vs the prior week. */
-function overreaching(cvTrend: HrvStatus['cvTrend'], cv7: number | null, cvPrev7: number | null): string | null {
-  if (cv7 === null || cvPrev7 === null) return null;
-  const cvText = `(CV ${round(cv7, 1)}% vs ${round(cvPrev7, 1)}%)`;
-  if (cvTrend === 'rising' && cv7 > CV_RISING_FACTOR * cvPrev7) {
+/** §6.3 overreaching flag: this week's CV ≥ 2× the reference CV (rising) or ≤ half of it (collapsing). */
+function overreaching(cv7: number | null, cvRef: number | null): string | null {
+  if (cv7 === null || cvRef === null) return null;
+  const cvText = `(CV ${round(cv7, 1)}% this week vs your usual ${round(cvRef, 1)}%)`;
+  if (cv7 >= CV_SHIFT_FACTOR * cvRef) {
     return `Day-to-day HRV variability is rising ${cvText} — an overreaching flag.`;
   }
-  if (cvTrend === 'falling' && cv7 < cvPrev7 / CV_COLLAPSE_FACTOR) {
+  if (cv7 <= cvRef / CV_SHIFT_FACTOR) {
     return `Day-to-day HRV variability is collapsing ${cvText} — an overreaching flag.`;
   }
   return null;
@@ -241,7 +250,7 @@ export function hrvStatus(records: DailyRecord[], asOf: ISODate, opts: HrvOpts =
   const cv7 = cvOf(valuesIn(ln, i - 6, i));
   const cvPrev7 = cvOf(valuesIn(ln, i - 13, i - 7));
   const cvTrend = cvTrendOf(cv7, cvPrev7);
-  const overreachingNote = overreaching(cvTrend, cv7, cvPrev7);
+  const overreachingNote = overreaching(cv7, core.cvRef);
 
   const daysOfData = valuesIn(ln, i - (BASELINE_WINDOW_DAYS - 1), i).length;
   const baselineEstablished = daysOfData >= BASELINE_READINGS;
@@ -308,6 +317,7 @@ export function hrvStatus(records: DailyRecord[], asOf: ISODate, opts: HrvOpts =
     cv7: cv7 === null ? null : round(cv7, 2),
     cvPrev7: cvPrev7 === null ? null : round(cvPrev7, 2),
     cvTrend,
+    cvRef: core.cvRef === null ? null : round(core.cvRef, 2),
     overreachingFlag: overreachingNote !== null,
     overreachingNote,
     bigDrop,

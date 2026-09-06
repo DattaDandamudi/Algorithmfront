@@ -6,10 +6,9 @@
 import { isAIConfigured, MODEL_OPTIONS } from '../../ai/client';
 import type { AppSettings, DailyRecord, ISODate, StorageStatus } from '../../data/types';
 import { QUOTA_BYTES } from '../../data/storage';
-import { retestReminders } from '../../engine/micronutrients';
 import { fmt, fmtWeight } from '../../lib/format';
 import { APP_VERSION } from './AboutSection';
-import { CUISINE_OPTIONS, SESSION_OPTIONS, dueReminders, formatBytes, isLiftSession, relativeTime } from './util';
+import { CUISINE_OPTIONS, SESSION_OPTIONS, bloodworkAttention, formatBytes, isLiftSession, relativeTime } from './util';
 
 const PHASE_LABEL: Record<AppSettings['profile']['goalPhase'], string> = {
   'fat-loss': 'fat loss',
@@ -39,11 +38,12 @@ export function bloodworkCaption(s: AppSettings, today: ISODate): string {
   const markers = s.profile.bloodwork;
   if (!markers.length) return 'No markers on file';
   const flagged = markers.filter((m) => m.status !== 'normal').length;
-  const due = dueReminders(retestReminders(markers, today));
+  const { due, undated } = bloodworkAttention(markers, today);
   const overdue = due.filter((r) => r.overdue).length;
   const parts = [`${markers.length} marker${markers.length === 1 ? '' : 's'}`, `${flagged} flagged`];
   if (overdue) parts.push(`${overdue} retest${overdue === 1 ? '' : 's'} overdue`);
   else if (due.length) parts.push(`${due.length} retest${due.length === 1 ? '' : 's'} due soon`);
+  else if (undated.length) parts.push(`${undated.length} need${undated.length === 1 ? 's' : ''} a test date`);
   return parts.join(' · ');
 }
 

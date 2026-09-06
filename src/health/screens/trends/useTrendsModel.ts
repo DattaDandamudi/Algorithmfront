@@ -15,6 +15,7 @@ import { useMemo } from 'react';
 import type { AppSettings, CoachContext, DailyRecord, ISODate } from '../../data/types';
 import { useHealth, useNow, useRecords } from '../../data/store';
 import {
+  RHR_BASELINE_DAYS,
   adherenceGrid,
   buildCoachContext,
   frequencyCounters,
@@ -25,7 +26,9 @@ import {
 import { parseISODate, toISODate } from '../../lib/dates';
 import type { ChartRange, DatedValue, HeatmapDay } from '../../ui/charts';
 import {
+  baselineBand,
   bedtimeOffsetSeries,
+  bedtimeSdSeries,
   hrvSeries,
   metricChartSeries,
   rangeWindow,
@@ -34,6 +37,8 @@ import {
   stepsStats,
   weightSeries,
   type BandedSeries,
+  type BaselineBand,
+  type BedtimeSdSeries,
   type LinedSeries,
   type RangeWindow,
   type SleepSeries,
@@ -54,7 +59,11 @@ export interface TrendsModel {
   tdee: TdeeSeries;
   hrv: BandedSeries;
   rhr: LinedSeries;
+  /** 28-day RHR mean ± SD (the baseline band drawn behind the RHR chart). */
+  rhrBand: BaselineBand | null;
   sleep: SleepSeries;
+  /** Rolling 7-night bedtime SD over the window + today's gated value. */
+  bedSd: BedtimeSdSeries;
   /** Nightly bedtime offset from the target, minutes (+ late / − early), bucketed. */
   bedOffsets: DatedValue[];
   steps: { series: DatedValue[]; stats: StepsStats };
@@ -117,7 +126,9 @@ export function useTrendsModel(range: ChartRange): TrendsModel {
       tdee: tdeeSeries(records, win, alpha),
       hrv: hrvSeries(records, win),
       rhr: rollingMeanSeries(records, 'rhr', win, 7),
+      rhrBand: baselineBand(records, 'rhr', today, RHR_BASELINE_DAYS),
       sleep: sleepSeries(records, win, profile),
+      bedSd: bedtimeSdSeries(records, win),
       bedOffsets: bedtimeOffsetSeries(records, win, profile.bedTarget),
       steps: { series: metricChartSeries(records, 'st', win, 'mean'), stats: stepsStats(records, win, targets.stepsMin) },
       adherence: { heat, legend, loggingStreak: 0, weighInStreak: weighInStreak(records, today) },

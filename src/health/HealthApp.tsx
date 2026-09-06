@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Activity, BarChart3, MessageCircle, PlusCircle, Settings as SettingsIcon } from 'lucide-react';
 import './health.css';
 import { HealthStoreProvider, useHealth } from './data/store';
@@ -57,7 +57,7 @@ function TabBar() {
                 }`}
               >
                 <Icon className="w-5 h-5" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
-                <span className="text-[11px] leading-3 font-medium tracking-wide">{t.label}</span>
+                <span className="text-[12px] leading-3 font-medium tracking-wide">{t.label}</span>
               </button>
             </li>
           );
@@ -70,6 +70,12 @@ function TabBar() {
 function Frame() {
   const { tab } = useNav();
   const { state } = useHealth();
+  // Visited screens stay mounted (hidden when inactive) so a half-typed meal, a coach draft or the
+  // Trends range survives a glance at another tab (review R6-14). Only the active one animates in.
+  const [visited, setVisited] = useState<Tab[]>(() => [tab]);
+  useEffect(() => {
+    setVisited((prev) => (prev.includes(tab) ? prev : [...prev, tab]));
+  }, [tab]);
 
   useEffect(() => {
     document.title = 'Pulse — Health Log';
@@ -104,9 +110,11 @@ function Frame() {
             </div>
           }
         >
-          <main key={tab} className="hx-fade-up">
-            <Screen tab={tab} />
-          </main>
+          {TABS.filter((t) => visited.includes(t.id)).map((t) => (
+            <main key={t.id} hidden={t.id !== tab} className={t.id === tab ? 'hx-fade-up' : undefined}>
+              <Screen tab={t.id} />
+            </main>
+          ))}
         </Suspense>
         <TabBar />
         <ToastHost />

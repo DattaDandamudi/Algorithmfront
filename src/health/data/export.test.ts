@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCSV, buildExportBundle, buildExportJSON, CSV_COLUMNS, downloadText, exportFilename, parseImport } from './export';
+import { buildCSV, buildExportBundle, buildExportJSON, CSV_COLUMNS, csvCell, downloadText, EXPORT_NOTE, exportFilename, parseImport } from './export';
 import { DEFAULT_SETTINGS, mergeSettings } from './defaults';
 import { SCHEMA_VERSION, type ChatMessage, type DailyRecord } from './types';
 
@@ -59,6 +59,30 @@ describe('buildCSV', () => {
   it('handles an empty dataset (header only)', () => {
     expect(buildCSV([])).toBe(`${BOM}${CSV_COLUMNS.join(',')}`);
   });
+
+  it('neutralises spreadsheet formula injection in text cells (R4-8)', () => {
+    const rows = buildCSV([
+      { d: '2026-09-07', note: '=HYPERLINK("http://evil","x")' },
+      { d: '2026-09-08', note: '+1+1' },
+      { d: '2026-09-09', note: '-1' },
+      { d: '2026-09-10', note: '\tx' },
+      { d: '2026-09-11', note: '@SUM(A1)' },
+      { d: '2026-09-12', note: 'safe -text' },
+    ])
+      .slice(1)
+      .split('\r\n');
+    expect(rows[1]).toContain(`"'=HYPERLINK(""http://evil"",""x"")"`);
+    expect(rows[2].endsWith(",'+1+1")).toBe(true);
+    expect(rows[3].endsWith(",'-1")).toBe(true);
+    expect(rows[4].endsWith(",'\tx")).toBe(true);
+    expect(rows[5].endsWith(",'@SUM(A1)")).toBe(true);
+    expect(rows[6].endsWith(',safe -text')).toBe(true);
+    // Numbers (incl. negatives) are never prefixed; CR is prefixed and quoted.
+    expect(csvCell(-3)).toBe('-3');
+    expect(csvCell('@a')).toBe("'@a");
+    expect(csvCell('\rx')).toBe(`"'\rx"`);
+    expect(csvCell('plain')).toBe('plain');
+  });
 });
 
 describe('buildExportJSON / parseImport', () => {
@@ -77,11 +101,19 @@ describe('buildExportJSON / parseImport', () => {
     expect(parsed.chat).toEqual(CHAT);
   });
 
-  it('buildExportBundle sorts days and carries settings/chat by reference', () => {
-    const b = buildExportBundle(DEFAULT_SETTINGS, DAYS, CHAT);
+  it('buildExportBundle sorts days, strips ai.apiKey (with a note) and carries chat by reference (R4-2)', () => {
+    const withKey = { ...DEFAULT_SETTINGS, ai: { ...DEFAULT_SETTINGS.ai, provider: 'anthropic-direct' as const, apiKey: 'sk-ant-secret', proxyUrl: 'https://proxy.example' } };
+    const b = buildExportBundle(withKey, DAYS, CHAT);
     expect(b.days.map((d) => d.d)).toEqual(['2026-09-04', '2026-09-05', '2026-09-06']);
-    expect(b.settings).toBe(DEFAULT_SETTINGS);
     expect(b.chat).toBe(CHAT);
+    expect('apiKey' in b.settings.ai).toBe(false);
+    expect(b.settings.ai.provider).toBe('anthropic-direct');
+    expect(b.settings.ai.proxyUrl).toBe('https://proxy.example');
+    expect(b.settings.profile).toBe(withKey.profile); // everything else is carried as is
+    expect(b.exportNote).toBe(EXPORT_NOTE);
+    expect(EXPORT_NOTE).toMatch(/apiKey/);
+    expect(buildExportJSON(withKey, DAYS, CHAT)).not.toContain('sk-ant-secret');
+    expect(withKey.ai.apiKey).toBe('sk-ant-secret'); // input untouched
   });
 
   it('accepts a bare array of records or an object with a days map, dropping invalid records', () => {
@@ -134,6 +166,60 @@ describe('buildExportJSON / parseImport', () => {
     expect(res.settings?.targets.kcal).toBe(2000);
     expect(res.settings?.targets.protein).toBe(DEFAULT_SETTINGS.targets.protein);
     expect(res.settings?.version).toBe(SCHEMA_VERSION);
+  });
+});
+
+describe('parseImport normalisation (R4-3)', () => {
+  it('backfills meal ids, coerces missing macros to 0 and numeric strings to numbers', () => {
+    const json = JSON.stringify({
+      days: [
+        {
+          d: '2026-09-06',
+          w: '171.8',
+          st: '9120',
+          hrv: 'n/a',
+          rec: null,
+          meals: [{ t: '12:30', n: 'chicken tikka', g: 200, p: 50, kc: 330 }, { id: 'keep', t: '19:00', n: 'roti', g: '80', kc: '240', p: '7', f: '5', c: '40', fi: '5' }, 'junk'],
+        },
+      ],
+    });
+    const res = parseImport(json);
+    expect(res.ok).toBe(true);
+    const day = res.days[0];
+    expect(day.w).toBe(171.8);
+    expect(day.st).toBe(9120);
+    expect(day.hrv).toBeUndefined();
+    expect('rec' in day).toBe(false);
+    expect(day.meals).toHaveLength(2);
+    const [a, b] = day.meals!;
+    expect(a.id).toMatch(/^m_/);
+    expect(a).toMatchObject({ t: '12:30', n: 'chicken tikka', g: 200, p: 50, kc: 330, f: 0, c: 0, fi: 0 });
+    expect(b).toEqual({ id: 'keep', t: '19:00', n: 'roti', g: 80, kc: 240, p: 7, f: 5, c: 40, fi: 5 });
+    expect(res.errors).toEqual(['1 field(s) with non-numeric values were dropped.', '1 malformed meal(s) were skipped.']);
+    // Every id-less meal gets its own id; an empty meals list is dropped.
+    const two = parseImport(JSON.stringify([{ d: '2026-09-06', meals: [{ t: '1', n: 'a' }, { t: '2', n: 'b' }] }, { d: '2026-09-07', meals: [] }]));
+    expect(two.days[0].meals![0].id).not.toBe(two.days[0].meals![1].id);
+    expect(two.days[1].meals).toBeUndefined();
+    expect(two.errors).toEqual([]);
+  });
+
+  it('gives chat messages default id/role/ts, drops entries without text and clears streaming', () => {
+    const res = parseImport(
+      JSON.stringify({
+        days: [DAYS['2026-09-04']],
+        chat: [{ text: 'hello' }, { id: 'c9', role: 'user', text: 'hi', ts: 5, streaming: true }, { role: 'system', text: 'x', ts: 'later' }, { id: 'e', role: 'user', text: '   ' }, { id: 'f', role: 'user' }],
+      }),
+    );
+    expect(res.chat).toHaveLength(3);
+    const [a, b, c] = res.chat!;
+    expect(a.id).toMatch(/^c_/);
+    expect(a.role).toBe('assistant');
+    expect(typeof a.ts).toBe('number');
+    expect(b).toEqual({ id: 'c9', role: 'user', text: 'hi', ts: 5 });
+    expect('streaming' in b).toBe(false);
+    expect(c.role).toBe('assistant');
+    expect(typeof c.ts).toBe('number');
+    expect(res.errors).toContain('2 chat message(s) had no text and were skipped.');
   });
 });
 

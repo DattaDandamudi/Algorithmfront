@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PROFILE, DEFAULT_TARGETS } from '../../data/defaults';
+import { DEFAULT_PROFILE, DEFAULT_SETTINGS, DEFAULT_TARGETS } from '../../data/defaults';
 import type { CoachContext, DailyRecord } from '../../data/types';
-import { adherenceGrid } from '../../engine';
+import { RHR_BASELINE_DAYS, adherenceGrid, bedtimeConsistency, buildCoachContext, weeklyExpenditure } from '../../engine';
 import { addDays } from '../../lib/dates';
 import {
+  BAND_MIN_READINGS,
+  baselineBand,
   bedtimeOffsetSeries,
+  bedtimeSdSeries,
   bedtimeSdTone,
   goalBandLabel,
   hrvBandTone,
@@ -63,6 +66,15 @@ describe('weightSeries', () => {
     expect(weekly.dots.length).toBeLessThanOrEqual(14);
     expect(weekly.dots[0].d).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
+  it('counts weigh-ins ever separately from weigh-ins in the range (R2-3)', () => {
+    // 60 days of history, but only 3 weigh-ins in the last 7 → the trend is still established.
+    const recs = demo(60).map((r, i) => (i >= 53 && i % 2 === 0 ? { ...r, w: undefined } : r));
+    const s = weightSeries(recs, rangeWindow('7D', TODAY), 0.1, 'lb');
+    expect(s.weighIns).toBeLessThan(5);
+    expect(s.totalWeighIns).toBeGreaterThan(50);
+    // The EWMA is carried forward, so every day in the range still has a trend value.
+    expect(s.trend.every((p) => p.value !== null)).toBe(true);
+  });
   it('handles no records', () => {
     const s = weightSeries([], rangeWindow('30D', TODAY), 0.1, 'lb');
     expect(s.weighIns).toBe(0);
@@ -117,6 +129,32 @@ describe('sleepSeries / bedtimeOffsetSeries', () => {
     expect(s.need.every((p) => p.value !== null && p.value >= 5)).toBe(true);
     expect(s.mean7).toBeCloseTo(7.25, 1);
   });
+  it('adds the 30-night sleep range once 7 nights exist (R2-7)', () => {
+    const s = sleepSeries(demo(40), rangeWindow('30D', TODAY), DEFAULT_PROFILE);
+    expect(s.band).not.toBeNull();
+    expect(s.band!.lo).toBeLessThan(s.band!.mean);
+    expect(s.band!.hi).toBeGreaterThan(s.band!.mean);
+    expect(sleepSeries(demo(4), rangeWindow('30D', TODAY), DEFAULT_PROFILE).band).toBeNull();
+  });
+  it('plots the rolling 7-night bedtime SD and waits for 3 nights (R2-4 / R2-9)', () => {
+    const s = bedtimeSdSeries(demo(40), rangeWindow('30D', TODAY));
+    expect(s.series).toHaveLength(30);
+    expect(s.nights).toBe(7);
+    // Alternating 22:50 / 23:10 → SD ≈ 10.8 min, the engine's own number.
+    expect(s.sdMin).toBe(bedtimeConsistency(demo(40), TODAY, 7).bedtimeSdMin);
+    expect(s.series[s.series.length - 1].value).toBe(s.sdMin);
+    expect(s.series.every((p) => p.value !== null)).toBe(true);
+    // Two bedtimes: the engine would already report an SD, the card waits for the third night.
+    const two = demo(2);
+    expect(bedtimeConsistency(two, TODAY, 7).bedtimeSdMin).not.toBeNull();
+    const gated = bedtimeSdSeries(two, rangeWindow('7D', TODAY));
+    expect(gated.sdMin).toBeNull();
+    expect(gated.nights).toBe(2);
+    expect(gated.series.every((p) => p.value === null)).toBe(true);
+    const three = bedtimeSdSeries(demo(3), rangeWindow('7D', TODAY));
+    expect(three.sdMin).not.toBeNull();
+    expect(three.series[three.series.length - 1].value).toBe(three.sdMin);
+  });
   it('measures bedtime offsets on the noon axis so post-midnight nights read as late', () => {
     const recs: DailyRecord[] = [
       { d: addDays(TODAY, -2), bt: '22:30' },
@@ -130,6 +168,27 @@ describe('sleepSeries / bedtimeOffsetSeries', () => {
 });
 
 describe('tdeeSeries', () => {
+  it('is range-invariant and its last point equals ctx.expenditure (R2-1)', () => {
+    const recs = demo(120);
+    const by = (r: '7D' | '30D' | '90D' | '1Y') => tdeeSeries(recs, rangeWindow(r, TODAY), 0.1);
+    const short = by('7D');
+    const long = by('1Y');
+    // The 4 points 7D plots are exactly the last 4 of the 52 that 1Y plots.
+    expect(short.points).toEqual(long.points.slice(-4));
+    expect(by('30D').points).toEqual(long.points.slice(-5));
+    expect(by('90D').points).toEqual(long.points.slice(-13));
+    // …and the readout number is the Today / coach number, whatever the range.
+    const ctx = buildCoachContext({ records: recs, settings: { ...DEFAULT_SETTINGS, profile: DEFAULT_PROFILE, targets: DEFAULT_TARGETS }, today: TODAY, now: new Date(2026, 8, 6, 9, 0, 0) });
+    expect(ctx.expenditure.tdee).not.toBeNull();
+    for (const r of ['7D', '30D', '90D', '1Y'] as const) {
+      const t = by(r);
+      expect(t.result.tdee).toBe(ctx.expenditure.tdee);
+      expect(t.points[t.points.length - 1].value).toBe(ctx.expenditure.tdee);
+    }
+    // Each historical point is the estimate as displayed at that week's end.
+    const wk3 = long.points[long.points.length - 4];
+    expect(wk3.value).toBe(weeklyExpenditure(recs, wk3.d, { alpha: 0.1 }).tdee);
+  });
   it('plots one point per weekly block with markers only on valid weeks', () => {
     const t = tdeeSeries(demo(40), rangeWindow('30D', TODAY), 0.1);
     expect(t.points).toHaveLength(5);
@@ -201,6 +260,19 @@ describe('heatmap helpers', () => {
     expect(heatDay('logging', y, byDate.get(y.d), DEFAULT_TARGETS)).toMatchObject({ level: 2, title: '2 meals logged' });
     const t = grid[1];
     expect(heatDay('protein', t, byDate.get(t.d), DEFAULT_TARGETS).level).toBeNull();
+  });
+});
+
+describe('baselineBand', () => {
+  it('is the mean ± SD of the days before today and needs 7 readings', () => {
+    const b = baselineBand(demo(40), 'rhr', TODAY, RHR_BASELINE_DAYS);
+    expect(b).not.toBeNull();
+    expect(b!.n).toBe(RHR_BASELINE_DAYS);
+    expect(b!.hi - b!.mean).toBeCloseTo(b!.sd, 2);
+    expect(b!.mean - b!.lo).toBeCloseTo(b!.sd, 2);
+    expect(baselineBand(demo(BAND_MIN_READINGS), 'rhr', TODAY, 28)).toBeNull(); // today excluded → 6 readings
+    expect(baselineBand(demo(BAND_MIN_READINGS + 1), 'rhr', TODAY, 28)).not.toBeNull();
+    expect(baselineBand([], 'rhr', TODAY, 28)).toBeNull();
   });
 });
 

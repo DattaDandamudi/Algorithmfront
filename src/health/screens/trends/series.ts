@@ -17,8 +17,8 @@
  */
 import type { AppSettings, Band, CoachContext, DailyRecord, HHMM, HrvBand, ISODate, MetricKey, Profile } from '../../data/types';
 import { MONTH_SHORT, addDays, formatDateShort, lastNDates, minutesSinceNoon, parseISODate } from '../../lib/dates';
-import { LB_PER_KG, fmt, mean, round } from '../../lib/format';
-import { computeEwmaTrend, isWeight, lnSeries, metricSeries, rollingMean, sleepSummary, swcBandSeries, waterNoiseBand } from '../../engine';
+import { LB_PER_KG, fmt, mean, round, stddev } from '../../lib/format';
+import { BASELINE_DAYS, bedtimeConsistency, computeEwmaTrend, isWeight, lnSeries, metricSeries, rollingMean, sleepSummary, swcBandSeries, waterNoiseBand } from '../../engine';
 import {
   RANGE_DAYS,
   aggregateByBucket,
@@ -143,6 +143,40 @@ export function perWeek(count: number, days: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Personal baseline band (§0 / §3 "each with a baseline band")
+// ---------------------------------------------------------------------------
+
+export interface BaselineBand {
+  mean: number;
+  sd: number;
+  /** mean − sd / mean + sd. */
+  lo: number;
+  hi: number;
+  /** Readings in the window. */
+  n: number;
+}
+
+/** Readings needed before a ± SD band is drawn — a 2-reading SD is noise, a week is a range. */
+export const BAND_MIN_READINGS = 7;
+
+/**
+ * Personal normal range: mean ± 1 SD over the `days` days BEFORE `asOf`
+ * (today excluded — the same window `baselineDelta` uses for the ▲/▼
+ * readout, so the band and the delta describe one baseline). Null until
+ * `BAND_MIN_READINGS` readings exist. Used for RHR (28 days) and sleep hours
+ * (30 nights) — review R2-7.
+ */
+export function baselineBand(records: DailyRecord[], key: MetricKey, asOf: ISODate, days: number): BaselineBand | null {
+  const vals = metricSeries(records, key, addDays(asOf, -1), days)
+    .map((p) => p.v)
+    .filter(isNum);
+  const m = mean(vals);
+  const sd = stddev(vals);
+  if (m === null || sd === null || vals.length < BAND_MIN_READINGS) return null;
+  return { mean: round(m, 2), sd: round(sd, 2), lo: round(m - sd, 2), hi: round(m + sd, 2), n: vals.length };
+}
+
+// ---------------------------------------------------------------------------
 // Weight (§6.1)
 // ---------------------------------------------------------------------------
 
@@ -164,6 +198,8 @@ export interface WeightSeries {
   noise: number;
   /** Weigh-ins inside the window. */
   weighIns: number;
+  /** Weigh-ins ever (up to the window end) — the trend gate, independent of the range (review R2-3). */
+  totalWeighIns: number;
 }
 
 export function weightSeries(records: DailyRecord[], win: RangeWindow, alpha: number, units: WeightUnits): WeightSeries {
@@ -173,6 +209,8 @@ export function weightSeries(records: DailyRecord[], win: RangeWindow, alpha: nu
   const trendMap = computeEwmaTrend(records, alpha, win.end);
   const noise = round(waterNoiseBand(records, win.end) * k, 2);
   const scale = metricSeries(records, 'w', win.end, win.days);
+  let totalWeighIns = 0;
+  for (const r of records) if (r.d <= win.end && isWeight(r.w)) totalWeighIns++;
   let weighIns = 0;
   const dotsDaily: DatedValue[] = scale.map((p) => {
     const ok = isWeight(p.v);
@@ -188,7 +226,7 @@ export function weightSeries(records: DailyRecord[], win: RangeWindow, alpha: nu
     lo: p.value === null ? null : round(p.value - noise, 2),
     hi: p.value === null ? null : round(p.value + noise, 2),
   }));
-  return { dots, trend, band, noise, weighIns };
+  return { dots, trend, band, noise, weighIns, totalWeighIns };
 }
 
 /**
@@ -305,6 +343,8 @@ export interface SleepSeries {
   mean7: number | null;
   /** Nights with sleep data in the window. */
   nights: number;
+  /** 30-night personal range (mean ± SD of hours before today); null under 7 nights. */
+  band: BaselineBand | null;
 }
 
 export function sleepSeries(records: DailyRecord[], win: RangeWindow, profile: Profile): SleepSeries {
@@ -332,6 +372,7 @@ export function sleepSeries(records: DailyRecord[], win: RangeWindow, profile: P
     need: aggregateByBucket(needDaily, win.bucket, 'mean'),
     mean7: m === null ? null : round(m, 2),
     nights,
+    band: baselineBand(records, 'slh', win.end, BASELINE_DAYS),
   };
 }
 
@@ -344,6 +385,40 @@ export function bedtimeSdTone(sdMin: number | null): Band {
   if (sdMin < BEDTIME_SD_OK_MIN) return 'green';
   if (sdMin <= BEDTIME_SD_WARN_MIN) return 'yellow';
   return 'red';
+}
+
+/** §6.4 consistency: nights needed before a bedtime SD is shown — the card copy promises 3 (review R2-9). */
+export const BEDTIME_SD_MIN_NIGHTS = 3;
+/** Rolling window for the bedtime SD (§6.4 "rolling 7-day SD of bedtime"). */
+export const BEDTIME_SD_NIGHTS = 7;
+
+export interface BedtimeSdSeries {
+  /** Rolling 7-night SD of bedtime (min) for each day in the window, bucketed; null under 3 nights. */
+  series: DatedValue[];
+  /** Today's 7-night SD — the same call the engine makes for ctx.sleep.bedtimeSdMin — null under 3 nights. */
+  sdMin: number | null;
+  /** Nights with a bedtime in the last 7. */
+  nights: number;
+}
+
+/**
+ * The sleep-consistency chart (§3 "Sleep consistency (SD of bedtime)"): the
+ * rolling 7-night SD evaluated on every day of the window so drift is
+ * visible over time, not just as today's number (review R2-4). Each point
+ * uses `bedtimeConsistency(records, d, 7)` — the engine's own definition —
+ * and is null until 3 nights carry a bedtime.
+ */
+export function bedtimeSdSeries(records: DailyRecord[], win: RangeWindow): BedtimeSdSeries {
+  // Only the window plus the 6-night run-in can contribute, so pre-filter once.
+  const from = addDays(win.start, -(BEDTIME_SD_NIGHTS - 1));
+  const recs = records.filter((r) => r.d >= from && r.d <= win.end);
+  const gate = (sd: number | null, n: number) => (n >= BEDTIME_SD_MIN_NIGHTS && isNum(sd) ? sd : null);
+  const daily = lastNDates(win.end, win.days).map((d) => {
+    const c = bedtimeConsistency(recs, d, BEDTIME_SD_NIGHTS);
+    return { d, value: gate(c.bedtimeSdMin, c.n) };
+  });
+  const cur = bedtimeConsistency(recs, win.end, BEDTIME_SD_NIGHTS);
+  return { series: aggregateByBucket(daily, win.bucket, 'mean'), sdMin: gate(cur.bedtimeSdMin, cur.n), nights: cur.n };
 }
 
 /**

@@ -98,8 +98,12 @@ export default function DataSection({ now }: { now: number }) {
       title: mode === 'replace' ? 'Replace everything with this file?' : 'Merge this file into your data?',
       body:
         mode === 'replace'
-          ? `${file.name} holds ${what}. Replace deletes all ${records.length} days currently stored and every setting, then loads the file. Export a backup first if you are unsure.`
-          : `${file.name} holds ${what}. Merge keeps your data and overwrites only the days and settings present in the file.`,
+          ? `${file.name} holds ${what}. Replace deletes all ${records.length} days currently stored, then loads the file. ${
+              preview.settings ? 'Settings come from the file' : 'Settings return to defaults'
+            }; the coach chat is ${preview.chat ? 'replaced by the file’s' : 'cleared'}. Your API key stays in this browser. Export a backup first if you are unsure.`
+          : `${file.name} holds ${what}. Merge keeps your data: days in the file overwrite the same days here${
+              preview.settings ? ', the file’s settings replace yours (your API key stays)' : ''
+            }${preview.chat?.length ? ', and chat messages you don’t already have are added' : ''}.`,
       confirmLabel: mode === 'replace' ? 'Replace all' : 'Merge',
       danger: mode === 'replace',
       secondary: { label: 'Export JSON first', onClick: exportJSON },
@@ -157,7 +161,7 @@ export default function DataSection({ now }: { now: number }) {
       {storage.available && storage.lastError && <Banner kind="error">{storage.lastError}</Banner>}
       {storage.available && !storage.lastError && storage.quotaWarning && (
         <Banner kind="warn" action={{ label: 'Export JSON', onClick: exportJSON }}>
-          Storage is {fmt(ratio * 100)}% of the ~5 MB quota — export a backup and consider clearing old chat.
+          Storage is {fmt(ratio * 100)}% of the ~5 MB quota — export a JSON backup, then clear the coach history or all data to free space.
         </Banner>
       )}
       {needsBackup && (
@@ -201,12 +205,12 @@ export default function DataSection({ now }: { now: number }) {
           Export CSV
         </Button>
       </div>
-      <Note className="text-hx-muted">JSON round-trips everything (days, settings, chat). CSV is one flat row per day for spreadsheets — meals are summarised, not itemised.</Note>
+      <Note className="text-hx-muted">JSON round-trips everything (days, settings, chat) except your API key, which never leaves this browser. CSV is one flat row per day for spreadsheets — meals are summarised, not itemised.</Note>
 
       <SubHeading>Import JSON</SubHeading>
       <div className="flex items-center gap-3">
         <SegmentedControl<ImportMode> ariaLabel="Import mode" size="sm" options={MODE_OPTIONS} value={mode} onChange={setMode} />
-        <span className="text-[12px] leading-4 text-hx-muted">{mode === 'merge' ? 'Keeps your data; file wins on overlap.' : 'Wipes everything, then loads the file.'}</span>
+        <span className="text-[12px] leading-4 text-hx-muted">{mode === 'merge' ? 'Keeps your data; file wins on overlap.' : 'Wipes days, settings and chat, then loads the file.'}</span>
       </div>
       <input ref={fileRef} type="file" accept=".json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={onFile} />
       <Button variant="secondary" fullWidth icon={<FileUp aria-hidden />} onClick={() => fileRef.current?.click()}>
@@ -254,7 +258,7 @@ export default function DataSection({ now }: { now: number }) {
           )}
         </div>
       )}
-      <Note className="text-hx-muted">Validates every month shard against the index (record count + checksum). Problems found on load are re-written automatically once the data is readable.</Note>
+      <Note className="text-hx-muted">Validates every month shard against the index (record count + checksum). Problems found on load are repaired on the next save: index entries for missing months are dropped, unreadable months are moved to <span className="font-mono">hx:corrupt:</span> keys, and this report refreshes.</Note>
 
       <SubHeading>Demo & reset</SubHeading>
       <Button variant="secondary" fullWidth icon={<Sparkles aria-hidden />} onClick={loadDemo} disabled={settings.demoLoaded}>

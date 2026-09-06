@@ -38,7 +38,7 @@ export default function SegmentedControl<T extends string = string>({ options, v
     (e.currentTarget.querySelector(`[data-value="${target.value}"]`) as HTMLElement | null)?.focus();
   };
 
-  const h = size === 'sm' ? 'h-9 text-[13px]' : 'h-11 text-[14px]';
+  const h = size === 'sm' ? 'h-11 text-[13px]' : 'h-11 text-[14px]';
 
   return (
     <div role="radiogroup" aria-label={ariaLabel} onKeyDown={onKey} className={`inline-flex p-1 rounded-xl bg-hx-card2 border border-hx-border ${className}`}>

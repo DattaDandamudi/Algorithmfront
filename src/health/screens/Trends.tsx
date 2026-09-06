@@ -34,10 +34,11 @@ const DEFAULT_RANGE: ChartRange = '30D';
 export default function Trends() {
   const [range, setRange] = useState<ChartRange>(DEFAULT_RANGE);
   const m = useTrendsModel(range);
-  const { openCoach, openLog, setTab } = useNav();
+  const { openCoach, openLog, openSettings } = useNav();
   const { ctx, settings, win } = m;
   const { profile, targets } = settings;
-  const openSettings = () => setTab('settings');
+  // The HRV / RHR empty states promise the WHOOP entry form, so deep-link to that Section (review R2-10).
+  const openWhoop = () => openSettings('whoop');
 
   return (
     <div className="flex flex-col">
@@ -56,11 +57,11 @@ export default function Trends() {
 
         <ExpenditureCard ctx={ctx} tdee={m.tdee} win={win} targets={targets} onLogWeight={() => openLog('weight')} onOpenCoach={openCoach} />
 
-        <HrvCard hrv={ctx.hrv} series={m.hrv} win={win} onOpenCoach={openCoach} onOpenSettings={openSettings} />
+        <HrvCard hrv={ctx.hrv} series={m.hrv} win={win} onOpenCoach={openCoach} onOpenSettings={openWhoop} />
 
-        <RhrCard rhr={ctx.rhr} series={m.rhr} win={win} onOpenSettings={openSettings} />
+        <RhrCard rhr={ctx.rhr} series={m.rhr} band={m.rhrBand} win={win} onOpenSettings={openWhoop} />
 
-        <SleepCard sleep={ctx.sleep} series={m.sleep} offsets={m.bedOffsets} win={win} bedTarget={profile.bedTarget} onLogBedtime={() => openLog('bedtime')} onOpenCoach={openCoach} />
+        <SleepCard sleep={ctx.sleep} series={m.sleep} consistency={m.bedSd} offsets={m.bedOffsets} win={win} bedTarget={profile.bedTarget} onLogBedtime={() => openLog('bedtime')} onOpenCoach={openCoach} />
 
         <StepsCard steps={ctx.steps} series={m.steps.series} stats={m.steps.stats} win={win} />
 

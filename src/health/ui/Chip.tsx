@@ -1,8 +1,10 @@
 /**
  * Chip — pill button (training verdict, coach quick prompts, filters).
  *
- * sm = 36 px, md = 44 px tall. `active` toggles a 15 % tone wash and sets
- * aria-pressed so toggles read correctly. Colour is a semantic Tone.
+ * Both sizes are 44 px tall (touch-target floor); `sm` only tightens the text
+ * and padding. `active` is purely visual (a 15 % tone wash); pass `pressed`
+ * on real toggles so aria-pressed is only announced where it is true (review
+ * R6-11: an action chip must not read as "pressed"). Colour is a semantic Tone.
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import type { Tone } from './bands';
@@ -10,6 +12,8 @@ import type { Tone } from './bands';
 export interface ChipProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'color'> {
   children: ReactNode;
   active?: boolean;
+  /** Set on genuine toggles only — drives aria-pressed. */
+  pressed?: boolean;
   color?: Tone;
   icon?: ReactNode;
   size?: 'sm' | 'md';
@@ -25,12 +29,12 @@ const ACTIVE: Record<Tone, string> = {
 
 const IDLE = 'bg-hx-card2 text-hx-text2 border-hx-border hover:text-hx-text hover:border-hx-neutral';
 
-export default function Chip({ children, active, color = 'neutral', icon, size = 'md', className = '', type = 'button', ...rest }: ChipProps) {
-  const h = size === 'sm' ? 'h-9 px-3 text-[13px] gap-1.5' : 'h-11 px-4 text-[14px] gap-2';
+export default function Chip({ children, active, pressed, color = 'neutral', icon, size = 'md', className = '', type = 'button', ...rest }: ChipProps) {
+  const h = size === 'sm' ? 'h-11 px-3 text-[13px] gap-1.5' : 'h-11 px-4 text-[14px] gap-2';
   return (
     <button
       type={type}
-      aria-pressed={active === undefined ? undefined : active}
+      aria-pressed={pressed === undefined ? undefined : pressed}
       className={`inline-flex items-center justify-center rounded-full border font-medium whitespace-nowrap select-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${h} ${
         active ? ACTIVE[color] : IDLE
       } ${className}`}

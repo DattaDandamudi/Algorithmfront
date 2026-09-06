@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { BloodMarker } from '../../data/types';
 import { retestReminders } from '../../engine/micronutrients';
-import { DAY_MS, daysSince, dueReminders, formatBytes, isLiftSession, markerTone, markerValueText, normalizeHHMM, relativeTime, slugKey } from './util';
+import { DEFAULT_BLOODWORK } from '../../data/defaults';
+import { DAY_MS, EXPORT_REMINDER_DAYS, backupOverdue, bloodworkAttention, daysSince, dueReminders, formatBytes, isLiftSession, markerTone, markerValueText, normalizeHHMM, relativeTime, slugKey } from './util';
 
 const NOW = Date.UTC(2026, 8, 6, 12, 0, 0);
 
@@ -65,6 +66,39 @@ describe('bloodwork helpers', () => {
     expect(due.map((r) => r.marker.key)).toEqual(['vitd', 'ferritin']);
     expect(due[0].overdue).toBe(true);
     expect(due[1].dueInDays).toBe(14);
+  });
+});
+
+describe('bloodworkAttention (R2-5)', () => {
+  const today = '2026-09-06';
+  it('asks for a test date on every undated low/elevated default marker instead of inventing one', () => {
+    const a = bloodworkAttention(DEFAULT_BLOODWORK, today);
+    expect(a.due).toEqual([]);
+    expect(a.undated.map((m) => m.key)).toEqual(['vitd', 'ferritin', 'omega3', 'lead']); // low-normal zinc / testosterone excluded
+    expect(DEFAULT_BLOODWORK.every((m) => m.note === undefined && m.testedOn === undefined && m.retestOn === undefined)).toBe(true);
+  });
+  it('moves a marker from undated to due once a date is entered', () => {
+    const dated = DEFAULT_BLOODWORK.map((m) => (m.key === 'vitd' ? { ...m, testedOn: '2026-05-01' } : m));
+    const a = bloodworkAttention(dated, today);
+    expect(a.due.map((r) => r.marker.key)).toEqual(['vitd']);
+    expect(a.due[0].overdue).toBe(true);
+    expect(a.undated.map((m) => m.key)).toEqual(['ferritin', 'omega3', 'lead']);
+    const planned = DEFAULT_BLOODWORK.map((m) => (m.key === 'lead' ? { ...m, retestOn: '2027-01-01' } : m));
+    expect(bloodworkAttention(planned, today).undated.map((m) => m.key)).not.toContain('lead');
+  });
+  it('is null-safe', () => {
+    expect(bloodworkAttention([], today)).toEqual({ due: [], undated: [] });
+    expect(bloodworkAttention(undefined as unknown as never, today)).toEqual({ due: [], undated: [] });
+  });
+});
+
+describe('backupOverdue (R2-6)', () => {
+  it('flags a missing or stale JSON export only when there is something to back up', () => {
+    expect(backupOverdue(undefined, 0, NOW)).toBe(false);
+    expect(backupOverdue(undefined, 12, NOW)).toBe(true);
+    expect(backupOverdue(NOW - (EXPORT_REMINDER_DAYS - 1) * DAY_MS, 12, NOW)).toBe(false);
+    expect(backupOverdue(NOW - EXPORT_REMINDER_DAYS * DAY_MS, 12, NOW)).toBe(true);
+    expect(backupOverdue(NOW - 40 * DAY_MS, 1, NOW)).toBe(true);
   });
 });
 

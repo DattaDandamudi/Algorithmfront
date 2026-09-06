@@ -16,9 +16,12 @@
  *   partial record for today: every field is filled, nothing throws, and no
  *   value is NaN (missing data is `null`, counts are 0).
  * - Body weight for g/kg and %BW math (§6.5 protein pacing, §6.1 rate band,
- *   hydration): the latest scale weight within the last 14 days, else the EWMA
- *   trend, else `profile.weightLb` — a stale weigh-in must not drive today's
- *   per-kg targets, but a missed fortnight shouldn't drop them to zero either.
+ *   hydration): the EWMA trend when one exists (§6.1 "trust the trend line,
+ *   never a single dot" — a 2 lb glycogen bump must not move the lb/wk band,
+ *   R3-12), else the latest scale weight within the last 14 days, else
+ *   `profile.weightLb`.
+ * - The calorie-adjustment suggestion only fires after the weekly rate has sat
+ *   outside the band for a full week of daily evaluations (R3-3).
  */
 import type {
   AppSettings,
@@ -50,7 +53,7 @@ import {
 } from './nutrition';
 import { RHR_BASELINE_DAYS, readiness } from './readiness';
 import { caffeineCheck, sleepSummary } from './sleep';
-import { tobaccoHrvComparison, tobaccoStats } from './tobacco';
+import { tobaccoHrvComparison, tobaccoInsightNumbers, tobaccoStats } from './tobacco';
 import {
   computeEwmaTrend,
   isWeight,
@@ -59,6 +62,7 @@ import {
   targetLbPerWeek,
   trendAt,
   weeklyRate,
+  weeksOutsideBand,
   weighInsInWeek,
 } from './weight';
 
@@ -66,7 +70,7 @@ import {
  * Bump when the shape or semantics of the built context change in a way the
  * coach prompt / cached insights would notice (e.g. a window length changes).
  */
-export const ENGINE_VERSION = '1';
+export const ENGINE_VERSION = '2';
 
 /** Baseline windows (§0 "vs your 30-day average"; §1 "RHR vs 28-day baseline"). */
 export const BASELINE_DAYS = 30;
@@ -139,10 +143,18 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
   const rate = weeklyRate(trendMap, today);
   const weeklyRateLb = rate ? rate.lbPerWk : null;
   const bodyWeightLb = referenceBodyWeight(latest, today, trend, profile.weightLb);
+  const weeksOutside = weeksOutsideBand(trendMap, today, bodyWeightLb, targets.weeklyRatePct);
 
   // --- Expenditure & calorie adjustment (§6.2) --------------------------------
   const exp = weeklyExpenditure(records, today, { alpha });
-  const rec2 = recommendIntake({ result: exp, currentKcal: targets.kcal, weeklyRateLb, bodyWeightLb, targets });
+  const rec2 = recommendIntake({
+    result: exp,
+    currentKcal: targets.kcal,
+    weeklyRateLb,
+    bodyWeightLb,
+    targets,
+    consecutiveWeeksOutside: weeksOutside,
+  });
   let expReason = exp.valid ? rec2.reason : exp.reason;
   if (!exp.valid && exp.smoothedTdee !== null) {
     // The type only carries one `tdee`, and it must be null when this week's
@@ -163,6 +175,8 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
   // --- Tobacco (§6.6) --------------------------------------------------------
   const tob = tobaccoStats(records, today);
   const tobCmp = tobaccoHrvComparison(records, today, BASELINE_DAYS);
+  // §7 #9 quotes the last 3 smoke-free mornings; the 30-day comparison stays for the coach.
+  const tobNums = tobaccoInsightNumbers(records, today);
 
   // --- Frequency counters (§3) & adherence (§3) --------------------------------
   const freq = frequencyCounters(records, today, FREQUENCY_DAYS);
@@ -183,6 +197,10 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       band: hrv.band,
       cv7: hrv.cv7,
       delta: hrvDelta,
+      baseline28: hrv.baselineMs,
+      baselineEstablished: hrv.baselineEstablished,
+      daysOfData: hrv.daysOfData,
+      overreaching: hrv.overreachingFlag,
     },
     rhr,
     sleep: {
@@ -195,7 +213,8 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       delta: baselineDelta(records, 'slh', today, BASELINE_DAYS),
     },
     steps: {
-      ...baselineDelta(records, 'st', today, BASELINE_DAYS, { includeToday: true }),
+      // Like every other tile: the previous 30 days, never today's partial count (R3-9).
+      ...baselineDelta(records, 'st', today, BASELINE_DAYS),
       goalMin: targets.stepsMin,
       goalMax: targets.stepsMax,
     },
@@ -207,6 +226,7 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       targetLbPerWk: targetLbPerWeek(bodyWeightLb, targets.weeklyRatePct),
       inBand: rateBand(weeklyRateLb, bodyWeightLb, targets.weeklyRatePct),
       weighInsThisWeek: weighInsInWeek(records, today),
+      weeksOutsideBand: weeksOutside,
     },
     expenditure: {
       tdee: exp.tdee,
@@ -238,6 +258,10 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       hydrationCups: finite(rec?.h2o) && rec.h2o > 0 ? rec.h2o : 0,
       hydrationTargetCups: water.cups,
       caffeineAfterCutoff: caffeine.afterCutoff,
+      lastMealBelowMin: pacing.lastMealBelowMin,
+      lastMealProtein: pacing.lastMealProtein,
+      minPerMeal: pacing.minPerMeal,
+      maxPerMeal: pacing.maxPerMeal,
     },
     tobacco: {
       today: tob.today,
@@ -246,6 +270,8 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       streakDays: tob.streakDays,
       hrvSmokeFree: tobCmp ? tobCmp.hrvSmokeFree : null,
       hrvSmoking: tobCmp ? tobCmp.hrvSmoking : null,
+      hrvFree3: tobNums.hrvFree,
+      hrvDelta3: tobNums.delta,
     },
     frequency: {
       redMeatServings7d: freq.redMeatServings,
@@ -267,10 +293,12 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
 }
 
 /**
- * Latest scale weight within `RECENT_WEIGHT_DAYS` of `today`, else the trend,
- * else the profile's reference weight. The spec persona default is the very
- * last resort so per-kg math stays finite even on a hand-edited import with a
- * blank profile weight (the store's `mergeSettings` normally guarantees it).
+ * The EWMA trend when one exists (R3-12 — checklist S6.1-05: the band is
+ * "recomputed from current trend weight"), else the latest scale weight within
+ * `RECENT_WEIGHT_DAYS` of `today`, else the profile's reference weight. The
+ * spec persona default is the very last resort so per-kg math stays finite
+ * even on a hand-edited import with a blank profile weight (the store's
+ * `mergeSettings` normally guarantees it).
  */
 function referenceBodyWeight(
   latest: { d: ISODate; w: number } | null,
@@ -278,8 +306,8 @@ function referenceBodyWeight(
   trend: number | null,
   profileLb: number,
 ): number {
-  if (latest && latest.d >= addDays(today, -(RECENT_WEIGHT_DAYS - 1))) return latest.w;
   if (trend !== null && isWeight(trend)) return trend;
+  if (latest && latest.d >= addDays(today, -(RECENT_WEIGHT_DAYS - 1))) return latest.w;
   if (isWeight(profileLb)) return profileLb;
   return DEFAULT_PROFILE.weightLb;
 }

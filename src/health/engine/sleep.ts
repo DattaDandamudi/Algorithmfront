@@ -7,8 +7,13 @@
  *   → ≈2 min at strain 4, 30 at 12, ≈58 at 21. A rest day barely moves need;
  *   an all-out day adds most of an hour.
  * - f(debt) pays debt back gradually (WHOOP never asks for it all in one
- *   night): debt/3, capped at 45 min per night.
- * - Debt itself accumulates over the last 14 nights, clamped to 0–300 min.
+ *   night): debt/3, capped at 45 min per night. It is a pay-back *ask* that
+ *   only appears in the displayed need — debt itself accrues against
+ *   baseline + f(strain) − naps, and sleep above that pays it down (R3-2).
+ *   Folding f(debt) into the accrual made debt compound by ×4/3 every night
+ *   a user slept exactly their baseline, so one short night reached the
+ *   300 min cap within a week.
+ * - Debt accumulates over the last 14 nights, clamped to 0–300 min.
  * - Consistency = rolling 7-night SD of bedtime and sleep midpoint on the
  *   "minutes since noon" axis (`minutesSinceNoon`) so 23:30 and 00:15 are 45
  *   minutes apart, not ~23 hours. The 30–60 min flag thresholds live with the
@@ -105,15 +110,21 @@ export function sleepNeed(input: SleepNeedInput): SleepNeed {
 
 interface SleepNight {
   d: ISODate;
+  /** Displayed need for the night: baseline + f(strain) + f(debt before it) − naps (or imported sln). */
   needHrs: number;
+  /** Need the debt accrued against: baseline + f(strain) − naps (or imported sln). */
+  accrualNeedHrs: number;
   sleptHrs: number;
   debtAfterMin: number;
 }
 
 /**
  * Walk the last 14 nights oldest → newest. Nights without `slh` are skipped
- * (debt carries, night not counted). need_t = record.sln when imported, else
- * sleepNeed(baseline, strain of D−1, debt so far, naps of D−1).
+ * (debt carries, night not counted). The accrual need is record.sln when
+ * imported (WHOOP's own figure is authoritative and usually arrives with a
+ * `dbt` that wins anyway), else baseline + f(strain of D−1) − naps of D−1 —
+ * never including f(debt), which is the pay-back ask (R3-2). The displayed
+ * need does include f(debt so far).
  */
 function walkDebt(byDate: Map<ISODate, DailyRecord>, asOf: ISODate, profile: Profile): { nights: SleepNight[]; debtMin: number } {
   const nights: SleepNight[] = [];
@@ -123,11 +134,12 @@ function walkDebt(byDate: Map<ISODate, DailyRecord>, asOf: ISODate, profile: Pro
     const slept = num(r?.slh);
     if (!r || slept === null || slept < 0) continue;
     const prev = byDate.get(addDays(d, -1));
-    const need =
-      num(r.sln) ??
-      sleepNeed({ baselineHrs: profile.sleepBaselineHrs, strain: prev?.strn, debtMin: debt, napMin: prev?.nap }).needHrs;
-    debt = clamp(debt + (need - slept) * 60, 0, SLEEP_DEBT_CAP_MIN);
-    nights.push({ d, needHrs: need, sleptHrs: slept, debtAfterMin: debt });
+    const imported = num(r.sln);
+    const base = { baselineHrs: profile.sleepBaselineHrs, strain: prev?.strn, napMin: prev?.nap };
+    const accrualNeed = imported ?? sleepNeed({ ...base, debtMin: 0 }).needHrs;
+    const need = imported ?? sleepNeed({ ...base, debtMin: debt }).needHrs;
+    debt = clamp(debt + (accrualNeed - slept) * 60, 0, SLEEP_DEBT_CAP_MIN);
+    nights.push({ d, needHrs: need, accrualNeedHrs: accrualNeed, sleptHrs: slept, debtAfterMin: debt });
   }
   return { nights, debtMin: debt };
 }

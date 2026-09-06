@@ -3,12 +3,15 @@
  *
  * Row 1: hours slept per night (dots, joined) against the need line —
  * imported `sln`, else need = baseline + f(strain) + f(debt) − naps — with
- * the 7-night mean as a hairline; readouts: last night vs need, debt in
- * minutes, the 7-night mean.
- * Row 2: consistency — the rolling 7-night SD of bedtime against the 30/60-min
- * thresholds (§6.4; Windred 2024: regularity predicts outcomes better than
- * duration) and a BarSeries of nightly bedtime offsets from the target
+ * the 7-night mean as a hairline and the 30-night personal range (mean ± SD)
+ * as the baseline band (§3, review R2-7); readouts: last night vs need, debt
+ * in minutes, the 7-night mean.
+ * Row 2: consistency — the rolling 7-night SD of bedtime plotted over the
+ * window with a 0–30 min "consistent" band and the 60-min flag line (§6.4;
+ * Windred 2024: regularity predicts outcomes better than duration; review
+ * R2-4), then a BarSeries of nightly bedtime offsets from the target
  * (+ minutes late / − early, on the noon-anchored axis so 00:20 vs 23:00 = +80).
+ * The SD readout waits for 3 nights, as its copy promises (R2-9).
  */
 import { Moon } from 'lucide-react';
 import type { CoachContext, HHMM } from '../../data/types';
@@ -19,12 +22,14 @@ import { Button, EmptyState } from '../../ui';
 import { BarSeries, TimeSeriesChart, type DatedValue } from '../../ui/charts';
 import { DeltaSub, Note, Readout, TrendCard } from './TrendCard';
 import {
+  BEDTIME_SD_MIN_NIGHTS,
   BEDTIME_SD_OK_MIN,
   BEDTIME_SD_WARN_MIN,
   BUCKET_LABEL,
   bedtimeSdTone,
   bucketDateFormat,
   toBars,
+  type BedtimeSdSeries,
   type RangeWindow,
   type SleepSeries,
 } from './series';
@@ -36,6 +41,8 @@ const SHORT_WARN_MIN = 60;
 export interface SleepCardProps {
   sleep: CoachContext['sleep'];
   series: SleepSeries;
+  /** Rolling 7-night bedtime SD over the window + today's value (null under 3 nights). */
+  consistency: BedtimeSdSeries;
   /** Nightly bedtime offset from the target in minutes (+ late / − early), bucketed like the range. */
   offsets: DatedValue[];
   win: RangeWindow;
@@ -44,7 +51,7 @@ export interface SleepCardProps {
   onOpenCoach: (prompt: string) => void;
 }
 
-export default function SleepCard({ sleep, series, offsets, win, bedTarget, onLogBedtime, onOpenCoach }: SleepCardProps) {
+export default function SleepCard({ sleep, series, consistency, offsets, win, bedTarget, onLogBedtime, onOpenCoach }: SleepCardProps) {
   const action = (
     <Button variant="ghost" size="sm" onClick={() => onOpenCoach(COACH_CHIPS[5])}>
       Ask the coach
@@ -73,15 +80,21 @@ export default function SleepCard({ sleep, series, offsets, win, bedTarget, onLo
   const deltaMin = sleep.hours !== null && sleep.need !== null ? Math.round((sleep.hours - sleep.need) * 60) : null;
   const vsNeedTone = deltaMin === null ? undefined : deltaMin >= -SHORT_OK_MIN ? 'green' : deltaMin >= -SHORT_WARN_MIN ? 'yellow' : 'red';
 
-  const sd = sleep.bedtimeSdMin;
+  // Same engine call as ctx.sleep.bedtimeSdMin, but held back until 3 nights so the copy below is true.
+  const sd = consistency.sdMin;
   const sdTone = bedtimeSdTone(sd);
   let sdText: string;
-  if (sd === null) sdText = 'Tap "Going to bed" nightly — consistency shows after 3 nights.';
+  if (sd === null)
+    sdText =
+      consistency.nights > 0
+        ? `${consistency.nights} of ${BEDTIME_SD_MIN_NIGHTS} nights logged this week — consistency shows after ${BEDTIME_SD_MIN_NIGHTS} nights.`
+        : `Tap "Going to bed" nightly — consistency shows after ${BEDTIME_SD_MIN_NIGHTS} nights.`;
   else if (sd < BEDTIME_SD_OK_MIN) sdText = `Tight — under ${BEDTIME_SD_OK_MIN} min. Keep it there.`;
   else if (sd <= BEDTIME_SD_WARN_MIN) sdText = `Drifting — ${BEDTIME_SD_OK_MIN}–${BEDTIME_SD_WARN_MIN} min. Aim for ${target} nightly.`;
   else sdText = `Over ${BEDTIME_SD_WARN_MIN} min — regularity is slipping; a fixed ${target} bedtime does more for recovery than extra hours.`;
 
   const hasOffsets = offsets.some((p) => p.value !== null);
+  const band = series.band;
   // 7-night mean vs the 30-day baseline (ctx.sleep.delta.baseline is the mean
   // of the 30 nights before today); more sleep is the good direction (§0).
   const base30 = sleep.delta.baseline;
@@ -90,9 +103,9 @@ export default function SleepCard({ sleep, series, offsets, win, bedTarget, onLo
   return (
     <TrendCard
       title="Sleep"
-      caption={`Hours vs need · 7-night mean · bedtime consistency · ${win.label}`}
+      caption={`Hours vs need · 30-night range · bedtime consistency · ${win.label}`}
       action={action}
-      meaning="Hours vs need is the debt you are building; the bedtime row is regularity — a steady bedtime predicts recovery better than total hours."
+      meaning="Hours vs need is the debt you are building and the shaded band is your usual range (30-night mean ± SD); the bedtime row is regularity — a steady bedtime predicts recovery better than total hours."
     >
       <div className="grid grid-cols-3 gap-3">
         <Readout
@@ -119,7 +132,8 @@ export default function SleepCard({ sleep, series, offsets, win, bedTarget, onLo
         data={series.hours}
         line={series.need}
         connectDots
-        reference={series.mean7 === null ? undefined : { value: series.mean7, label: '7-night mean' }}
+        targetBand={band ? { lo: band.lo, hi: band.hi, label: 'Your usual range' } : undefined}
+        reference={series.mean7 === null ? undefined : { value: series.mean7, label: band ? undefined : '7-night mean' }}
         unit="h"
         label="Slept"
         lineLabel="Need"
@@ -137,6 +151,19 @@ export default function SleepCard({ sleep, series, offsets, win, bedTarget, onLo
           )}
         </div>
         <Note tone={sdTone}>{sdText}</Note>
+        <TimeSeriesChart
+          ariaLabel={`Bedtime consistency, ${win.label}: rolling 7-night standard deviation of bedtime in minutes, with the under-${BEDTIME_SD_OK_MIN}-minute consistent band and the ${BEDTIME_SD_WARN_MIN}-minute flag line`}
+          range={win.range}
+          data={consistency.series}
+          connectDots
+          targetBand={{ lo: 0, hi: BEDTIME_SD_OK_MIN, label: 'consistent' }}
+          reference={{ value: BEDTIME_SD_WARN_MIN, label: `${BEDTIME_SD_WARN_MIN} min` }}
+          unit="min"
+          label="7-night SD"
+          height={140}
+          dateFormat={bucketDateFormat(win.bucket)}
+          emptyText={`Log ${BEDTIME_SD_MIN_NIGHTS}+ bedtimes in a week to see your consistency.`}
+        />
         <BarSeries
           ariaLabel={`Bedtime offset from the ${target} target, ${win.label}, in minutes (positive is late)`}
           data={toBars(offsets, win.range)}

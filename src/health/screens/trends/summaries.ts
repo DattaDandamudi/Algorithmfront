@@ -96,26 +96,40 @@ export interface TdeeSeries {
   points: DatedValue[];
   /** ▼ markers on the weeks whose estimate actually updated (valid blocks). */
   annotations: TimeSeriesAnnotation[];
-  /** The full engine result — current/last-calibrated TDEE, this week's gate counts, reasons. */
+  /**
+   * Today's engine result — the same evaluation as `ctx.expenditure` (default
+   * window), kept for the gate counts and the last-calibrated fallback.
+   */
   result: ExpenditureResult;
 }
 
 /**
- * `expenditureSeries` is a filter over `weeklyExpenditure(...).weeks`; we call
- * the latter directly so the invalid weeks (gaps) and the gate counts for the
- * annotations come from the same pass. `alpha` must be the store's EWMA α
- * (INTEGRATION_NOTES) so the chart matches the Today tile. At 1Y the 52 weekly
- * points sit ~5 px apart, so only the latest update keeps its ▼ marker (the
- * tooltip and hidden table still carry every week).
+ * Each point is the estimate *as the app displayed it* at that week's end:
+ * `weeklyExpenditure(records, end, { alpha })` with the engine's default
+ * window — the very call engine/context.ts makes for the Today tile and the
+ * coach. That guarantees (a) the last point equals `ctx.expenditure.tdee`
+ * exactly and (b) a point never changes value when the range toggle changes;
+ * the range only decides how many weeks are plotted (`win.tdeeWeeks`).
+ * Evaluating one long window per range instead would re-seed the smoothing
+ * EWMA from a range-dependent oldest week and drift every point — and the
+ * readout — away from the number shown on Today (review R2-1). `alpha` must
+ * be the store's EWMA α (INTEGRATION_NOTES). At 1Y the 52 weekly points sit
+ * ~5 px apart, so only the latest update keeps its ▼ marker (the tooltip and
+ * hidden table still carry every week).
  */
 export function tdeeSeries(records: DailyRecord[], win: RangeWindow, alpha: number): TdeeSeries {
-  const result = weeklyExpenditure(records, win.end, { alpha, weeks: win.tdeeWeeks });
+  const weeks = Math.max(1, Math.floor(win.tdeeWeeks));
   const points: DatedValue[] = [];
   let annotations: TimeSeriesAnnotation[] = [];
-  for (const wk of result.weeks) {
-    const ok = wk.valid && wk.smoothedTdee !== null;
-    points.push({ d: wk.end, value: ok ? wk.smoothedTdee : null });
-    if (ok) annotations.push({ d: wk.end, label: `Updated · ${wk.weighIns} weigh-ins, ${wk.intakeDays} intake days` });
+  // Today's evaluation (k = 0) doubles as `result`.
+  const result = weeklyExpenditure(records, win.end, { alpha });
+  for (let k = weeks - 1; k >= 0; k--) {
+    const end = addDays(win.end, -7 * k);
+    const r = k === 0 ? result : weeklyExpenditure(records, end, { alpha });
+    const cur = r.weeks[r.weeks.length - 1];
+    const ok = r.valid && r.tdee !== null;
+    points.push({ d: end, value: ok ? r.tdee : null });
+    if (ok) annotations.push({ d: end, label: `Updated · ${cur.weighIns} weigh-ins, ${cur.intakeDays} intake days` });
   }
   if (win.range === '1Y' && annotations.length > 1) annotations = annotations.slice(-1);
   return { points, annotations, result };

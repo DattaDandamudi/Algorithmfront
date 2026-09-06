@@ -2,8 +2,8 @@
  * Small pure helpers shared by the Settings sections. Kept free of React so
  * they can be unit-tested and reused by the Data / WHOOP / Bloodwork panels.
  */
-import type { BloodMarker, MarkerStatus, SessionType } from '../../data/types';
-import type { RetestReminder } from '../../engine/micronutrients';
+import type { BloodMarker, ISODate, MarkerStatus, SessionType } from '../../data/types';
+import { retestReminders, type RetestReminder } from '../../engine/micronutrients';
 import type { Tone } from '../../ui';
 
 export const DAY_MS = 86_400_000;
@@ -38,6 +38,18 @@ export function daysSince(ts: number | undefined, now: number): number | null {
   return Math.floor(Math.max(0, now - ts) / DAY_MS);
 }
 
+/**
+ * SPEC §10 "prompt periodic JSON export": true when there is something to
+ * back up and the last JSON export is missing or older than
+ * EXPORT_REMINDER_DAYS. Shared by the Data card's banner and the Settings
+ * screen's "open the Data card" condition (review R2-6) so they can't drift.
+ */
+export function backupOverdue(lastExportAt: number | undefined, recordCount: number, now: number): boolean {
+  if (recordCount <= 0) return false;
+  const since = daysSince(lastExportAt, now);
+  return since === null || since >= EXPORT_REMINDER_DAYS;
+}
+
 /** Bloodwork status → semantic tone: low/high/elevated red, low-normal yellow, normal green. */
 export function markerTone(status: MarkerStatus): Tone {
   switch (status) {
@@ -58,6 +70,31 @@ export function dueReminders(reminders: RetestReminder[]): RetestReminder[] {
   return reminders
     .filter((r) => r.dueInDays !== null && r.dueInDays <= REMIND_WITHIN_DAYS)
     .sort((a, b) => (a.dueInDays as number) - (b.dueInDays as number));
+}
+
+/** Statuses that warrant a retest (mirrors engine/micronutrients NEEDS_RETEST). */
+const RETEST_STATUSES: ReadonlySet<MarkerStatus> = new Set(['low', 'elevated', 'high']);
+
+export interface BloodworkAttention {
+  /** Retests due within REMIND_WITHIN_DAYS (overdue first). */
+  due: RetestReminder[];
+  /** Low / elevated markers with neither a test date nor a planned retest — no reminder can be scheduled yet. */
+  undated: BloodMarker[];
+}
+
+/**
+ * Everything the Bloodwork card (and a Today banner) should flag: retests
+ * that are due, plus flagged markers that cannot be scheduled because the
+ * user has not entered a test date. The app never invents a lab date
+ * (review R2-5) — it asks for one instead, so reminders are visible from a
+ * fresh install. Pure: `today` is the caller's clock.
+ */
+export function bloodworkAttention(bloodwork: BloodMarker[], today: ISODate): BloodworkAttention {
+  const markers = Array.isArray(bloodwork) ? bloodwork : [];
+  return {
+    due: dueReminders(retestReminders(markers, today)),
+    undated: markers.filter((m) => RETEST_STATUSES.has(m.status) && !m.testedOn && !m.retestOn),
+  };
 }
 
 export const MARKER_STATUS_OPTIONS: Array<{ value: MarkerStatus; label: string }> = [

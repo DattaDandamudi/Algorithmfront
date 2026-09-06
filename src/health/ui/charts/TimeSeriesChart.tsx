@@ -178,7 +178,13 @@ export default function TimeSeriesChart({
   const plotH = Math.max(24, height - top - bottom);
   const xs = xPositions(n, left, left + plotW);
   const y = scaleLinear(domain, [top + plotH, top]);
-  const dense = n > 1 && plotW / (n - 1) < 6;
+  const pitch = n > 1 ? plotW / (n - 1) : plotW;
+  const dense = n > 1 && pitch < 6;
+  // Between 6 and 12 px per point an 8 px dot + 2 px ring (12 px footprint) overlaps its neighbour;
+  // draw 5 px dots with a 1 px ring instead so daily scale readings stay individually visible (review R6-16).
+  const smallDots = !dense && pitch < 12;
+  const dotR = smallDots ? 2.5 : 4;
+  const dotRing = smallDots ? 2 : 4;
 
   const toPts = (vals: Array<number | null>): Pt[] => vals.map((v, i) => ({ x: xs[i], y: v === null ? null : y(v) }));
   const linePath = line ? buildPath(toPts(lineVals)) : '';
@@ -322,7 +328,7 @@ export default function TimeSeriesChart({
         {drawDots
           ? values.map((v, i) =>
               v === null ? null : (
-                <circle key={i} cx={px(xs[i])} cy={px(y(v))} r={4} fill={dotColor ?? color} stroke={TOKEN.card} strokeWidth={4} style={{ paintOrder: 'stroke' }} />
+                <circle key={i} cx={px(xs[i])} cy={px(y(v))} r={dotR} fill={dotColor ?? color} stroke={TOKEN.card} strokeWidth={dotRing} style={{ paintOrder: 'stroke' }} />
               ),
             )
           : null}

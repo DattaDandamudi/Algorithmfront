@@ -10,12 +10,19 @@
  * components are module-level, so inputs never remount while typing.
  *
  * The Data card opens by default when the durability layer has something to
- * say (quota warning, failed write, integrity problems) — that is where the
- * Today header's "Open Settings" banner sends the user.
+ * say (quota warning, failed write, integrity problems, or a JSON backup
+ * older than 14 days — §10 "prompt periodic export", review R2-6) — that is
+ * where the Today header's "Open Settings" banner sends the user.
+ *
+ * Deep links: `nav.openSettings(section)` (Trends' "Open Settings" → WHOOP,
+ * the coach status pill → Coach & AI) is consumed once here and handed to the
+ * matching <Section> as a nonce so it expands and scrolls into view (R2-10).
  */
+import { useEffect, useState } from 'react';
 import { Bot, Database, Dumbbell, FlaskConical, Info, Target, User, Utensils, Watch } from 'lucide-react';
 import { useHealth, useRecords, useNow } from '../data/store';
 import { toISODate } from '../lib/dates';
+import { useNav, type SettingsSection } from '../nav';
 import AboutSection from './settings/AboutSection';
 import BloodworkSection from './settings/BloodworkSection';
 import CoachSection from './settings/CoachSection';
@@ -28,17 +35,31 @@ import TargetsSection from './settings/TargetsSection';
 import WhoopSection from './settings/WhoopSection';
 import { aboutCaption, bloodworkCaption, coachCaption, dataCaption, foodCaption, profileCaption, splitCaption, targetsCaption, whoopCaption } from './settings/captions';
 import { Section } from './settings/fields';
+import { backupOverdue } from './settings/util';
 
 export default function Settings() {
   const { state } = useHealth();
   const records = useRecords();
   const nowDate = useNow();
+  const { settingsSection, consumeSettingsSection } = useNav();
+  const [focus, setFocus] = useState<{ section: SettingsSection; nonce: number } | null>(null);
+  useEffect(() => {
+    if (!settingsSection) return;
+    setFocus((f) => ({ section: settingsSection, nonce: (f?.nonce ?? 0) + 1 }));
+    consumeSettingsSection();
+  }, [settingsSection, consumeSettingsSection]);
+  const signal = (section: SettingsSection) => (focus?.section === section ? focus.nonce : undefined);
   // Minute-resolution clock (useNow ticks once a minute): relative times and "today" need nothing finer.
   const now = nowDate.getTime();
   const today = toISODate(nowDate);
   const { settings, storage } = state;
 
-  const storageNeedsAttention = !storage.available || !!storage.lastError || storage.quotaWarning || (storage.integrity?.problems.length ?? 0) > 0;
+  const storageNeedsAttention =
+    !storage.available ||
+    !!storage.lastError ||
+    storage.quotaWarning ||
+    (storage.integrity?.problems.length ?? 0) > 0 ||
+    backupOverdue(settings.lastExportAt, records.length, now);
 
   return (
     <ConfirmProvider>
@@ -49,39 +70,39 @@ export default function Settings() {
         </header>
 
         <div className="px-4 pt-1 pb-5 flex flex-col gap-3">
-          <Section id="hx-set-profile" title="Profile & goals" icon={<User aria-hidden />} caption={profileCaption(settings)} defaultOpen>
+          <Section id="hx-set-profile" title="Profile & goals" icon={<User aria-hidden />} caption={profileCaption(settings)} defaultOpen openSignal={signal('profile')}>
             <ProfileSection />
           </Section>
 
-          <Section id="hx-set-targets" title="Targets" icon={<Target aria-hidden />} caption={targetsCaption(settings)}>
+          <Section id="hx-set-targets" title="Targets" icon={<Target aria-hidden />} caption={targetsCaption(settings)} openSignal={signal('targets')}>
             <TargetsSection />
           </Section>
 
-          <Section id="hx-set-split" title="Training split" icon={<Dumbbell aria-hidden />} caption={splitCaption(settings)}>
+          <Section id="hx-set-split" title="Training split" icon={<Dumbbell aria-hidden />} caption={splitCaption(settings)} openSignal={signal('split')}>
             <SplitSection />
           </Section>
 
-          <Section id="hx-set-bloodwork" title="Bloodwork" icon={<FlaskConical aria-hidden />} caption={bloodworkCaption(settings, today)}>
+          <Section id="hx-set-bloodwork" title="Bloodwork" icon={<FlaskConical aria-hidden />} caption={bloodworkCaption(settings, today)} openSignal={signal('bloodwork')}>
             <BloodworkSection today={today} />
           </Section>
 
-          <Section id="hx-set-food" title="Food preferences" icon={<Utensils aria-hidden />} caption={foodCaption(settings)}>
+          <Section id="hx-set-food" title="Food preferences" icon={<Utensils aria-hidden />} caption={foodCaption(settings)} openSignal={signal('food')}>
             <FoodSection />
           </Section>
 
-          <Section id="hx-set-whoop" title="WHOOP" icon={<Watch aria-hidden />} caption={whoopCaption(settings, now)}>
+          <Section id="hx-set-whoop" title="WHOOP" icon={<Watch aria-hidden />} caption={whoopCaption(settings, now)} openSignal={signal('whoop')}>
             <WhoopSection today={today} now={now} />
           </Section>
 
-          <Section id="hx-set-coach" title="Coach & AI" icon={<Bot aria-hidden />} caption={coachCaption(settings)}>
+          <Section id="hx-set-coach" title="Coach & AI" icon={<Bot aria-hidden />} caption={coachCaption(settings)} openSignal={signal('coach')}>
             <CoachSection />
           </Section>
 
-          <Section id="hx-set-data" title="Data" icon={<Database aria-hidden />} caption={dataCaption(storage, records, now)} defaultOpen={storageNeedsAttention}>
+          <Section id="hx-set-data" title="Data" icon={<Database aria-hidden />} caption={dataCaption(storage, records, now)} defaultOpen={storageNeedsAttention} openSignal={signal('data')}>
             <DataSection now={now} />
           </Section>
 
-          <Section id="hx-set-about" title="About" icon={<Info aria-hidden />} caption={aboutCaption()}>
+          <Section id="hx-set-about" title="About" icon={<Info aria-hidden />} caption={aboutCaption()} openSignal={signal('about')}>
             <AboutSection />
           </Section>
         </div>

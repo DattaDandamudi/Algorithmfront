@@ -61,7 +61,7 @@ export default function FoodSection() {
       <Field label="Cuisine priors" hint="Tells the food estimator which dishes to assume first (e.g. “kebab” → seekh, not doner) and which portion sizes are typical.">
         <div className="flex flex-wrap gap-2">
           {CUISINE_OPTIONS.map((c) => (
-            <Chip key={c.value} size="sm" color="blue" active={p.cuisines.includes(c.value)} onClick={() => toggleCuisine(c.value)}>
+            <Chip key={c.value} size="sm" color="blue" active={p.cuisines.includes(c.value)} pressed={p.cuisines.includes(c.value)} onClick={() => toggleCuisine(c.value)}>
               {c.label}
             </Chip>
           ))}

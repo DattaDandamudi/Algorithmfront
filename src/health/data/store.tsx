@@ -9,6 +9,19 @@
  *       whenever any scale weight or the alpha changes)
  * - Records are immutable; unchanged records keep their object identity so the
  *   dirty-shard diff is a cheap reference comparison.
+ * - Durability (SPEC §10):
+ *     • a failed write (quota) stays pending: the writer retries with back-off
+ *       and flush()/hide/unload try again; dirty months are never dropped.
+ *     • flush-on-hide listeners live in an effect so a StrictMode remount
+ *       re-attaches them; the unmount cleanup flushes first.
+ *     • multi-tab: a `storage` event for an hx:* key reloads that month /
+ *       settings / chat from storage when this tab has no pending edits for it.
+ *       If it does, ours are kept and written next — **last writer wins per
+ *       month** (per-day merging is not attempted). The index is re-read from
+ *       storage before every write so two tabs never diverge on it.
+ *     • load-time problems are healed on the first save: index entries for
+ *       missing shards are pruned, unreadable shards are moved to
+ *       hx:corrupt:YYYY-MM, and the integrity report is refreshed afterwards.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
@@ -28,20 +41,28 @@ import type {
   StorageStatus,
   Targets,
 } from './types';
-import { SCHEMA_VERSION } from './types';
 import { mergeSettings } from './defaults';
 import {
   CHAT_CAP,
+  KEYS,
   QUOTA_BYTES,
   QUOTA_WARN_RATIO,
   StorageWriteError,
+  attachFlushListeners,
   checkIntegrity as checkIntegrityStorage,
   clearAllStorage,
   createDebouncedWriter,
+  discoverShardMonths,
   estimateBytesUsed,
   loadAll,
+  pruneIndex,
+  readChat,
   readIndex,
+  readSettings,
+  readShard,
+  shardMonthFromKey,
   writeChat,
+  writeIndex,
   writeSettings,
   writeShard,
   type ShardIndex,
@@ -135,7 +156,40 @@ function changedMonths(prev: Days, next: Days): Set<string> {
   return months;
 }
 
-function initialState(): { state: HealthState; index: ShardIndex } {
+/**
+ * R4-2 / R4-6: the API key and proxy URL never travel in export files, so an
+ * import must not wipe the ones stored in this browser — unless the file
+ * explicitly carries its own (older exports did).
+ */
+function withLocalSecrets(incoming: AppSettings, current: AppSettings): AppSettings {
+  const ai = compact({ ...incoming.ai, apiKey: incoming.ai.apiKey ?? current.ai.apiKey, proxyUrl: incoming.ai.proxyUrl ?? current.ai.proxyUrl });
+  return { ...incoming, ai };
+}
+
+/** R4-6 merge: keep every local message, append file messages whose id is new, keep chronological order. */
+function mergeChatById(current: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const seen = new Set(current.map((m) => m.id));
+  const added: ChatMessage[] = [];
+  for (const m of incoming) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    added.push(m);
+  }
+  if (!added.length) return current;
+  return [...current, ...added].sort((a, b) => a.ts - b.ts);
+}
+
+interface Dirty {
+  months: Set<string>;
+  settings: boolean;
+  chat: boolean;
+  /** Write the (pruned) index even when no month changed — used by the heal. */
+  index: boolean;
+}
+
+const freshDirty = (): Dirty => ({ months: new Set(), settings: false, chat: false, index: false });
+
+function initialState(): { state: HealthState; index: ShardIndex; corruptMonths: string[] } {
   const loaded = loadAll();
   const settings = mergeSettings(loaded.settings);
   const days = applyTrend(loaded.days, settings.targets.ewmaAlpha);
@@ -148,8 +202,13 @@ function initialState(): { state: HealthState; index: ShardIndex } {
     integrity: loaded.integrity,
     lastError: loaded.available ? undefined : 'localStorage is unavailable — data will not persist in this browser.',
   };
-  const index = readIndex() ?? { version: SCHEMA_VERSION, shards: {}, updatedAt: 0 };
-  return { state: { ready: true, settings, days, chat: loaded.chat.slice(-CHAT_CAP), storage }, index };
+  return { state: { ready: true, settings, days, chat: loaded.chat.slice(-CHAT_CAP), storage }, index: loaded.index, corruptMonths: loaded.corruptMonths };
+}
+
+interface ReloadScope {
+  months?: string[] | 'all';
+  settings?: boolean;
+  chat?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,24 +221,41 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const indexRef = useRef<ShardIndex>(initial.index);
-  const dirty = useRef({ months: new Set<string>(), settings: false, chat: false });
+  const dirty = useRef<Dirty>(freshDirty());
+  const healPending = useRef(false);
 
-  const persist = useCallback(() => {
+  /** Write everything dirty. Returns false when any write failed (the writer then keeps it pending and retries). */
+  const persist = useCallback((): boolean => {
     const s = stateRef.current;
     const d = dirty.current;
-    if (!d.months.size && !d.settings && !d.chat) return;
+    if (!d.months.size && !d.settings && !d.chat && !d.index) return true;
     if (!s.storage.available) {
       d.months.clear();
       d.settings = false;
       d.chat = false;
-      return;
+      d.index = false;
+      return true;
     }
     let lastError: string | undefined;
     const records = Object.values(s.days);
+    // R4-1: start from the index as storage has it *now* (another tab may have
+    // written months since our last write) so a stale in-memory copy can never
+    // resurrect or drop entries; R4-5: entries without a shard are pruned.
+    let index = pruneIndex(readIndex() ?? indexRef.current);
+    let wroteMonth = false;
     try {
       for (const ym of Array.from(d.months)) {
-        indexRef.current = writeShard(ym, records, indexRef.current);
+        index = writeShard(ym, records, index);
+        indexRef.current = index;
         d.months.delete(ym);
+        wroteMonth = true;
+      }
+      if (d.index) {
+        if (!wroteMonth) {
+          writeIndex(index);
+          indexRef.current = index;
+        }
+        d.index = false;
       }
       if (d.settings) {
         writeSettings(s.settings);
@@ -193,6 +269,12 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
       lastError = e instanceof StorageWriteError ? e.message : e instanceof Error ? e.message : 'Write failed';
     }
     const bytes = estimateBytesUsed();
+    // R4-5: once the heal write has landed, re-validate so the warning clears (or lists what is still wrong).
+    let integrity: IntegrityReport | undefined;
+    if (!lastError && healPending.current) {
+      healPending.current = false;
+      integrity = checkIntegrityStorage();
+    }
     setState((prev) => ({
       ...prev,
       storage: {
@@ -202,20 +284,115 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
         quotaWarning: bytes > QUOTA_BYTES * QUOTA_WARN_RATIO,
         lastError,
         lastSavedAt: lastError ? prev.storage.lastSavedAt : Date.now(),
+        integrity: integrity ?? prev.storage.integrity,
       },
     }));
+    return !lastError;
   }, []);
 
-  const writer = useMemo(() => createDebouncedWriter(persist, 500, 2000), [persist]);
-  useEffect(() => () => writer.cancel(), [writer]);
+  // R4-4: the writer attaches no listeners of its own; they live in the effect
+  // below so StrictMode's simulated unmount/remount re-attaches them, and a real
+  // unmount flushes before detaching. The writer is never cancel()led — pending
+  // work must survive until it is written.
+  const writer = useMemo(() => createDebouncedWriter(persist, 500, 2000, { listeners: false }), [persist]);
+  useEffect(() => {
+    const detach = attachFlushListeners(() => writer.flush());
+    return () => {
+      writer.flush();
+      detach();
+    };
+  }, [writer]);
 
-  // Self-heal: when the load found index/checksum problems but the data itself
-  // was readable, rewrite every month shard + the index once so they agree.
+  /**
+   * R4-1: pull months / settings / chat back in from storage after another tab
+   * wrote them. Anything this tab has pending edits for is left alone (last
+   * writer wins per month). The trend is re-derived in memory only: a reload
+   * must never mark anything dirty, or two tabs could ping-pong a month.
+   */
+  const reloadFromStorage = useCallback((scope: ReloadScope) => {
+    setState((prev) => {
+      const d = dirty.current;
+      let days = prev.days;
+      let settings = prev.settings;
+      let chat = prev.chat;
+      if (scope.months) {
+        const wanted = scope.months === 'all' ? Array.from(new Set([...Object.keys(prev.days).map(yearMonthOf), ...discoverShardMonths()])) : scope.months;
+        const months = wanted.filter((ym) => !d.months.has(ym));
+        if (months.length) {
+          const drop = new Set(months);
+          const next: Days = {};
+          for (const k of Object.keys(prev.days)) if (!drop.has(yearMonthOf(k))) next[k] = prev.days[k];
+          for (const ym of months) {
+            const { shard } = readShard(ym);
+            if (!shard) continue;
+            for (const rec of Object.values(shard.days)) {
+              if (rec && typeof rec === 'object' && typeof rec.d === 'string') next[rec.d] = rec;
+            }
+          }
+          days = next;
+        }
+      }
+      if (scope.settings && !d.settings) settings = mergeSettings(readSettings());
+      if (scope.chat && !d.chat) chat = readChat().slice(-CHAT_CAP);
+      if (days === prev.days && settings === prev.settings && chat === prev.chat) return prev;
+      days = applyTrend(days, settings.targets.ewmaAlpha);
+      const bytes = estimateBytesUsed();
+      return { ...prev, days, settings, chat, storage: { ...prev.storage, bytesUsed: bytes, quotaWarning: bytes > QUOTA_BYTES * QUOTA_WARN_RATIO } };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let area: Storage | null = null;
+    try {
+      area = window.localStorage;
+    } catch {
+      area = null;
+    }
+    const onStorage = (e: StorageEvent) => {
+      // sessionStorage fires the same event name; only react to this origin's localStorage.
+      if (e.storageArea && area && e.storageArea !== area) return;
+      const key = e.key;
+      if (key === null) {
+        // storage.clear() in another tab.
+        reloadFromStorage({ months: 'all', settings: true, chat: true });
+        return;
+      }
+      if (!key.startsWith(KEYS.prefix)) return;
+      if (key === KEYS.index) {
+        indexRef.current = readIndex() ?? indexRef.current;
+        return;
+      }
+      if (key === KEYS.settings) {
+        reloadFromStorage({ settings: true });
+        return;
+      }
+      if (key === KEYS.chat) {
+        reloadFromStorage({ chat: true });
+        return;
+      }
+      const ym = shardMonthFromKey(key);
+      if (ym) reloadFromStorage({ months: [ym] });
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [reloadFromStorage]);
+
+  // Self-heal (R4-5): when the load found problems, rewrite every month shard
+  // we hold, empty out unreadable months (their raw text is kept under
+  // hx:corrupt:YYYY-MM by writeShard), rewrite settings/chat/index once, and
+  // refresh the integrity report after the write lands.
   useEffect(() => {
     const s = stateRef.current;
     if (!s.storage.available || !s.storage.integrity?.problems.length) return;
-    for (const d of Object.keys(s.days)) dirty.current.months.add(yearMonthOf(d));
-    if (dirty.current.months.size) writer.schedule();
+    const d = dirty.current;
+    for (const day of Object.keys(s.days)) d.months.add(yearMonthOf(day));
+    for (const ym of initial.corruptMonths) d.months.add(ym);
+    d.settings = true;
+    d.chat = true;
+    d.index = true;
+    healPending.current = true;
+    writer.schedule();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -368,6 +545,8 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
       importJSON: (json, mode): ImportResult => {
         const parsed = parseImport(json);
         if (!parsed.ok) return { ok: false, recordsImported: 0, settingsImported: false, chatImported: false, errors: parsed.errors };
+        const fileSettings = parsed.settings;
+        const fileChat = parsed.chat;
         mutateDays((days) => {
           if (mode === 'replace') {
             // Months that vanish are detected by the shard diff and deleted on write.
@@ -379,13 +558,22 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
           for (const r of parsed.days) next[r.d] = { ...(next[r.d] ?? {}), ...r, d: r.d };
           return next;
         });
-        if (parsed.settings) mutateSettings(() => parsed.settings as AppSettings);
-        if (parsed.chat) mutateChat(() => parsed.chat as ChatMessage[]);
+        if (mode === 'replace') {
+          // R4-6: replace really replaces. Without a settings block the file
+          // resets settings to defaults — keeping the local API key / proxy and
+          // the onboarded flag (the user is clearly past onboarding) — and
+          // without a chat block the coach history is cleared.
+          mutateSettings((cur) => withLocalSecrets(fileSettings ?? { ...mergeSettings(null), onboarded: cur.onboarded }, cur));
+          mutateChat((cur) => (fileChat ? fileChat : cur.length ? [] : cur));
+        } else {
+          if (fileSettings) mutateSettings((cur) => withLocalSecrets(fileSettings, cur));
+          if (fileChat?.length) mutateChat((cur) => mergeChatById(cur, fileChat));
+        }
         return {
           ok: true,
           recordsImported: parsed.days.length,
-          settingsImported: !!parsed.settings,
-          chatImported: !!parsed.chat,
+          settingsImported: !!fileSettings,
+          chatImported: !!fileChat,
           errors: parsed.errors,
         };
       },
@@ -406,13 +594,13 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
         mutateSettings((st) => ({ ...st, demoLoaded: true, onboarded: true, whoop: { ...st.whoop, connected: true, source: 'manual', lastImportAt: Date.now() } }));
       },
       clearAllData: () => {
-        // Don't cancel the writer: that would also detach the flush-on-hide
-        // listeners for the rest of the session. A pending timer is harmless
-        // (persist() no-ops when nothing is dirty).
+        // The writer is left alone: a pending timer is harmless (persist()
+        // no-ops when nothing is dirty) and the flush listeners stay attached.
         clearAllStorage();
-        indexRef.current = { version: SCHEMA_VERSION, shards: {}, updatedAt: 0 };
-        dirty.current = { months: new Set(), settings: false, chat: false };
+        dirty.current = freshDirty();
+        healPending.current = false;
         const fresh = initialState();
+        indexRef.current = fresh.index;
         setState(fresh.state);
       },
       flush: () => writer.flush(),

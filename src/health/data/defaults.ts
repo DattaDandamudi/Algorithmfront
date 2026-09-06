@@ -12,13 +12,21 @@ export const DEFAULT_SPLIT: TrainingSplit = {
   6: 'rest',
 };
 
+/**
+ * The spec persona's labs (§6.7). `note` is deliberately absent: it is the
+ * USER's field ("what your doctor said, dose agreed…"), and the general
+ * ranges / doctor cue are rendered from engine/micronutrients.markerGuidance,
+ * so shipping app-authored dosing text here would present it as the user's
+ * own note (review R2-11). No test date is invented either — the Bloodwork
+ * section asks for it so a retest can be scheduled.
+ */
 export const DEFAULT_BLOODWORK: BloodMarker[] = [
-  { key: 'vitd', label: 'Vitamin D (25-OH)', value: 19, unit: 'ng/mL', status: 'low', note: 'General range for 12–20 ng/mL: 800–2,000 IU/day; retest ~3 months. Confirm dosing with your doctor.' },
-  { key: 'ferritin', label: 'Ferritin', value: 23, unit: 'ng/mL', status: 'low', note: 'Low iron stores — review iron status and retest. Confirm with your doctor before supplementing.' },
-  { key: 'omega3', label: 'Omega-3 index', value: 3.0, unit: '%', status: 'low', note: 'General target ~8%. More oily fish (2–3×/wk) or EPA+DHA. Confirm with your doctor.' },
-  { key: 'zinc', label: 'Zinc', value: 0, unit: '', status: 'low-normal', note: 'Low-normal. Red meat, seafood, legumes; confirm any supplement with your doctor.' },
-  { key: 'testosterone', label: 'Testosterone (total)', value: 382, unit: 'ng/dL', status: 'low-normal', note: 'Low-normal. Sleep ≥7 h, keep fat ≥60 g/day, resistance training. Discuss with your doctor.' },
-  { key: 'lead', label: 'Lead (blood)', value: 4.3, unit: 'µg/dL', status: 'elevated', note: 'Elevated — this needs physician follow-up, not app management.' },
+  { key: 'vitd', label: 'Vitamin D (25-OH)', value: 19, unit: 'ng/mL', status: 'low' },
+  { key: 'ferritin', label: 'Ferritin', value: 23, unit: 'ng/mL', status: 'low' },
+  { key: 'omega3', label: 'Omega-3 index', value: 3.0, unit: '%', status: 'low' },
+  { key: 'zinc', label: 'Zinc', value: 0, unit: '', status: 'low-normal' },
+  { key: 'testosterone', label: 'Testosterone (total)', value: 382, unit: 'ng/dL', status: 'low-normal' },
+  { key: 'lead', label: 'Lead (blood)', value: 4.3, unit: 'µg/dL', status: 'elevated' },
 ];
 
 export const DEFAULT_PROFILE: Profile = {
