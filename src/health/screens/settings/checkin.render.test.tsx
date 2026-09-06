@@ -4,8 +4,8 @@
  *
  * What matters here is that the prompt is genuinely optional, that turning
  * items off can never leave an empty prompt, and that the two longer
- * instruments say plainly they are not collected yet rather than implying an
- * answer is being stored.
+ * instruments describe what they actually collect, since both are now live in
+ * Log and stale "not collected yet" copy would be worse than no copy.
  */
 import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -88,14 +88,16 @@ describe('CheckInSection (settings)', () => {
     expect((screen.getByLabelText('Ask from') as HTMLInputElement).value).toBe('09:30');
   });
 
-  it('offers the weekly and monthly instruments and says they are not collected yet', async () => {
+  it('offers the weekly and monthly instruments, off by default, and describes what each collects', async () => {
     mount(<CheckInSection />);
     const srss = screen.getByRole('switch', { name: 'Weekly recovery & stress (SRSS)' });
     const pss = screen.getByRole('switch', { name: 'Monthly perceived stress (PSS-4)' });
     expect(srss.getAttribute('aria-checked')).toBe('false');
     expect(pss.getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByText(/Eight items, Sundays. Not collectable yet/)).toBeTruthy();
+    expect(screen.getByText(/Eight items on Sundays/)).toBeTruthy();
     expect(screen.getByText(/Four items, once a month/)).toBeTruthy();
+    // Both instruments are live, so the copy must not still claim otherwise.
+    expect(document.body.textContent).not.toMatch(/not collectable|placeholder|nothing is stored/i);
     await click(srss);
     expect(screen.getByRole('switch', { name: 'Weekly recovery & stress (SRSS)' }).getAttribute('aria-checked')).toBe('true');
   });

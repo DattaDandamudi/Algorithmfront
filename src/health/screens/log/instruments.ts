@@ -242,14 +242,17 @@ export function pss4Values(answers: PssAnswers): CheckInWrite {
   return total === null ? {} : { pss4: total };
 }
 
-/** The reading under the total — a description of the month, not a finding. */
+/** How the total reads — a description of the month, never a finding. */
+export function pss4Reading(total: number): string {
+  return total >= PSS_OVERLOAD_AT
+    ? 'around 10 or above, which suggests you are feeling overloaded'
+    : 'below the 10 or so where the month starts to read as overloaded';
+}
+
+/** The status line under the four items: the count, then the scored total. */
 export function pss4Line(total: number | null, answered: number): string {
   if (total === null) return `${answered} of 4 answered — the PSS-4 total needs all four.`;
-  const reading =
-    total >= PSS_OVERLOAD_AT
-      ? 'around 10 or above, which suggests you are feeling overloaded'
-      : 'below the 10 or so where the month starts to read as overloaded';
-  return `PSS-4 ${total} of ${PSS_MAX} — ${reading}.`;
+  return `PSS-4 ${total} of ${PSS_MAX} — ${pss4Reading(total)}.`;
 }
 
 // ---------------------------------------------------------------------------

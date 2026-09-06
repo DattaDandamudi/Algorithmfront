@@ -37,7 +37,7 @@
  * flashes a ring, then is consumed so the next visit starts at the top.
  */
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AISettings, CheckInItem, DailyRecord, FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Meal, MealSource } from '../data/types';
+import type { AISettings, DailyRecord, FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Meal, MealSource } from '../data/types';
 import { useHealth, useNow, useRecords } from '../data/store';
 import { buildCoachContext, mealOccasions } from '../engine';
 import { createClient, type AnthropicClient } from '../ai/client';
@@ -567,11 +567,19 @@ export default function Log() {
   const setWater = (cups: number) => actions.patchDay(today, { h2o: cups > 0 ? cups : undefined });
 
   // --- Daily check-in (one write, whatever the user answered) -----------------
-  const saveCheckIn = (values: Partial<Pick<DailyRecord, CheckInItem>>) => {
+  const saveCheckIn = (values: Partial<DailyRecord>) => {
     actions.saveCheckIn(today, values);
-    const n = Object.keys(values).length;
+    // The weekly and monthly instruments save their subscale totals through the
+    // same write, so counting keys against the daily item list would report an
+    // eight-item questionnaire as "2 of 4 items".
+    const keys = Object.keys(values);
+    const daily = keys.filter((k) => (['qs', 'qf', 'qt', 'qo'] as string[]).includes(k));
+    if (!daily.length) {
+      toast(keys.includes('pss4') ? 'Monthly check-in saved' : 'Weekly check-in saved');
+      return;
+    }
     const asked = settings.checkIn.items.length || 4;
-    toast(n >= asked ? 'Check-in saved' : `Check-in saved · ${n} of ${asked} items`);
+    toast(daily.length >= asked ? 'Check-in saved' : `Check-in saved · ${daily.length} of ${asked} items`);
   };
 
   // --- Deep links -------------------------------------------------------------
@@ -675,6 +683,9 @@ export default function Log() {
           <CheckInSection
             date={today}
             record={todayRecord}
+            // The weekly and monthly gates look back across the week and the
+            // month; without the history they would re-ask every morning.
+            records={records}
             settings={settings.checkIn}
             onSave={saveCheckIn}
             onSkip={() => toast('Check-in skipped — nothing was saved')}

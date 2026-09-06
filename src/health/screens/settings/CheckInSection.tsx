@@ -10,9 +10,9 @@
  * The weekly SRSS and monthly PSS-4 are separate instruments with their own
  * recall windows (a week, a month) — never asked daily, and off by default.
  * `DailyRecord` carries `srssR`, `srssS` and `pss4`, so their answers have a
- * home and appear in the CSV export; the Log screen still shows a labelled
- * placeholder where the items will go, and the hints below say exactly that
- * rather than implying the questionnaires are live.
+ * home and appear in the CSV export. Both are live in Log: the weekly one is
+ * due whenever the current week has no answer, the monthly one whenever the
+ * month does not.
  *
  * Cycle tracking sits here because it is the same kind of daily question: with
  * it on, Log offers a "menstruating today" flag and the weight filter widens
@@ -99,13 +99,13 @@ export default function CheckInSection() {
       <Toggle
         label="Weekly recovery & stress (SRSS)"
         checked={c.weeklySrss}
-        hint="Eight items, Sundays. Not collectable yet — Log shows a labelled placeholder where they will go, and nothing is stored until the items ship."
+        hint="Eight items on Sundays, in two subscales: how recovered you feel, and how stressed. Log keeps it open all week if you miss Sunday, and stores the two totals."
         onChange={(weeklySrss) => set({ weeklySrss })}
       />
       <Toggle
         label="Monthly perceived stress (PSS-4)"
         checked={c.monthlyPss}
-        hint="Four items, once a month, because its question asks about “the last month”. Same placeholder for now."
+        hint="Four items, once a month, because the questions ask about “the last month”. Asking it daily would not mean anything."
         onChange={(monthlyPss) => set({ monthlyPss })}
       />
 

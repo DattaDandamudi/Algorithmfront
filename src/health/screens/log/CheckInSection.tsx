@@ -47,6 +47,7 @@ import {
   SRSS_STEPS,
   SRSS_SUBSCALE_MAX,
   pss4Line,
+  pss4Reading,
   pss4Total,
   pss4Values,
   pssDue,
@@ -580,7 +581,9 @@ function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
           <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
           {`PSS-4 ${saved} of ${PSS_MAX}`}
         </p>
-        <p className="text-[12px] leading-4 text-hx-muted">{pss4Line(saved, PSS_ITEMS.length)} {REANSWER_NOTE}</p>
+        <p className="text-[12px] leading-4 text-hx-muted">
+          That is {pss4Reading(saved)} — a description of the month, not a diagnosis. {REANSWER_NOTE}
+        </p>
       </div>
     );
   }
