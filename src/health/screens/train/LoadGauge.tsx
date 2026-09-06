@@ -14,6 +14,15 @@
  * Fitness / fatigue / form come from the Banister model; when its time
  * constants are still the 42/7 priors (`tauIsPrior`) the card says so rather
  * than presenting a placeholder as a personal fit.
+ *
+ * The same promise covers where the load itself came from. A WHOOP day carries
+ * no load — it carries a strain, converted by `a·(2^(s/b) − 1)`, and until eight
+ * days have both a strain and a logged session those constants are the assumed
+ * a = 25 / b = 3.5 prior, which the module's own simulation puts outside the
+ * ±20 % band. So when the block is built on the prior AND any of these numbers
+ * came from WHOOP (`whoopIsPrior` with a `whoop`/`mixed` source), the card says
+ * so with `LOAD_NOTES.whoopPrior` — an estimated series must never read like a
+ * measured one.
  */
 import type { TrainingContext } from '../../data/types';
 import { LOAD_NOTES, WEEKLY_LOAD_SOFT_CAP_PCT } from '../../engine';
@@ -37,6 +46,9 @@ export default function LoadGauge({ load }: LoadGaugeProps) {
           ? 'lighter than last week'
           : 'steady';
   const formTone = formBandTone(load.formBand);
+  // Only when WHOOP actually fed the series: on a purely logged block the
+  // conversion never ran, and a note about it would be noise.
+  const whoopPrior = load.whoopIsPrior === true && (load.source === 'whoop' || load.source === 'mixed');
 
   return (
     <div className="flex flex-col gap-4">
@@ -71,6 +83,7 @@ export default function LoadGauge({ load }: LoadGaugeProps) {
           <span className="text-[12px] leading-4 text-hx-text2">{acwrBandWord(load.acwrBand)}</span>
         </div>
         <Note>{LOAD_NOTES.acwrDescriptive}</Note>
+        {whoopPrior && <Note>{LOAD_NOTES.whoopPrior}</Note>}
         {load.tauIsPrior && <Note>{LOAD_NOTES.tauPrior}</Note>}
       </div>
     </div>

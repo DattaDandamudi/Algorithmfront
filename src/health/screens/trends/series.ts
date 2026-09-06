@@ -5,7 +5,7 @@
  * ONE shared range — 7D / 30D daily, 90D weekly buckets, 1Y monthly buckets
  * (the Apple Health Trends pattern). The engine hands us null-gapped *daily*
  * series (baseline.metricSeries, hrv.swcBandSeries, weight.computeEwmaTrend,
- * sleep.sleepSummary …) and the chart kit hands us the bucketing
+ * sleep.sleepNeedSeries …) and the chart kit hands us the bucketing
  * (charts.aggregateByBucket / fillDaily); this file is the thin, testable glue
  * between them so the card components stay declarative and never do maths.
  *
@@ -43,7 +43,7 @@ import {
   metricSeries,
   overnightStrainIndex,
   rollingMean,
-  sleepSummary,
+  sleepNeedSeries,
   swcBandSeries,
   weekStartMonday,
   weeklySetsByMuscle,
@@ -435,10 +435,24 @@ export interface SleepSeries {
 export function sleepSeries(records: DailyRecord[], win: RangeWindow, profile: Profile): SleepSeries {
   const byDate = new Map<ISODate, DailyRecord>();
   for (const r of records) byDate.set(r.d, r);
+  const dates = lastNDates(win.end, win.days);
+  // Only a night with sleep logged and no imported `sln` needs the engine to
+  // work one out. Those are scored in a single pass (`sleepNeedSeries`) rather
+  // than one `sleepSummary` call per night: each of those rebuilt an index over
+  // the whole history and rescanned it for the last bedtime, which made this
+  // series quadratic in the range — 163 ms of a 220 ms 1Y flip. The numbers are
+  // unchanged; `sleepNeedSeries` runs the summary's own need path.
+  const computed: ISODate[] = [];
+  for (const d of dates) {
+    const r = byDate.get(d);
+    if (num(r?.slh) !== null && num(r?.sln) === null) computed.push(d);
+  }
+  const needs = sleepNeedSeries(records, computed, profile);
+
   const hoursDaily: DatedValue[] = [];
   const needDaily: DatedValue[] = [];
   let nights = 0;
-  for (const d of lastNDates(win.end, win.days)) {
+  for (const d of dates) {
     const r = byDate.get(d);
     const slh = num(r?.slh);
     hoursDaily.push({ d, value: slh });
@@ -446,7 +460,7 @@ export function sleepSeries(records: DailyRecord[], win: RangeWindow, profile: P
     if (slh !== null) {
       nights++;
       // sleepSummary(d).need is *last night's* need whenever slh is logged on d.
-      need = num(r?.sln) ?? sleepSummary(records, d, profile).need;
+      need = num(r?.sln) ?? needs.get(d) ?? null;
     }
     needDaily.push({ d, value: need });
   }

@@ -12,12 +12,14 @@ import {
   computeKalmanTrend,
   kalmanAt,
   overnightStrainIndex,
+  sleepSummary,
   smoothKalman,
   type AcwrPoint,
   type KalmanResult,
   type LoadPoint,
 } from '../../engine';
-import { addDays } from '../../lib/dates';
+import { addDays, lastNDates } from '../../lib/dates';
+import { aggregateByBucket } from '../../ui/charts';
 import {
   BAND_MIN_READINGS,
   STRESS_SERIES_MAX_DAYS,
@@ -237,6 +239,74 @@ describe('sleepSeries / bedtimeOffsetSeries', () => {
     expect(three.sdMin).not.toBeNull();
     expect(three.series[three.series.length - 1].value).toBe(three.sdMin);
   });
+  /**
+   * A fixed year of nights covering every branch of the need path: gaps,
+   * logged-but-sleepless nights, naps, a strain cycle, a vendor-reconciled
+   * `sln` + `dbt` pair, a bare `sln` and a stretch with no bedtimes.
+   */
+  function year(): DailyRecord[] {
+    const out: DailyRecord[] = [];
+    for (let i = 0; i < 365; i++) {
+      if (i % 17 === 0) continue;
+      const r: DailyRecord = { d: addDays(TODAY, i - 364), strn: 10 + Math.round(4 * Math.sin(i * 0.53)) };
+      if (i % 23 !== 0) {
+        r.slh = Math.round((7.1 + 0.9 * Math.sin(i * 0.7)) * 10) / 10;
+        r.rec = 55 + Math.round(20 * Math.sin(i * 0.31));
+      }
+      if (i % 11 === 0) r.nap = 20 + (i % 3) * 10;
+      if (i < 120 || i > 160) {
+        r.bt = i % 2 ? '23:10' : '22:45';
+        r.wk = i % 5 === 0 ? '07:30' : '07:00';
+      }
+      if (i % 29 === 0) {
+        r.sln = 8.4;
+        r.dbt = 35 + (i % 4) * 10;
+      } else if (i % 31 === 0) {
+        r.sln = 9.9;
+      }
+      out.push(r);
+    }
+    return out;
+  }
+
+  /**
+   * The pre-optimisation series: one `sleepSummary` call per logged night. The
+   * need pass now runs once over a shared index (`sleepNeedSeries`), so this
+   * pins the numbers the chart drew before that change — on every range, for a
+   * fixed 365-day fixture.
+   */
+  function needsTheOldWay(recs: DailyRecord[], win: ReturnType<typeof rangeWindow>): (number | null)[] {
+    const byDate = new Map(recs.map((r) => [r.d, r]));
+    const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+    const daily = lastNDates(win.end, win.days).map((d) => {
+      const r = byDate.get(d);
+      const slh = isNum(r?.slh) ? r.slh : null;
+      if (slh === null) return { d, value: null };
+      const sln = isNum(r?.sln) ? r.sln : null;
+      return { d, value: sln ?? sleepSummary(recs, d, DEFAULT_PROFILE).need };
+    });
+    return aggregateByBucket(daily, win.bucket, 'mean').map((p) => p.value);
+  }
+
+  it('draws the same needs the per-day sleepSummary pass drew, on a fixed 365-day fixture', () => {
+    const recs = year();
+    expect(recs).toHaveLength(343); // 365 days less the 22 that are missing entirely
+    for (const range of ['7D', '30D', '90D', '1Y'] as const) {
+      const win = rangeWindow(range, TODAY);
+      const s = sleepSeries(recs, win, DEFAULT_PROFILE);
+      expect(s.need.map((p) => p.value)).toEqual(needsTheOldWay(recs, win));
+      // …and the rest of the series is unmoved too.
+      expect(s.hours.length).toBe(s.need.length);
+      expect(s.need.some((p) => p.value !== null)).toBe(true);
+    }
+    // Every number the card prints, pinned.
+    const y = sleepSeries(recs, rangeWindow('1Y', TODAY), DEFAULT_PROFILE);
+    expect(y.nights).toBe(328);
+    expect(y.mean7).toBeCloseTo(7.34, 2);
+    expect(y.need).toHaveLength(13);
+    expect(y.band).not.toBeNull();
+  });
+
   it('measures bedtime offsets on the noon axis so post-midnight nights read as late', () => {
     const recs: DailyRecord[] = [
       { d: addDays(TODAY, -2), bt: '22:30' },

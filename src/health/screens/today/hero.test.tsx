@@ -163,6 +163,41 @@ describe('ReadinessHero — modifiers (plan 2b)', () => {
     expect(html).not.toContain('HRV forcing rule');
   });
 
+  it('keeps the forcing rule\'s evidence on screen exactly when the rule took the day', () => {
+    // FORCING_EVIDENCE.twoSwc: the clause with no published support, which is
+    // the clause a user most needs to see on the day it makes them rest.
+    const hedge =
+      'The 2 × SWC (−1.0 SD) cut-off is our own tunable heuristic — no published study sets a light-day threshold there.';
+    const forcedCtx: Readiness = {
+      ...base,
+      band: 'red',
+      verdict: 'Run down — keep today light',
+      training: 'Light day',
+      forced: true,
+      detail: '7-day HRV average 49 ms is below your normal range and forces a light day.',
+      modifiers: [{ key: 'hrvForcing', label: 'HRV forcing rule', effect: 'downgrade', reason: hedge }],
+    };
+    // `forced` is set only when forcing CHANGED the band — the case the old
+    // filter suppressed the hedge in.
+    const t = text(render(forcedCtx));
+    expect(t).toContain(FORCED_REASON);
+    expect(t).toContain(hedge);
+
+    // When the score was red on its own the rule still fired, and its reason is
+    // listed with the other modifiers. Either way the hedge is on screen once.
+    const alsoRed = text(render({ ...forcedCtx, score: 22, forced: undefined }));
+    expect(alsoRed).toContain(MODIFIERS_TITLE);
+    expect(alsoRed).toContain(hedge);
+    expect(alsoRed.split(hedge)).toHaveLength(2);
+    expect(t.split(hedge)).toHaveLength(2);
+  });
+
+  it('renders a forced verdict with no modifiers at all rather than throwing', () => {
+    const html = render({ ...base, band: 'red', forced: true, detail: 'HRV below range.' });
+    expect(html).toContain(FORCED_REASON);
+    expect(html).not.toContain(MODIFIERS_TITLE);
+  });
+
   it('shows nothing when nothing moved the verdict', () => {
     expect(render(base)).not.toContain(MODIFIERS_TITLE);
   });

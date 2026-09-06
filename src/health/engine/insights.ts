@@ -7,8 +7,11 @@
  * (engine/context.ts) and turns *state* into cards. It imports the *types* of
  * the v3 analysis blocks (training, stress, energy, impact, changepoints) but
  * never the engine modules that produce them — every number arrives as an
- * argument. Pure and deterministic: no clock, no randomness; ids are
- * `ins-<template>-<date>` so a card keeps its identity across re-renders.
+ * argument. The two exceptions are a threshold and a cue rule those modules own
+ * and this one must not restate (`BASELINE_READINGS`, `illnessDoctorCue`): a
+ * rule copied into a card is a rule that drifts. Pure and deterministic: no clock, no
+ * randomness; ids are `ins-<template>-<date>` so a card keeps its identity
+ * across re-renders.
  *
  * Copy rules (§7): ≤2 sentences, name the number, one action verb, band colour
  * by state. Every number comes from the context; when a datapoint is missing
@@ -46,6 +49,7 @@ import type {
 import { addDays, formatClock, formatDateShort, hhmmToMinutes, minutesSinceNoon, minutesSinceNoonToHHMM } from '../lib/dates';
 import { fmt, fmtWeight, round } from '../lib/format';
 import { BASELINE_READINGS } from './hrv';
+import { illnessDoctorCue } from './stress';
 
 /**
  * The coach quick-prompt chips (§4), verbatim and in order. Indices 0–7 are the
@@ -284,7 +288,17 @@ const sleepDebt: TemplateFn = (ctx, profile) => {
   return card(ctx, 1, 'Sleep debt', debt >= SLEEP_DEBT_RED_MIN ? 'red' : 'yellow', body, COACH_CHIPS[5], INSIGHT_PRIORITY.sleepDebt);
 };
 
-/** #2 (red) or #3 (green) — never both; yellow/neutral readiness gets no recovery card. */
+/**
+ * #2 (red) or #3 (green) — never both; yellow/neutral readiness gets no
+ * recovery card.
+ *
+ * When `readiness.forced` is set the red band is not the score's — the HRV
+ * forcing rule put it there, over a score that was green or yellow. That is the
+ * one case where the card is repeating a verdict the *heuristic* produced, so it
+ * names the rule and its evidence label (`ctx.hrv.forcingLabel`, from
+ * `FORCING_EVIDENCE`). A hedge that only fires when the hedged rule is idle is
+ * not a hedge.
+ */
 const recovery: TemplateFn = (ctx) => {
   const band = ctx.readiness.band;
   if (band !== 'red' && band !== 'green') return null;
@@ -299,7 +313,9 @@ const recovery: TemplateFn = (ctx) => {
       const vs = delta === null ? '' : delta < 0 ? ` is ${n0(-delta)} ms below baseline` : delta > 0 ? ` is ${n0(delta)} ms above baseline` : ' is at baseline';
       hrvClause = `. HRV ${n0(hrv)} ms${vs}`;
     }
-    return card(ctx, 2, 'Recovery low', 'red', `${lead}${hrvClause} — keep today light: mobility or a walk.`, COACH_CHIPS[2], INSIGHT_PRIORITY.recovery);
+    const label = ctx.readiness.forced === true ? (ctx.hrv.forcingLabel ?? null) : null;
+    const forcedClause = label ? ` That call is our HRV forcing rule — ${label}.` : '';
+    return card(ctx, 2, 'Recovery low', 'red', `${lead}${hrvClause} — keep today light: mobility or a walk.${forcedClause}`, COACH_CHIPS[2], INSIGHT_PRIORITY.recovery);
   }
   const lead = score === null ? 'Recovery is green' : `Recovery ${n0(score)}% (green)`;
   const action =
@@ -684,14 +700,26 @@ const resilienceChange: TemplateFn = (ctx, _profile, _targets, opts) => {
   return card(ctx, 23, 'Resilience', up ? 'green' : 'yellow', body, COACH_CHIPS[9], INSIGHT_PRIORITY.resilience);
 };
 
-/** #24 — conjunctive illness/overload flag. Copy is a pattern in the user's own numbers, never a diagnosis. */
+/**
+ * #24 — conjunctive illness/overload flag. Copy is a pattern in the user's own
+ * numbers, never a diagnosis.
+ *
+ * This is the highest-priority card on Today, so it is also where
+ * `ILLNESS_DOCTOR_DAYS` has to be honoured: past that many days the card adds
+ * the doctor cue (`illnessDoctorCue`, the engine's own rule — this template does
+ * not invent a threshold). One easy day is a training decision; a pattern that
+ * has not cleared in most of a week is one to take to a person.
+ */
 const illnessFlagCard: TemplateFn = (ctx) => {
   const s: StressContext | undefined = ctx.stress;
   if (!s || s.illness?.flag !== true) return null;
   const reasons = (s.illness.reasons ?? []).map(clause).filter((r): r is string => r !== null);
   if (reasons.length === 0) return null;
   const since = s.illness.since ? ` since ${formatDateShort(s.illness.since)}` : '';
-  const body = `Possible illness or heavy overload${since}: ${joinList(reasons.map(softLower))}. Take an easy day — this is a pattern in your own numbers, not a diagnosis.`;
+  const cue = illnessDoctorCue(s.illness, ctx.today);
+  const body =
+    `Possible illness or heavy overload${since}: ${joinList(reasons.map(softLower))}. ` +
+    `Take an easy day — this is a pattern in your own numbers, not a diagnosis.${cue ? ` ${cue}` : ''}`;
   return card(ctx, 24, 'Possible illness', 'red', body, COACH_CHIPS[2], INSIGHT_PRIORITY.illness);
 };
 

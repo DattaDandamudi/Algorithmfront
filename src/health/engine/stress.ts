@@ -73,7 +73,12 @@
  * symptoms); or skin temp ≥ +0.5 °C for two nights. The widely repeated
  * "+5 bpm RHR" threshold is convention, not evidence, and is deliberately not
  * used. Copy is "possible illness or heavy overload — take an easy day",
- * **never a diagnosis**; past three days it adds the existing doctor cue.
+ * **never a diagnosis**; past three days it adds the existing doctor cue —
+ * `illnessDoctorCue(illness, asOf)` is that rule, so the Today card and any
+ * other surface escalate on the same day instead of each inventing one. The
+ * stress strip shows the cue unconditionally and keeps doing so: erring toward
+ * "see someone" is the safe direction, and the escalation only makes the cue
+ * reach the card that leads the Today screen.
  *
  * "Over the personal mean" is implemented as *over the personal median* of the
  * same 60-day reference: the median is the robust analogue this whole module
@@ -128,7 +133,7 @@ import type {
   StressContext,
   StressSignal,
 } from '../data/types';
-import { addDays, hhmmToMinutes, lastNDates, minutesSinceNoon } from '../lib/dates';
+import { addDays, diffDays, hhmmToMinutes, lastNDates, minutesSinceNoon } from '../lib/dates';
 import { clamp, round } from '../lib/format';
 import { median, normalQuantile, quantile, robustZ } from './stats';
 
@@ -742,7 +747,7 @@ export const ILLNESS_RR_BRPM = 3;
 export const ILLNESS_SKT_C = 0.5;
 /** …for this many consecutive nights. */
 export const ILLNESS_SKT_NIGHTS = 2;
-/** Past this many days the caller adds the existing doctor cue. */
+/** Past this many days the caller adds the existing doctor cue (`illnessDoctorCue`). */
 export const ILLNESS_DOCTOR_DAYS = 3;
 /** How far back `since` is searched. */
 const ILLNESS_SINCE_LOOKBACK = 21;
@@ -752,6 +757,36 @@ const ILLNESS_SINCE_LOOKBACK = 21;
  * never a condition and never a diagnosis.
  */
 export const ILLNESS_COPY = 'Possible illness or heavy overload — take an easy day.';
+
+/**
+ * The escalation `ILLNESS_DOCTOR_DAYS` promises: once the flag has been up for
+ * longer than that, the copy stops being "take an easy day" alone and routes to
+ * a person. Still not a diagnosis — it names no condition, and the only claim it
+ * makes is about how long the user's own numbers have been out.
+ */
+export const ILLNESS_DOCTOR_CUE = 'if you feel unwell, check with your doctor';
+
+/**
+ * How many days the flag has been continuously up, counting today. `null` when
+ * the flag is down or the run's start is unknown; 1 on the first day.
+ */
+export function illnessRunDays(illness: StressContext['illness'] | undefined, asOf: ISODate): number | null {
+  if (!illness || illness.flag !== true) return null;
+  if (!illness.since) return 1;
+  const days = diffDays(illness.since, asOf) + 1;
+  return Number.isFinite(days) && days > 0 ? days : 1;
+}
+
+/**
+ * The finished cue sentence once the run is longer than `ILLNESS_DOCTOR_DAYS`,
+ * else null — the contract the constant documents, implemented here so every
+ * caller escalates on the same day rather than each inventing a rule.
+ */
+export function illnessDoctorCue(illness: StressContext['illness'] | undefined, asOf: ISODate): string | null {
+  const days = illnessRunDays(illness, asOf);
+  if (days === null || days <= ILLNESS_DOCTOR_DAYS) return null;
+  return `${days} days running now — ${ILLNESS_DOCTOR_CUE}.`;
+}
 
 function stateOf(states: SignalState[], key: StressSignal['key']): SignalState | undefined {
   return states.find((s) => s.key === key);

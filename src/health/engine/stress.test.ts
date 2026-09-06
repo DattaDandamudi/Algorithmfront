@@ -10,6 +10,8 @@ import {
   CHECKIN_SD_FLOOR,
   CHECKIN_WORSE_RUN,
   ILLNESS_COPY,
+  ILLNESS_DOCTOR_CUE,
+  ILLNESS_DOCTOR_DAYS,
   OSI_MIN_REF_DAYS,
   OSI_OUTLIER_Z,
   OSI_WEIGHTS,
@@ -18,7 +20,9 @@ import {
   RESILIENCE_SCORE_GAIN,
   SIGNAL_THRESHOLDS,
   checkInSummary,
+  illnessDoctorCue,
   illnessFlag,
+  illnessRunDays,
   overnightStrainIndex,
   resilienceBandOf,
   resilienceSummary,
@@ -346,6 +350,36 @@ describe('illnessFlag', () => {
       expect(text).not.toContain(word);
     }
     expect(ILLNESS_COPY).toMatch(/possible illness or heavy overload/i);
+  });
+});
+
+describe('illnessDoctorCue (the ILLNESS_DOCTOR_DAYS contract)', () => {
+  const flag = (since: ISODate | null) => ({ flag: true as const, since, reasons: ['x'] });
+
+  it('counts the run inclusively and escalates only past the threshold', () => {
+    expect(ILLNESS_DOCTOR_DAYS).toBe(3);
+    expect(illnessRunDays(flag(END), END)).toBe(1);
+    expect(illnessRunDays(flag(addDays(END, -(ILLNESS_DOCTOR_DAYS - 1))), END)).toBe(ILLNESS_DOCTOR_DAYS);
+
+    // Day 3 is still "take an easy day"; day 4 routes to a person.
+    expect(illnessDoctorCue(flag(addDays(END, -(ILLNESS_DOCTOR_DAYS - 1))), END)).toBeNull();
+    const cue = illnessDoctorCue(flag(addDays(END, -ILLNESS_DOCTOR_DAYS)), END);
+    expect(cue).toBe(`${ILLNESS_DOCTOR_DAYS + 1} days running now — ${ILLNESS_DOCTOR_CUE}.`);
+    expect(cue).toMatch(/check with your doctor/);
+  });
+
+  it('says nothing when the flag is down, and treats an unknown start as day one', () => {
+    expect(illnessRunDays({ flag: false, since: null, reasons: [] }, END)).toBeNull();
+    expect(illnessDoctorCue({ flag: false, since: null, reasons: [] }, END)).toBeNull();
+    expect(illnessDoctorCue(undefined, END)).toBeNull();
+    expect(illnessRunDays(flag(null), END)).toBe(1);
+    expect(illnessDoctorCue(flag(null), END)).toBeNull();
+  });
+
+  it('names no condition and does not turn into a diagnosis', () => {
+    const cue = illnessDoctorCue(flag(addDays(END, -10)), END) as string;
+    const text = cue.toLowerCase();
+    for (const word of ['covid', 'flu', 'infection', 'fever', 'virus', 'diagnos']) expect(text).not.toContain(word);
   });
 });
 

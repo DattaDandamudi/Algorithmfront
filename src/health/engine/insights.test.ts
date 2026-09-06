@@ -12,6 +12,7 @@ import type {
   TrainingContext,
 } from '../data/types';
 import { addDays } from '../lib/dates';
+import { ILLNESS_DOCTOR_DAYS } from './stress';
 import { DEFAULT_BLOODWORK, DEFAULT_PROFILE, DEFAULT_TARGETS } from '../data/defaults';
 import {
   COACH_CHIPS,
@@ -122,6 +123,9 @@ describe('generateInsights — triggers', () => {
     expect(c2.band).toBe('red');
     expect(c2.coachPrompt).toBe('Why is my recovery low?');
 
+    // An honestly-red score is the score's own verdict; nothing to hedge.
+    expect(c2.body).not.toContain('forcing rule');
+
     const green = makeCtx({ readiness: { band: 'green', score: 81 }, dayType: 'lift', sessionType: 'upper' });
     expect(templates(green)).toContain('3');
     expect(templates(green)).not.toContain('2');
@@ -132,6 +136,39 @@ describe('generateInsights — triggers', () => {
     expect(templates(makeCtx({ readiness: { band: 'yellow' } }))).toEqual([]);
     // red with no HRV reading drops the HRV clause
     expect(only(makeCtx({ readiness: { band: 'red', score: 20 }, hrv: { today: null, delta: bd(null, 50) } }), 2)!.body).not.toContain('HRV');
+  });
+
+  it('#2 says whose call the light day was when the HRV forcing rule made it', () => {
+    // Score 72 (green) turned red by the rule: the card is repeating a verdict
+    // the heuristic produced, so it names the rule and its evidence label.
+    const forced = makeCtx({
+      readiness: { band: 'red', score: 72, forced: true },
+      hrv: {
+        today: 44,
+        delta: bd(44, 50),
+        forcing: true,
+        forcingSupport: 'heuristic',
+        forcingLabel: 'tunable heuristic, no direct published support',
+      },
+    });
+    const c = only(forced, 2)!;
+    expect(c.body).toContain('That call is our HRV forcing rule — tunable heuristic, no direct published support.');
+    expect(c.body).toContain('keep today light');
+
+    // Kiviniemi's clause is published, and says so in the same slot.
+    const published = only(
+      makeCtx({
+        readiness: { band: 'red', score: 72, forced: true },
+        hrv: { forcing: true, forcingSupport: 'published', forcingLabel: 'Kiviniemi 2007 (with our own "still falling" filter)' },
+      }),
+      2,
+    )!;
+    expect(published.body).toContain('That call is our HRV forcing rule — Kiviniemi 2007');
+
+    // Forcing that did not change the band (the score was red anyway) is not
+    // the rule's doing, so the card does not credit it.
+    const alreadyRed = only(makeCtx({ readiness: { band: 'red', score: 20 }, hrv: { forcing: true, forcingLabel: 'tunable heuristic, no direct published support' } }), 2)!;
+    expect(alreadyRed.body).not.toContain('forcing rule');
   });
 
   it('#4 protein pacing when per-meal need exists with protein and meals left; a big sitting is a note, not a warning', () => {
@@ -740,6 +777,24 @@ describe('templates #15–#26 — the v3 blocks', () => {
     expect(c.priority).toBe(108); // the highest base in the table, plus red
     expect(only(v3({ stress: { illness: { flag: false } } }), 24)).toBeUndefined();
     expect(only(v3({ stress: { illness: { flag: true, reasons: [] } } }), 24)).toBeUndefined();
+  });
+
+  it('#24 adds the doctor cue once the flag has been up past ILLNESS_DOCTOR_DAYS', () => {
+    // The fixture's run is exactly three days (4 Sep → 6 Sep): still a training
+    // decision, so no cue — the escalation is "past", not "at", the threshold.
+    expect(ILLNESS_DOCTOR_DAYS).toBe(3);
+    expect(only(v3(), 24)!.body).not.toContain('doctor');
+
+    const long = only(v3({ stress: { illness: { since: addDays('2026-09-06', -ILLNESS_DOCTOR_DAYS) } } }), 24)!;
+    expect(long.body).toContain('4 days running now — if you feel unwell, check with your doctor.');
+    // The escalation adds to the copy; it never softens what was already there.
+    expect(long.body).toContain('Possible illness or heavy overload');
+    expect(long.body).toContain('not a diagnosis');
+    expect(long.band).toBe('red');
+    // …and it names no condition, at any persistence.
+    for (const word of ['covid', 'flu', 'infection', 'fever', 'virus']) {
+      expect(long.body.toLowerCase()).not.toContain(word);
+    }
   });
 
   it('#25 quotes the counts and the interval, in the spec\'s words', () => {

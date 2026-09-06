@@ -818,6 +818,13 @@ export interface TrainingContext {
     source: 'logged' | 'whoop' | 'mixed' | 'none';
     /** True while Banister τ are the 42/7 priors rather than a personal fit. */
     tauIsPrior: boolean;
+    /**
+     * True while the WHOOP strain → load conversion is still the a = 25 / b = 3.5
+     * prior rather than a fit to this user's own sessions (`WhoopScaleFit.fitted`).
+     * Optional so a hand-built context stays valid; `undefined` means "not known",
+     * and only an explicit `true` makes the gauge hedge (`LOAD_NOTES.whoopPrior`).
+     */
+    whoopIsPrior?: boolean;
   };
   weeklySets: MuscleVolume[];
   /** Per-muscle recovery 0–100% from the 48–72 h MPS window. */
@@ -979,6 +986,14 @@ export interface CoachContext {
     /** The engine is forcing a light day (2 × SWC rule, or two days below the SWC). */
     forcing?: boolean;
     forcingReason?: string | null;
+    /** 'heuristic' for the 2 × SWC clause, 'published' for Kiviniemi's. */
+    forcingSupport?: 'heuristic' | 'published' | null;
+    /**
+     * The short evidence label for the clause that fired ("tunable heuristic, no
+     * direct published support"). Carried so a surface that shows the forced
+     * verdict can show what it rests on — a hedge left in the engine is no hedge.
+     */
+    forcingLabel?: string | null;
     /** Possible vagal saturation — a high rMSSD here is not good news. */
     saturated?: boolean;
   };

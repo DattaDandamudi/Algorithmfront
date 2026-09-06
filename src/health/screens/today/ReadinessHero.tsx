@@ -9,6 +9,10 @@
  * carried only by the short verdict in the ring centre, the verdict line and
  * the training chip; when it downgrades the band a line under the hero says
  * why, so a green 72 with a red "Light day" is explained, not contradictory.
+ * That same block carries the rule's own evidence line (the `hrvForcing`
+ * modifier's reason, from `FORCING_EVIDENCE`): the 2 × SWC clause is a tunable
+ * heuristic with no direct published support, and the one day a user most needs
+ * to be told that is the day it took their training away.
  *
  * The training chip is the §6.3 conversion (Progress / Train, hold loads /
  * Light day). It PRE-FILLS the Coach with "Should I train today?" without
@@ -156,8 +160,13 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
   const confidence = readiness.confidence;
   const blend = readiness.blendWeight;
   // The forcing rule already has its own block below the ring; listing it twice
-  // reads as two separate findings.
+  // reads as two separate findings. Its *evidence* is not dropped with it —
+  // `forcingHedge` moves the modifier's reason into that block, so the clause
+  // that turned a green score into a light day always says what it rests on.
   const modifiers = (readiness.modifiers ?? []).filter((m) => !(forced && m.key === 'hrvForcing'));
+  const forcingHedge = forced
+    ? (readiness.modifiers ?? []).find((m) => m.key === 'hrvForcing')?.reason ?? null
+    : null;
 
   return (
     <section className="px-4 pt-2 pb-5 flex flex-col items-center text-center" aria-labelledby="hx-readiness-title">
@@ -195,6 +204,7 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
         <div className="mt-2 max-w-[320px]" role="note">
           <p className="text-[13px] leading-5 font-medium text-hx-text2">{FORCED_REASON}</p>
           <p className="mt-0.5 text-[12px] leading-4 text-hx-muted">{detail}</p>
+          {forcingHedge && <p className="mt-1 text-[12px] leading-4 text-hx-muted">{forcingHedge}</p>}
         </div>
       )}
 

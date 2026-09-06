@@ -5,6 +5,8 @@ import { addDays } from '../lib/dates';
 import {
   CAFFEINE_ANCHORS,
   CAFFEINE_DRAKE_CHECK,
+  CIRCADIAN_PENALTY_IS_HEURISTIC,
+  CIRCADIAN_PENALTY_LABEL,
   SLEEP_DEBT_HALFLIFE_DAYS,
   SLEEP_DEBT_REPAY_CAP_MIN,
   bedtimeConsistency,
@@ -17,6 +19,7 @@ import {
   learnedSleepBaseline,
   sleepDebt,
   sleepNeed,
+  sleepNeedSeries,
   sleepRegularityIndex,
   sleepSummary,
   socialJetlag,
@@ -256,6 +259,33 @@ describe('circadianDelay (Depner 2019)', () => {
     expect(thin.penaltyMin).toBe(0);
     expect(thin.reason).toBeTruthy();
     expect(circadianDelay([], ASOF).delayed).toBe(false);
+  });
+
+  it('labels the trigger and the size as our calibration wherever the penalty is charged', () => {
+    const recs: DailyRecord[] = [...nights(13, { end: day(1) }), { d: day(0), bt: '01:00', wk: '11:00' }];
+    const c = circadianDelay(recs, ASOF);
+
+    // The flag alone renders nothing, so the label is a string and the only
+    // user-facing sentence about the penalty carries it.
+    expect(CIRCADIAN_PENALTY_IS_HEURISTIC).toBe(true);
+    expect(CIRCADIAN_PENALTY_LABEL).toContain('Depner 2019');
+    expect(CIRCADIAN_PENALTY_LABEL).toMatch(/60-minute trigger and the 15-minute penalty are our own calibration/);
+    expect(c.penaltyLabel).toBe(CIRCADIAN_PENALTY_LABEL);
+    expect(c.reason).toContain(CIRCADIAN_PENALTY_LABEL);
+
+    // …and it travels into the need explanation the penalty appears in.
+    const summary = sleepSummary([...recs.map((r) => ({ ...r, slh: 8 }))], ASOF, profile);
+    expect(summary.circadian.penaltyMin).toBe(15);
+    expect(summary.tonightNeedReason).toContain('+15 min because');
+    expect(summary.tonightNeedReason).toContain(CIRCADIAN_PENALTY_LABEL);
+  });
+
+  it('does not hedge a penalty it never charged', () => {
+    const steady: DailyRecord[] = [...nights(13, { end: day(1) }), { d: day(0), bt: '23:30', wk: '07:30' }];
+    const c = circadianDelay(steady, ASOF);
+    expect(c.penaltyLabel).toBeNull();
+    expect(c.reason).not.toContain(CIRCADIAN_PENALTY_LABEL);
+    expect(sleepSummary(steady, ASOF, profile).tonightNeedReason).not.toContain(CIRCADIAN_PENALTY_LABEL);
   });
 });
 
@@ -611,5 +641,93 @@ describe('R3-2 — sleep debt accrues against baseline + f(strain) − naps only
       { d: day(0), slh: 8 }, // need = 8 h + 55.4 min strain − 30 min nap → 25 min short
     ];
     expect(sleepDebt(recs, ASOF, profile).debtMin).toBe(25);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sleepNeedSeries — the Trends chart's need path
+// ---------------------------------------------------------------------------
+
+/**
+ * A year of nights with everything that changes the need path in it: gaps,
+ * unlogged nights, naps, a hard-strain cycle, a vendor-reconciled `sln` + `dbt`
+ * pair, a bare `sln` (which must be ignored) and a stretch with no bedtimes so
+ * the circadian fallback has somewhere to fire. Deliberately unsorted, because
+ * `sleepSummary` promises to take records in any order.
+ */
+function yearOfNights(): DailyRecord[] {
+  const out: DailyRecord[] = [];
+  for (let i = 0; i < 365; i++) {
+    const d = addDays(ASOF, i - 364);
+    // Every 17th day is missing entirely; every 23rd is logged but sleepless.
+    if (i % 17 === 0) continue;
+    const r: DailyRecord = { d };
+    if (i % 23 !== 0) {
+      r.slh = Math.round((7.1 + 0.9 * Math.sin(i * 0.7)) * 10) / 10;
+      r.rec = 55 + Math.round(20 * Math.sin(i * 0.31));
+    }
+    r.strn = 6 + Math.round(8 * Math.sin(i * 0.53) + 4);
+    if (i % 11 === 0) r.nap = 20 + (i % 3) * 10;
+    // No bedtimes for a 40-day stretch, so the circadian reference goes thin.
+    if (i < 120 || i > 160) {
+      r.bt = i % 2 ? '23:10' : '22:45';
+      r.wk = i % 5 === 0 ? '07:30' : '07:00';
+    }
+    if (i % 29 === 0) {
+      r.sln = 8.4; // imported need + debt: the vendor reconciled its own figure
+      r.dbt = 35 + (i % 4) * 10;
+    } else if (i % 31 === 0) {
+      r.sln = 9.9; // a bare `sln` is a target, not an accrual need — ignored
+    }
+    out.push(r);
+  }
+  // Any order in: the engine indexes by date.
+  return out.reverse();
+}
+
+describe('sleepNeedSeries', () => {
+  const recs = yearOfNights();
+  const dates = Array.from({ length: 365 }, (_, i) => addDays(ASOF, i - 364));
+
+  it('returns exactly sleepSummary(d).need for every day of a 365-day fixture', () => {
+    const series = sleepNeedSeries(recs, dates, profile);
+    expect(series.size).toBe(365);
+    const mismatches = dates.filter((d) => series.get(d) !== sleepSummary(recs, d, profile).need);
+    expect(mismatches).toEqual([]);
+    // Not vacuously equal: the needs move around, and every one is a real number.
+    const values = dates.map((d) => series.get(d) as number);
+    expect(new Set(values).size).toBeGreaterThan(20);
+    expect(values.every((v) => Number.isFinite(v) && v >= 5)).toBe(true);
+  });
+
+  it('matches the summary on the unlogged nights too, where the circadian penalty decides', () => {
+    // Days with no record and days logged without `slh` both fall through to
+    // tonight's need — the only branch the circadian delay reaches.
+    const byDate = new Map(recs.map((r) => [r.d, r]));
+    const unlogged = dates.filter((d) => typeof byDate.get(d)?.slh !== 'number');
+    expect(unlogged.length).toBeGreaterThan(30);
+    const series = sleepNeedSeries(recs, unlogged, profile);
+    for (const d of unlogged) expect(series.get(d)).toBe(sleepSummary(recs, d, profile).need);
+  });
+
+  it('honours the readiness map the learned baseline is given, and takes dates in any order', () => {
+    const readiness: Record<string, number> = {};
+    dates.forEach((d, i) => (readiness[d] = 40 + ((i * 7) % 60)));
+    const opts = { readiness };
+    const shuffled = [...dates].sort((a, b) => (a < b ? 1 : -1)).slice(0, 120);
+    const series = sleepNeedSeries(recs, shuffled, profile, opts);
+    for (const d of shuffled) expect(series.get(d)).toBe(sleepSummary(recs, d, profile, opts).need);
+    // The map really is in play: the profile-only baseline gives other numbers.
+    const plain = sleepNeedSeries(recs, shuffled, profile);
+    expect(shuffled.some((d) => plain.get(d) !== series.get(d))).toBe(true);
+  });
+
+  it('is empty for no dates and handles a single day and a sparse log', () => {
+    expect(sleepNeedSeries(recs, [], profile).size).toBe(0);
+    expect(sleepNeedSeries(recs, [ASOF], profile).get(ASOF)).toBe(sleepSummary(recs, ASOF, profile).need);
+    const sparse: DailyRecord[] = [{ d: day(200), slh: 7 }, { d: day(3), slh: 6.5 }, { d: ASOF, slh: 8 }];
+    for (const d of [day(200), day(3), ASOF]) {
+      expect(sleepNeedSeries(sparse, [day(200), day(3), ASOF], profile).get(d)).toBe(sleepSummary(sparse, d, profile).need);
+    }
   });
 });

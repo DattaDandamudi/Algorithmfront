@@ -26,6 +26,7 @@ import type {
   Workout,
   WorkoutExercise,
   WorkoutKind,
+  WorkoutSource,
 } from '../../data/types';
 import { readWorkoutDraft, writeWorkoutDraft } from '../../data/storage';
 import { minutesToHHMM, hhmmToMinutes } from '../../lib/dates';
@@ -54,6 +55,15 @@ export interface WorkoutDraft {
   baseMinutes: number;
   /** True when this draft edits a session that is already in the store. */
   editing: boolean;
+  /**
+   * Where the session being edited came from. Absent on a new draft (nothing
+   * has imported it), carried through an edit so a WHOOP or Strava session is
+   * not relabelled `manual` — the Train tab's "From your whoop sessions"
+   * caption and the load block's `source` are read off exactly this.
+   */
+  source?: WorkoutSource;
+  /** The import's own id, kept so an edited session still dedupes on re-import. */
+  externalId?: string;
   /** Rest timer: epoch ms it fires at, and the preset it was started from. */
   restEndsAt?: number;
   restSec?: number;
@@ -61,6 +71,7 @@ export interface WorkoutDraft {
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const KINDS: readonly WorkoutKind[] = ['strength', 'cardio', 'mobility', 'sport'];
+const SOURCES: readonly WorkoutSource[] = ['manual', 'whoop', 'strava', 'apple', 'demo'];
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -113,6 +124,8 @@ export function draftFromWorkout(w: Workout, nowMs: number): WorkoutDraft {
     ...(w.cardio ? { cardio: { ...w.cardio } } : {}),
     ...(finite(w.srpe) ? { srpe: w.srpe } : {}),
     ...(w.note ? { note: w.note } : {}),
+    ...(SOURCES.includes(w.source) ? { source: w.source } : {}),
+    ...(w.externalId ? { externalId: w.externalId } : {}),
     exercises: (w.exercises ?? []).map(cloneExercise),
     startedAt: finite(nowMs) ? nowMs : 0,
     baseMinutes: finite(w.durationMin) ? Math.max(0, Math.round(w.durationMin)) : 0,
@@ -158,6 +171,14 @@ export interface FinishInput {
  * The draft as the `Workout` the store will hold. Empty collections are
  * dropped rather than stored as `[]` / `{}` so a 6 × 4 session stays around a
  * kilobyte of JSON (the storage budget in the plan's risk table).
+ *
+ * `source` is the draft's when it has one and `manual` only otherwise: editing
+ * an imported session is still that import. Stamping `manual` here rewrote a
+ * WHOOP session's provenance the moment someone fixed a rep count, and the load
+ * block's `source` (the "From your whoop sessions" caption, the mixed/logged
+ * split behind the strain-conversion hedge) is read straight off these values.
+ * The import's `externalId` rides along for the same reason: without it the
+ * next import of the same export adds the session a second time.
  */
 export function draftToWorkout(draft: WorkoutDraft, done: FinishInput): Workout {
   const exercises = (draft.exercises ?? [])
@@ -169,8 +190,9 @@ export function draftToWorkout(draft: WorkoutDraft, done: FinishInput): Workout 
     start: draft.start,
     durationMin: finite(done.durationMin) ? Math.max(0, Math.round(done.durationMin)) : 0,
     kind: draft.kind,
-    source: 'manual',
+    source: draft.source ?? 'manual',
   };
+  if (draft.externalId) w.externalId = draft.externalId;
   if (draft.session) w.session = draft.session;
   if (draft.title) w.title = draft.title;
   if (draft.programId) w.programId = draft.programId;
@@ -245,6 +267,8 @@ export function parseDraft(value: unknown): WorkoutDraft | null {
     baseMinutes: finite(v.baseMinutes) ? Math.max(0, v.baseMinutes) : 0,
     editing: v.editing === true,
   };
+  if (SOURCES.includes(v.source as WorkoutSource)) draft.source = v.source as WorkoutSource;
+  if (typeof v.externalId === 'string' && v.externalId) draft.externalId = v.externalId;
   if (typeof v.session === 'string') draft.session = v.session as SessionType;
   if (typeof v.title === 'string' && v.title) draft.title = v.title;
   if (typeof v.programId === 'string' && v.programId) draft.programId = v.programId;

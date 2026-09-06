@@ -281,7 +281,15 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
   const loadOpts: SessionLoadOpts = { profile, restHr };
   const whoopFit = fitWhoopScale(records, workouts, loadOpts);
   const loadSeries = dailyLoadSeries(records, workouts, today, { ...loadOpts, whoopFit });
-  const trainingLoad = trainingLoadSummary(records, workouts, today, { ...loadOpts, whoopFit });
+  // `whoopFit.fitted` is the difference between "your own strain curve" and the
+  // assumed a = 25 / b = 3.5 prior, and every WHOOP-derived load in the block
+  // below went through one of them. It travels with the numbers (as
+  // `tauIsPrior` already does) so the gauge can hedge a series built on the
+  // prior instead of printing it like a measurement.
+  const trainingLoad: TrainingContext['load'] = {
+    ...trainingLoadSummary(records, workouts, today, { ...loadOpts, whoopFit }),
+    whoopIsPrior: !whoopFit.fitted,
+  };
 
   // --- Readiness series (derived, not stored) --------------------------------
   // The learned sleep baseline, the resilience scissors and the N-of-1 impact
@@ -435,6 +443,11 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       nWindow: hrv.n7,
       forcing: hrv.forcing,
       forcingReason: hrv.forcingReason,
+      // The clause's evidence travels with the verdict it forced: the Today
+      // card that repeats a forced "keep it light" has to be able to say the
+      // rule is our own heuristic (FORCING_EVIDENCE) rather than a finding.
+      forcingSupport: hrv.forcingSupport,
+      forcingLabel: hrv.forcingLabel,
       saturated: hrv.saturated,
     },
     rhr,

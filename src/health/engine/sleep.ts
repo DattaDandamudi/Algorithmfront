@@ -36,7 +36,11 @@
  *   insulin sensitivity *worse* than continuous restriction. So a lie-in is not
  *   praised for its hours — the reason string says it cost alignment. The 60-min
  *   trigger and the 15-min size are **calibration, not published quantities**
- *   (`CIRCADIAN_PENALTY_IS_HEURISTIC`); the *direction* is the finding.
+ *   (`CIRCADIAN_PENALTY_IS_HEURISTIC`); the *direction* is the finding. A boolean
+ *   is not something a screen can render, so `CIRCADIAN_PENALTY_LABEL` says that
+ *   in the user's own words and rides inside `circadianDelay().reason` — the only
+ *   user-facing string about the penalty, and the one `tonightNeedReason` quotes
+ *   — whenever the penalty is actually charged.
  * - **SRI — Sleep Regularity Index** (`sleepRegularityIndex`). **Phillips 2017**
  *   (Sci Rep 7:3216): the probability of being in the same sleep/wake state at
  *   two times 24 h apart, scaled `200·P − 100`, on a **1-minute grid**. 100 =
@@ -87,7 +91,7 @@
  * numbers or null out, never NaN, never throws, never reads the clock.
  */
 import type { DailyRecord, HHMM, ISODate, Profile, SessionType } from '../data/types';
-import { addDays, hhmmToMinutes, lastNDates, minutesSinceNoon, minutesSinceNoonToHHMM, minutesToHHMM, nowHHMM, weekdayOf } from '../lib/dates';
+import { addDays, diffDays, hhmmToMinutes, lastNDates, minutesSinceNoon, minutesSinceNoonToHHMM, minutesToHHMM, nowHHMM, weekdayOf } from '../lib/dates';
 import { clamp, mean, round, stddev } from '../lib/format';
 import { logistic, median, quantile } from './stats';
 
@@ -127,6 +131,18 @@ export const CIRCADIAN_WINDOW_NIGHTS = 14;
 export const CIRCADIAN_MIN_REF_NIGHTS = 5;
 /** The direction is Depner 2019; the 60-min trigger and 15-min size are calibration. */
 export const CIRCADIAN_PENALTY_IS_HEURISTIC = true;
+/**
+ * The user-showable half of `CIRCADIAN_PENALTY_IS_HEURISTIC` — a boolean no
+ * screen can render is not a label. Written in the same voice as the
+ * muscle-recovery half-life note on Train ▸ Today and the strain-counter note
+ * on the resilience card: name what is published, name what is ours, and never
+ * let the sizes read as findings. `circadianDelay().reason` carries it whenever
+ * the penalty applies, so the only user-facing string about the penalty can no
+ * longer state 60 min / 15 min as fact.
+ */
+export const CIRCADIAN_PENALTY_LABEL =
+  'Depner 2019 found the direction — a lie-in that delays your body clock leaves you worse off, not rested — ' +
+  `but the ${CIRCADIAN_DELAY_TRIGGER_MIN}-minute trigger and the ${CIRCADIAN_PENALTY_MIN}-minute penalty are our own calibration, not published quantities.`;
 
 /** SRI (Phillips 2017): 28-night window preferred, null below 14, flag below 70. */
 export const SRI_WINDOW_NIGHTS = 28;
@@ -230,6 +246,16 @@ interface DebtWalk {
 }
 
 /**
+ * The dates one debt walk touches: the `SLEEP_DEBT_WINDOW_NIGHTS` nights ending
+ * at `asOf`, preceded by one run-in day because each night's accrual need reads
+ * the strain and naps of D − 1. Ascending, so `[i − 1]` is always "the day
+ * before night `[i]`".
+ */
+function debtWalkDates(asOf: ISODate): readonly ISODate[] {
+  return lastNDates(asOf, SLEEP_DEBT_WINDOW_NIGHTS + 1);
+}
+
+/**
  * Walk the last 28 nights oldest → newest.
  *
  * Each step is `debt ← clamp(λ·debt + (accrualNeed − slept)·60, 0, 300)` with
@@ -241,11 +267,23 @@ interface DebtWalk {
  * `baseline + f(strain of D−1) − naps of D−1` — never including f(debt), which
  * is the pay-back ask (R3-2). The displayed need does include f(debt so far).
  */
-function walkDebt(byDate: Map<ISODate, DailyRecord>, asOf: ISODate, baselineHrs: number): DebtWalk {
+function walkDebt(
+  byDate: Map<ISODate, DailyRecord>,
+  asOf: ISODate,
+  baselineHrs: number,
+  /**
+   * `debtWalkDates(asOf)`. Passed in by callers that walk many days in a row
+   * (`sleepNeedSeries`) so the axis is generated once instead of per night.
+   */
+  window: readonly ISODate[] = debtWalkDates(asOf),
+): DebtWalk {
   const nights: SleepNight[] = [];
   let debt = 0;
   let capped = false;
-  for (const d of lastNDates(asOf, SLEEP_DEBT_WINDOW_NIGHTS)) {
+  // window[0] is the run-in day: night `window[i]` reads the strain and naps of
+  // `window[i − 1]`, so the loop starts at 1 and never needs `addDays`.
+  for (let i = 1; i < window.length; i++) {
+    const d = window[i];
     const r = byDate.get(d);
     const slept = num(r?.slh);
     if (!r || slept === null || slept < 0) {
@@ -253,7 +291,7 @@ function walkDebt(byDate: Map<ISODate, DailyRecord>, asOf: ISODate, baselineHrs:
       debt = clamp(debt * SLEEP_DEBT_DECAY, 0, SLEEP_DEBT_CAP_MIN);
       continue;
     }
-    const prev = byDate.get(addDays(d, -1));
+    const prev = byDate.get(window[i - 1]);
     const imported = num(r.dbt) !== null ? num(r.sln) : null;
     const base = { baselineHrs, strain: prev?.strn, napMin: prev?.nap };
     const accrualNeed = imported ?? sleepNeed({ ...base, debtMin: 0 }).needHrs;
@@ -393,6 +431,12 @@ export interface CircadianDelay {
   n: number;
   /** Why the penalty did or did not apply — never null, always renderable. */
   reason: string;
+  /**
+   * `CIRCADIAN_PENALTY_LABEL` while the penalty is being charged, else null:
+   * the hedge travels with the penalty, so a surface that shows one shows the
+   * other.
+   */
+  penaltyLabel: string | null;
 }
 
 /**
@@ -411,6 +455,7 @@ export function circadianDelay(records: DailyRecord[], asOf: ISODate, nights = C
     lastMidpoint: null,
     n: 0,
     reason: 'Not enough logged bed and wake times yet to know your usual sleep midpoint.',
+    penaltyLabel: null,
   };
   const byDate = indexByDate(records);
   const win = Math.max(2, Math.floor(nights));
@@ -446,8 +491,9 @@ export function circadianDelay(records: DailyRecord[], asOf: ISODate, nights = C
     lastMidpoint: lastHHMM,
     n: refs.length,
     reason: delayed
-      ? `Your sleep midpoint moved to ${lastHHMM}, ${delayMin} min later than your usual ${medHHMM} — the lie-in cost you circadian alignment, so tonight needs ${CIRCADIAN_PENALTY_MIN} min more, not a later night.`
+      ? `Your sleep midpoint moved to ${lastHHMM}, ${delayMin} min later than your usual ${medHHMM} — the lie-in cost you circadian alignment, so tonight needs ${CIRCADIAN_PENALTY_MIN} min more, not a later night. ${CIRCADIAN_PENALTY_LABEL}`
       : `Sleep midpoint ${lastHHMM} is in line with your usual ${medHHMM}; body clock is where it should be.`,
+    penaltyLabel: delayed ? CIRCADIAN_PENALTY_LABEL : null,
   };
 }
 
@@ -975,6 +1021,125 @@ export interface SleepSummary {
   circadian: CircadianDelay;
 }
 
+/** Everything a single night's need is built from. `sleepSummary` and `sleepNeedSeries` share it. */
+interface NightNeed {
+  /** The record dated `asOf`, if any. */
+  today: DailyRecord | undefined;
+  learned: LearnedSleepBaseline;
+  baselineHrs: number;
+  walk: DebtWalk;
+  debtMin: number;
+  /** An imported `sln`, honoured only when a `dbt` accompanies it. */
+  importedNeed: number | null;
+  /** The walk's entry for `asOf` — present exactly when that night carries usable sleep. */
+  lastNight: SleepNight | undefined;
+}
+
+/**
+ * The learned baseline, the debt walk and the night they imply, for one day.
+ *
+ * Factored out of `sleepSummary` so a whole series of nights can be scored
+ * against ONE record index and ONE date axis: the Trends sleep chart used to
+ * call `sleepSummary` per day, and each of those calls rebuilt the index over
+ * the entire history (plus a second full scan for the last bedtime), which made
+ * the chart quadratic in the range length — 163 ms of a 1Y flip.
+ */
+function nightNeed(
+  byDate: Map<ISODate, DailyRecord>,
+  records: DailyRecord[],
+  asOf: ISODate,
+  profile: Profile,
+  options?: SleepSummaryOptions,
+  /** `debtWalkDates(asOf)`, when the caller already has the axis. */
+  walkWindow?: readonly ISODate[],
+): NightNeed {
+  const today = byDate.get(asOf);
+  const learned = learnedSleepBaseline(records, asOf, profile, options);
+  const profileBase = num(profile.sleepBaselineHrs);
+  const baselineHrs = learned.hrs ?? (profileBase !== null && profileBase > 0 ? profileBase : FALLBACK_BASELINE_HRS);
+
+  const walk = walkDebt(byDate, asOf, baselineHrs, walkWindow ?? debtWalkDates(asOf));
+  const importedDebt = num(today?.dbt);
+  const debtMin = round(importedDebt !== null ? Math.max(0, importedDebt) : walk.debtMin);
+
+  return {
+    today,
+    learned,
+    baselineHrs,
+    walk,
+    debtMin,
+    importedNeed: importedDebt !== null ? num(today?.sln) : null,
+    lastNight: walk.nights.find((n) => n.d === asOf),
+  };
+}
+
+/**
+ * `sleepSummary(records, d, profile, options).need` for each `d` in `dates`,
+ * without paying for the rest of the summary or for a per-day index.
+ *
+ * The Trends sleep chart plots one need per logged night, and nothing else the
+ * summary computes — the SRI grid, social jetlag, the bedtime scan, the 30-night
+ * mean — reaches the chart. Calling `sleepSummary` once per day therefore did
+ * `O(history)` work per point (an index rebuild, a full-history bedtime scan and
+ * a fresh 28-night date axis each time). This builds the index once, generates
+ * the date axis once, and reuses both for every night asked about; the values it
+ * returns are identical by construction, since it runs the very same
+ * `nightNeed` + `sleepNeed` path the summary does.
+ *
+ * `dates` need not be contiguous. Nights missing from the map had no date to
+ * score (an empty list in, an empty map out).
+ */
+export function sleepNeedSeries(
+  records: DailyRecord[],
+  dates: readonly ISODate[],
+  profile: Profile,
+  options?: SleepSummaryOptions,
+): Map<ISODate, number> {
+  const out = new Map<ISODate, number>();
+  if (dates.length === 0) return out;
+  const byDate = indexByDate(records);
+
+  // One axis spanning every walk any of `dates` will make, so each night's
+  // 29-day window is a slice rather than 29 fresh date strings.
+  let lo = dates[0];
+  let hi = dates[0];
+  for (const d of dates) {
+    if (d < lo) lo = d;
+    if (d > hi) hi = d;
+  }
+  const axis = lastNDates(hi, diffDays(lo, hi) + SLEEP_DEBT_WINDOW_NIGHTS + 1);
+  const at = new Map<ISODate, number>();
+  axis.forEach((d, i) => at.set(d, i));
+
+  for (const d of dates) {
+    const i = at.get(d);
+    // `dateRange` caps very long spans; falling back keeps an absurd date list
+    // correct rather than silently mis-windowed.
+    const window = i === undefined || i < SLEEP_DEBT_WINDOW_NIGHTS
+      ? debtWalkDates(d)
+      : axis.slice(i - SLEEP_DEBT_WINDOW_NIGHTS, i + 1);
+    const night = nightNeed(byDate, records, d, profile, options, window);
+    if (night.lastNight) {
+      out.set(d, night.lastNight.needHrs);
+      continue;
+    }
+    // No usable sleep on `d`: the summary falls back to tonight's need, which
+    // is the only place the circadian penalty enters.
+    const circadian = circadianDelay(records, d);
+    out.set(
+      d,
+      sleepNeed({
+        baselineHrs: night.baselineHrs,
+        strain: night.today?.strn,
+        debtMin: night.debtMin,
+        napMin: night.today?.nap,
+        circadianPenaltyMin: circadian.penaltyMin,
+      }).needHrs,
+    );
+  }
+  return out;
+}
+
 export function sleepSummary(
   records: DailyRecord[],
   asOf: ISODate,
@@ -982,17 +1147,9 @@ export function sleepSummary(
   options?: SleepSummaryOptions,
 ): SleepSummary {
   const byDate = indexByDate(records);
-  const today = byDate.get(asOf);
+  const night = nightNeed(byDate, records, asOf, profile, options);
+  const { today, learned, baselineHrs, walk, debtMin, importedNeed, lastNight } = night;
   const hours = num(today?.slh);
-
-  const learned = learnedSleepBaseline(records, asOf, profile, options);
-  const profileBase = num(profile.sleepBaselineHrs);
-  const baselineHrs = learned.hrs ?? (profileBase !== null && profileBase > 0 ? profileBase : FALLBACK_BASELINE_HRS);
-
-  const walk = walkDebt(byDate, asOf, baselineHrs);
-  const importedDebt = num(today?.dbt);
-  const debtMin = round(importedDebt !== null ? Math.max(0, importedDebt) : walk.debtMin);
-  const importedNeed = importedDebt !== null ? num(today?.sln) : null;
 
   const circadian = circadianDelay(records, asOf);
   const tonight = sleepNeed({
@@ -1004,7 +1161,6 @@ export function sleepSummary(
   });
   const tonightNeed = tonight.needHrs;
 
-  const lastNight = walk.nights.find((n) => n.d === asOf);
   const need = lastNight ? lastNight.needHrs : tonightNeed;
   const deltaVsNeedMin = hours === null || need === null ? null : round((hours - need) * 60);
 

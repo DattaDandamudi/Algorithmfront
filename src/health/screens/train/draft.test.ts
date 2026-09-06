@@ -174,6 +174,36 @@ describe('editing a saved session', () => {
     expect(draftToWorkout(draft, { durationMin: 60 }).id).toBe('w-old');
   });
 
+  it('keeps an imported session imported through an edit', () => {
+    // Relabelling a WHOOP session `manual` rewrites where the load came from:
+    // the Train tab's source caption and the strain-conversion hedge both read
+    // `Workout.source`.
+    const imported: Workout = { ...saved, source: 'whoop', externalId: 'whoop:2026-09-01T17:30' };
+    const draft = draftFromWorkout(imported, NOW);
+    expect(draft.source).toBe('whoop');
+    expect(draft.externalId).toBe('whoop:2026-09-01T17:30');
+
+    const edited = draftToWorkout({ ...draft, srpe: 8 }, { durationMin: 60 });
+    expect(edited.source).toBe('whoop');
+    // …and it still dedupes against the next import of the same export.
+    expect(edited.externalId).toBe('whoop:2026-09-01T17:30');
+
+    // The provenance survives the storage round trip, too.
+    writeDraft(draft);
+    expect(draftToWorkout(readDraft() as WorkoutDraft, { durationMin: 60 }).source).toBe('whoop');
+  });
+
+  it('still calls a hand-logged session manual, including an older draft with no source', () => {
+    expect(draftToWorkout(liveDraft(), { durationMin: 60 }).source).toBe('manual');
+    expect(draftFromWorkout(saved, NOW).source).toBe('manual');
+    const legacy = { ...liveDraft() } as WorkoutDraft & { source?: string };
+    delete legacy.source;
+    expect(draftToWorkout(legacy, { durationMin: 60 }).source).toBe('manual');
+    expect('externalId' in draftToWorkout(legacy, { durationMin: 60 })).toBe(false);
+    // A junk source in a hand-edited draft is dropped, not carried.
+    expect(parseDraft({ ...JSON.parse(JSON.stringify(liveDraft())), source: 'nonsense' })?.source).toBeUndefined();
+  });
+
   it('starts a new session at zero and counts up from its own clock', () => {
     const draft = newDraft({ d: '2026-09-06', start: '18:00', kind: 'strength', nowMs: NOW });
     expect(draft.baseMinutes).toBe(0);

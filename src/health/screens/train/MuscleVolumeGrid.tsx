@@ -5,10 +5,18 @@
  * because both are promises the app makes about volume:
  *
  * 1. **The status word is always on screen.** Every row ends in the current
- *    week's set count *and* its band in words ("12 · productive"), every cell
- *    carries the same wording in its `title`, the legend spells the four bands
- *    out, and the visually-hidden table repeats all of it. Nothing here is
+ *    week's set count *and* its band in words ("12 · productive"), the legend
+ *    spells the four bands out, and the visually-hidden table names the band of
+ *    **every** cell — all twelve weeks, not just the last one. Nothing here is
  *    knowable from colour alone.
+ *
+ *    The `title` on each cell is a hover, and a phone has no hover, so it is a
+ *    bonus rather than the mechanism: the hidden table is what a screen reader
+ *    reads (the grid is one `role="img"`, so per-cell attributes inside it are
+ *    never announced), and `CELL_PATTERN` is what a sighted reader who cannot
+ *    separate the bands by hue gets — yellow "below MEV" against green
+ *    "productive" is exactly the deuteranopia pair, so the two carry different
+ *    fills and the legend swatches carry the same fills back.
  * 2. **A landmark is advisory, never a cap.** `VOLUME_ADVISORY_NOTE` is
  *    rendered by the grid itself, so any screen that reuses it (Trends does)
  *    gets the note with it. `high` reads "more than most people need to grow";
@@ -17,6 +25,7 @@
  *
  * Exported from `screens/train/index.ts` for the Trends screen (plan §2c).
  */
+import type { CSSProperties } from 'react';
 import type { ISODate, MuscleVolume } from '../../data/types';
 import { VOLUME_ADVISORY_NOTE } from '../../engine';
 import { formatDateShort } from '../../lib/dates';
@@ -44,6 +53,30 @@ export interface MuscleVolumeGridProps {
 /** The four bands, in the order the legend lists them. */
 const LEGEND: Array<MuscleVolume['status']> = ['below-mev', 'building', 'productive', 'high'];
 
+/**
+ * A second, non-colour channel for the band: hatch direction. Four fills that
+ * differ in *pattern*, not only in hue, so the grid survives being read in
+ * greyscale or by a red-green colour-blind reader. Black at low alpha reads on
+ * every band colour and in either theme.
+ */
+const CELL_PATTERN: Record<MuscleVolume['status'], string | undefined> = {
+  'below-mev': 'repeating-linear-gradient(45deg, rgba(0,0,0,0.42) 0 2px, rgba(0,0,0,0) 2px 5px)',
+  building: 'repeating-linear-gradient(90deg, rgba(0,0,0,0.34) 0 1px, rgba(0,0,0,0) 1px 4px)',
+  productive: undefined, // solid — the band you want to be in is the plain one
+  high: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.34) 0 1px, rgba(0,0,0,0) 1px 4px)',
+};
+
+/** Fill for one band: its colour, plus the pattern that survives without colour. */
+export function volumeCellStyle(status: MuscleVolume['status']): CSSProperties {
+  const image = CELL_PATTERN[status];
+  return { backgroundColor: bandColor(volumeStatusTone(status)), ...(image ? { backgroundImage: image } : {}) };
+}
+
+/** "12 sets — productive" / "0 sets — below MEV": one cell of the hidden table. */
+export function volumeCellText(v: MuscleVolume): string {
+  return `${fmt(v.sets, v.sets % 1 === 0 ? 0 : 1)} sets — ${volumeStatusWord(v.status)}`;
+}
+
 export default function MuscleVolumeGrid({
   weeks,
   ariaLabel = 'Weekly sets per muscle, last 12 weeks',
@@ -67,14 +100,13 @@ export default function MuscleVolumeGrid({
             {weeks.map((week) => {
               const m = week.muscles[row];
               const cell = m ?? current;
-              const tone = volumeStatusTone(cell.status);
               const filled = cell.sets > 0;
               return (
                 <span
                   key={week.weekStart}
                   title={`${muscleLabel(cell.muscle)}, week of ${formatDateShort(week.weekStart)}: ${fmt(cell.sets, cell.sets % 1 === 0 ? 0 : 1)} sets — ${volumeStatusPhrase(cell.status)}`}
                   className={`block h-4 rounded-[3px] ${filled ? '' : 'border border-hx-border'}`}
-                  style={filled ? { backgroundColor: bandColor(tone) } : undefined}
+                  style={filled ? volumeCellStyle(cell.status) : undefined}
                 />
               );
             })}
@@ -88,11 +120,7 @@ export default function MuscleVolumeGrid({
       <ul className="flex flex-wrap gap-x-3 gap-y-1">
         {LEGEND.map((status) => (
           <li key={status} className="flex items-center gap-1.5 text-[10px] leading-3 text-hx-text2">
-            <span
-              className="w-2.5 h-2.5 rounded-[2px] shrink-0"
-              style={{ backgroundColor: bandColor(volumeStatusTone(status)) }}
-              aria-hidden
-            />
+            <span className="w-2.5 h-2.5 rounded-[2px] shrink-0" style={volumeCellStyle(status)} aria-hidden />
             {volumeStatusWord(status)}
           </li>
         ))}
@@ -103,10 +131,9 @@ export default function MuscleVolumeGrid({
         head={['Muscle', ...weeks.map((w) => `Week of ${formatDateShort(w.weekStart)}`), 'This week']}
         rows={muscles.map((current, row) => [
           muscleLabel(current.muscle),
-          ...weeks.map((w) => {
-            const m = w.muscles[row] ?? current;
-            return `${fmt(m.sets, m.sets % 1 === 0 ? 0 : 1)} sets`;
-          }),
+          // Every week's band, not only this one's: a bare set count leaves the
+          // other eleven columns knowable from colour alone.
+          ...weeks.map((w) => volumeCellText(w.muscles[row] ?? current)),
           `${fmt(current.sets, current.sets % 1 === 0 ? 0 : 1)} sets — ${volumeStatusPhrase(current.status)} (MEV ${fmt(current.mev, 0)}, MAV ${fmt(current.mav, 0)}, MRV ${fmt(current.mrv, 0)})`,
         ])}
       />

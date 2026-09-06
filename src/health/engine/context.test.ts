@@ -1119,8 +1119,80 @@ describe('buildCoachContext — v3 wiring', () => {
 // 8. Performance (Phase 3 gate: 365 days + 200 workouts + 90 check-ins)
 // ---------------------------------------------------------------------------
 
+/**
+ * The gate below is denominated in *calibration units*, not milliseconds.
+ *
+ * Why: vitest runs test files in parallel workers, so a wall-clock assertion
+ * measures the machine as much as the code. The same builder on the same commit
+ * has been measured at 86 ms alone, 161 ms in one CI run and 241 ms best-of-7 in
+ * another under worker contention — an absolute `< 150 ms` therefore passes or
+ * fails on how busy the box is, which is not a fact about `buildCoachContext`.
+ *
+ * So the test times a fixed synthetic workload in the same process, interleaved
+ * with the builder, and asserts their *ratio*. Contention slows both, so the
+ * ratio holds; a regression slows only the numerator, so the ratio moves. The
+ * unit is deliberately shaped like the work the engine actually does — date
+ * arithmetic and `YYYY-MM-DD` formatting, indexing a year by date, then the
+ * median/mean/SD every window ends in — and sized to cost about what one build
+ * costs, so neither side finds a quiet slot on a busy machine more easily than
+ * the other. It calls no engine code, so it cannot move when the engine does.
+ */
+const CALIBRATION_DAYS = 365;
+/** Tuned so one unit ≈ one `buildCoachContext` on an unloaded machine. */
+const CALIBRATION_PASSES = 780;
+
+function calibrationUnit(): number {
+  let acc = 0;
+  const index = new Map<string, { v: number; label: string }>();
+  for (let pass = 0; pass < CALIBRATION_PASSES; pass++) {
+    // (a) a year of dates, built the way `lastNDates` builds them.
+    const dates: string[] = [];
+    const cur = new Date(2026, 8, 6);
+    cur.setDate(cur.getDate() - CALIBRATION_DAYS);
+    for (let i = 0; i < CALIBRATION_DAYS; i++) {
+      cur.setDate(cur.getDate() + 1);
+      const mo = cur.getMonth() + 1;
+      const dy = cur.getDate();
+      dates.push(`${cur.getFullYear()}-${mo < 10 ? '0' : ''}${mo}-${dy < 10 ? '0' : ''}${dy}`);
+    }
+    // (b) index that year by date and read it back out of order.
+    index.clear();
+    for (let i = 0; i < CALIBRATION_DAYS; i++) {
+      index.set(dates[i], { v: ((i * 37 + pass * 11) % 211) / 7, label: dates[i] });
+    }
+    const window: number[] = [];
+    for (let i = 0; i < CALIBRATION_DAYS; i++) {
+      const hit = index.get(dates[(i * 3 + pass) % CALIBRATION_DAYS]);
+      if (hit !== undefined) window.push(hit.v * 1.5 - 0.25);
+    }
+    // (c) the statistics a window ends in.
+    window.sort((a, b) => a - b);
+    let sum = 0;
+    for (let i = 0; i < window.length; i++) sum += window[i];
+    const mean = sum / window.length;
+    let sq = 0;
+    for (let i = 0; i < window.length; i++) sq += (window[i] - mean) * (window[i] - mean);
+    acc += Math.round((window[window.length >> 1] + mean + Math.sqrt(sq / window.length)) * 1000) / 1000;
+  }
+  return acc;
+}
+
+/**
+ * Budget in calibration units. Measured band for the current builder: 0.87–0.96
+ * alone, 0.95–1.15 with the whole suite in parallel workers, and 0.96–1.15 with
+ * four CPU-burning processes on top of that (the same conditions that push the
+ * raw figure to 186 ms and break an absolute gate). 1.6 leaves ~40% over the
+ * worst of those while still failing on a regression of that size or larger —
+ * tighter, in fact, than the 150 ms-against-86 ms it replaces.
+ */
+const CONTEXT_BUDGET_UNITS = 1.6;
+/** What one unit returns. Pinned so a unit that got quietly cheaper cannot pass the gate. */
+const CALIBRATION_CHECKSUM = 44890.799;
+/** Alternating measurements; the floor of each side is the estimate. */
+const PERF_RUNS = 9;
+
 describe('buildCoachContext — performance', () => {
-  it('builds a 365-day, 200-workout, 90-check-in context in under 150 ms', () => {
+  it('builds a 365-day, 200-workout, 90-check-in context within its calibration budget', () => {
     const N = 365;
     const records: DailyRecord[] = [];
     for (let i = 0; i < N; i++) {
@@ -1166,24 +1238,42 @@ describe('buildCoachContext — performance', () => {
     expect(records.filter((r) => r.qs !== undefined)).toHaveLength(90);
 
     const input = { records, settings: SETTINGS, today: TODAY, now: NOW, workouts };
-    buildCoachContext(input); // warm up: the first run pays for JIT, not for the work
-    const runs: number[] = [];
-    for (let i = 0; i < 7; i++) {
+    // Warm up both sides: the first run of each pays for JIT, not for the work.
+    buildCoachContext(input);
+    let checksum = calibrationUnit();
+
+    // Alternated, so a burst of contention lands on whichever is running and
+    // neither side gets a systematically quieter slice of the machine.
+    const builds: number[] = [];
+    const units: number[] = [];
+    for (let i = 0; i < PERF_RUNS; i++) {
       const t0 = performance.now();
       buildCoachContext(input);
-      runs.push(performance.now() - t0);
+      const t1 = performance.now();
+      checksum += calibrationUnit();
+      units.push(performance.now() - t1);
+      builds.push(t1 - t0);
     }
-    const sorted = [...runs].sort((a, b) => a - b);
-    const best = sorted[0];
-    const median = sorted[3];
-    // Both are logged so a regression is visible in the run output, but the
-    // assertion is on the fastest run: vitest runs test files in parallel
-    // workers, so a median measured under contention times the machine rather
-    // than the builder. A real regression moves the floor too.
+    // The floor of each side is its cleanest sample — the run least interrupted
+    // by another worker. A regression moves the builder's floor and not the
+    // calibration's, which is exactly what the ratio is asking about.
+    const best = Math.min(...builds);
+    const unit = Math.min(...units);
+    const cost = best / unit;
+    const median = [...builds].sort((a, b) => a - b)[PERF_RUNS >> 1];
+    // Milliseconds are logged (a human reading CI still wants them) but never
+    // asserted on; the assertion is the ratio.
     console.log(
-      `buildCoachContext (365 d / 200 workouts / 90 check-ins): ${best.toFixed(0)} ms best of 7, ${median.toFixed(0)} ms median`,
+      `buildCoachContext (365 d / 200 workouts / 90 check-ins): ${cost.toFixed(2)} calibration units ` +
+        `(budget ${CONTEXT_BUDGET_UNITS}) — ${best.toFixed(0)} ms best of ${PERF_RUNS}, ` +
+        `${median.toFixed(0)} ms median, calibration unit ${unit.toFixed(0)} ms`,
     );
-    expect(best).toBeLessThan(150);
+    // The calibration really ran: a workload optimised away would read ~0 ms and
+    // make every ratio infinite, but a silently *shortened* one would make them
+    // all pass, so its output is checked rather than assumed.
+    expect(checksum).toBeCloseTo(CALIBRATION_CHECKSUM * (PERF_RUNS + 1), 1);
+    expect(unit).toBeGreaterThan(0);
+    expect(cost).toBeLessThan(CONTEXT_BUDGET_UNITS);
     expectNoNaN(buildCoachContext(input));
   });
 });
