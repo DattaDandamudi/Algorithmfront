@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FAVORITES } from '../data/defaults';
-import type { FoodEstimateItem } from '../data/types';
-import { FOOD_DB, findFood, scoreTokens } from './foodDb';
+import type { FoodEstimateItem, FoodItem } from '../data/types';
+import { FOOD_DB, TIE_BAND, findFood, scoreTokens } from './foodDb';
 import {
+  BEVERAGE_PER100,
+  IMPLAUSIBLE_CONF_CAP,
+  PLAUSIBLE_MAX_G,
+  PLAUSIBLE_MAX_KCAL,
   confidenceBand,
   foodItemToEstimate,
   itemToMeal,
@@ -353,5 +357,198 @@ describe('R5-14 generic "chicken" and portion idioms', () => {
     expect(parseFoodText('half a chicken').items[0]).toMatchObject({ name: 'Roast chicken', grams: 600 });
     expect(parseFoodText('1/4 chicken').items[0]).toMatchObject({ name: 'Roast chicken', grams: 300 });
     expect(parseFoodText('half chicken').items[0].assumptions).toContain('roast chicken');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §1g parser upgrades
+// ---------------------------------------------------------------------------
+
+describe('compound phrases (in / on / over / topped with)', () => {
+  it('splits when the tail is a food in its own right', () => {
+    expect(splitFoodSegments('grilled chicken on rice')).toEqual(['grilled chicken', 'rice']);
+    expect(splitFoodSegments('dal over rice')).toEqual(['dal', 'rice']);
+    expect(splitFoodSegments('eggs on toast')).toEqual(['eggs', 'toast']);
+    expect(splitFoodSegments('rice topped with dal')).toEqual(['rice topped', 'dal']);
+    expect(parseFoodText('dal over rice').items.map((i) => i.name)).toEqual(['Dal tadka', 'Basmati rice (cooked)']);
+    // "topped" is filler, so it never reaches the DB lookup
+    expect(parseFoodText('rice topped with dal').items[0].name).toBe('Basmati rice (cooked)');
+  });
+
+  it('keeps a preparation medium attached to its dish', () => {
+    expect(splitFoodSegments('chicken in butter sauce')).toEqual(['chicken in butter sauce']);
+    expect(splitFoodSegments('paneer in gravy')).toEqual(['paneer in gravy']);
+    expect(splitFoodSegments('tuna in water')).toEqual(['tuna in water']);
+    expect(splitFoodSegments('chicken in olive oil')).toEqual(['chicken in olive oil']);
+    const [dish] = parseFoodText('chicken in butter sauce').items;
+    expect(dish.name).toBe('Butter chicken');
+    expect(dish.grams).toBe(250);
+  });
+
+  it('splits a medium the user weighed, and never on a phrase that is itself a dish', () => {
+    expect(splitFoodSegments('1 scoop whey in 250 ml milk')).toEqual(['1 scoop whey', '250 ml milk']);
+    expect(splitFoodSegments('coffee with milk')).toEqual(['coffee with milk']);
+    expect(parseFoodText('coffee with milk').items).toHaveLength(1);
+  });
+
+  it('milk is a food, not a medium — its calories are most of the meal', () => {
+    const est = parseFoodText('oats in milk');
+    expect(est.items.map((i) => [i.name, i.grams])).toEqual([['Oats', 50], ['Milk (whole)', 250]]);
+    expect(est.items[1].kcal).toBeGreaterThan(140);
+  });
+
+  it('does not split when the tail is not a food', () => {
+    expect(splitFoodSegments('2 eggs on the side')).toEqual(['2 eggs on the side']);
+    expect(splitFoodSegments('biryani on tuesday')).toEqual(['biryani on tuesday']);
+  });
+
+  it('a blocked joiner does not hide a later one that holds', () => {
+    expect(splitFoodSegments('chicken in butter sauce over rice')).toEqual(['chicken in butter sauce', 'rice']);
+    expect(parseFoodText('chicken in butter sauce over rice').items.map((i) => i.name)).toEqual([
+      'Butter chicken',
+      'Basmati rice (cooked)',
+    ]);
+  });
+
+  it('an unsplit medium never becomes the dish (R5-2 the other way round)', () => {
+    // "tuna in water" is a tin of tuna; water and tuna score identically, so
+    // without the medium rule the lower-kcal tie-break would log a glass of water.
+    expect(parseFoodText('tuna in water').items).toHaveLength(1);
+    expect(parseFoodText('tuna in water').items[0].name).toBe('Tuna (canned)');
+    // …and the media are still foods in their own right.
+    expect(parseFoodText('water').items[0]).toMatchObject({ name: 'Water', kcal: 0 });
+    expect(parseFoodText('2 tbsp butter').items[0]).toMatchObject({ name: 'Butter', grams: 28 });
+    expect(parseFoodText('ghee').items[0].name).toBe('Ghee');
+  });
+});
+
+describe('a second quantity starts a new item', () => {
+  it('segments a run-on phrase with no connector', () => {
+    expect(splitFoodSegments('200 g chicken 2 rotis')).toEqual(['200 g chicken', '2 rotis']);
+    expect(splitFoodSegments('3 eggs 2 slices of toast')).toEqual(['3 eggs', '2 slices of toast']);
+    expect(splitFoodSegments('2 rotis 150 g chicken tikka 1 bowl dal')).toEqual(['2 rotis', '150 g chicken tikka', '1 bowl dal']);
+    const est = parseFoodText('200 g chicken 2 rotis');
+    expect(est.items).toHaveLength(2);
+    expect(est.items[0]).toMatchObject({ name: 'Chicken breast', grams: 200 });
+    expect(est.items[1]).toMatchObject({ name: 'Roti', grams: 80 });
+  });
+
+  it('keeps one quantity whole: mixed numbers, multipliers, articles and trailing weights', () => {
+    expect(splitFoodSegments('half a naan')).toEqual(['half a naan']);
+    expect(splitFoodSegments('one and a half rotis')).toEqual(['one ½ rotis']);
+    expect(splitFoodSegments('2 x 100 g chicken tikka')).toEqual(['2 x 100 g chicken tikka']);
+    expect(splitFoodSegments('chicken tikka 200 g')).toEqual(['chicken tikka 200 g']);
+    expect(splitFoodSegments('1.5 cups rice')).toEqual(['1.5 cups rice']);
+    expect(parseFoodText('2 x 100 g chicken tikka').items[0]).toMatchObject({ grams: 200, confidence: 0.9 });
+  });
+});
+
+describe('near-tie ranking (favorites → cuisine → score → plain → kcal)', () => {
+  const fav: FoodItem = {
+    id: 'fav_dal_makhani', name: 'Dal makhani', per100: { kc: 150, p: 7, f: 8, c: 14, fi: 4 },
+    defaultGrams: 200, unitName: 'bowl', unitGrams: 200, aliases: ['dal'], cuisine: 'indian', tags: ['legume'],
+  };
+
+  it('a favorite wins a near-tie it would lose on score alone', () => {
+    // "dal" is an exact alias of both, and the favorite carries the same score.
+    expect(findFood('dal')[0].item.id).toBe('dal-tadka');
+    expect(findFood('dal', [fav])[0].item.id).toBe('fav_dal_makhani');
+    expect(parseFoodText('a bowl of dal', { extra: [fav] }).items[0].name).toBe('Dal makhani');
+  });
+
+  it('the persona cuisine breaks a tie the list order would otherwise decide', () => {
+    const twin = (id: string, name: string, cuisine: FoodItem['cuisine']): FoodItem => ({
+      id, name, per100: { kc: 250, p: 17, f: 18, c: 5, fi: 1 }, defaultGrams: 150,
+      aliases: ['kofta'], cuisine, tags: ['red-meat'],
+    });
+    const both = [twin('x_me', 'Kofta plate', 'middle-eastern'), twin('x_in', 'Kofta curry', 'indian')];
+    expect(findFood('kofta', both, { cuisines: ['indian'] })[0].item.id).toBe('x_in');
+    expect(findFood('kofta', both, { cuisines: ['middle-eastern'] })[0].item.id).toBe('x_me');
+    expect(findFood('kofta', both)[0].item.id).toBe('x_me'); // list order, deterministically
+    // A cuisine never promotes a match from outside the band.
+    const best = findFood('biryani')[0];
+    expect(findFood('biryani', [], { cuisines: ['western'] })[0].item.id).toBe(best.item.id);
+    expect(best.score - findFood('biryani', [], { cuisines: ['western'] })[1].score).toBeGreaterThan(TIE_BAND);
+  });
+
+  it('score still beats the generic preferences, so a 0.05-better match wins', () => {
+    // butter (plain, 'home') is 0.75; butter chicken is 0.80 — the dish wins.
+    expect(findFood('chicken butter sauce')[0].item.id).toBe('butter-chicken');
+  });
+
+  it('the lower-kcal candidate breaks what everything else leaves tied', () => {
+    const rows = findFood('paneer tikka');
+    const tied = rows.filter((r) => r.score >= rows[0].score - TIE_BAND);
+    for (let i = 1; i < tied.length; i++) {
+      if (tied[i].score === tied[i - 1].score && tied[i].item.tags?.includes('home') === tied[i - 1].item.tags?.includes('home')) {
+        expect(tied[i].item.per100.kc).toBeGreaterThanOrEqual(tied[i - 1].item.per100.kc);
+      }
+    }
+  });
+
+  it('"watermelon" no longer matches "water"', () => {
+    expect(findFood('watermelon smoothie')).toHaveLength(0);
+    expect(findFood('shaw')[0].item.id).toBe('chicken-shawarma-wrap'); // prefix typing still works
+    expect(findFood('rotis')[0].item.id).toBe('roti'); // a 1-letter overhang still matches
+  });
+});
+
+describe('beverage prior for unknown drinks', () => {
+  it('uses 40 kcal/100 g in a 250 g glass and asks one question', () => {
+    const est = parseFoodText('watermelon smoothie');
+    expect(est.items).toHaveLength(1);
+    expect(est.items[0]).toMatchObject({ name: 'watermelon smoothie', grams: 250, kcal: 100, confidence: 0.3 });
+    expect(est.items[0].assumptions).toContain('unknown drink');
+    expect(BEVERAGE_PER100.kc).toBe(40);
+    expect(est.clarify).toBe('What was in "watermelon smoothie" and roughly how much?');
+  });
+
+  it('honours a stated size and scales the prior', () => {
+    expect(parseFoodText('500 ml mango milkshake').items[0]).toMatchObject({ grams: 500, kcal: 200, confidence: 0.3 });
+    expect(parseFoodText('a glass of thandai').items[0]).toMatchObject({ grams: 250, kcal: 100 });
+  });
+
+  it('never overrides a drink the DB knows', () => {
+    expect(parseFoodText('green tea').items[0].name).toBe('Chai'); // "tea" is chai for this persona
+    expect(parseFoodText('a glass of orange juice').items[0]).toMatchObject({ name: 'Orange juice', grams: 250 });
+    expect(parseFoodText('2 beers').items[0]).toMatchObject({ name: 'Beer', grams: 660 });
+    expect(parseFoodText('2 beers').items[0].tags).toContain('alcohol');
+    expect(parseFoodText('black coffee').items[0].name).toBe('Black coffee');
+  });
+
+  it('a solid unknown food still gets the mixed-dish prior', () => {
+    expect(parseFoodText('grandma special').items[0]).toMatchObject({ confidence: 0.2, kcal: 500 });
+  });
+});
+
+describe('plausibility guard', () => {
+  it('caps confidence at 0.4 and asks about the total above 1,500 g or 2,500 kcal', () => {
+    const heavy = parseFoodText('2 kg chicken biryani');
+    expect(heavy.items[0].grams).toBe(2000);
+    expect(heavy.items.every((i) => i.confidence <= IMPLAUSIBLE_CONF_CAP)).toBe(true);
+    expect(heavy.clarify).toMatch(/2,000 g and 3,600 kcal/);
+    expect(heavy.clarify).toMatch(/whole amount/);
+
+    // kcal alone can trip it: 400 g of ghee is under the gram bound.
+    const rich = parseFoodText('400 g ghee');
+    expect(rich.items[0].grams).toBe(400);
+    expect(rich.items[0].confidence).toBe(IMPLAUSIBLE_CONF_CAP);
+    expect(rich.clarify).not.toBeNull();
+  });
+
+  it('leaves a big-but-real meal alone', () => {
+    const feast = parseFoodText('chicken biryani plate, 2 rotis and a bowl of raita');
+    const totalG = feast.items.reduce((s, i) => s + i.grams, 0);
+    const totalKcal = feast.items.reduce((s, i) => s + i.kcal, 0);
+    expect(totalG).toBeLessThanOrEqual(PLAUSIBLE_MAX_G);
+    expect(totalKcal).toBeLessThanOrEqual(PLAUSIBLE_MAX_KCAL);
+    expect(feast.clarify).toBeNull();
+    expect(Math.max(...feast.items.map((i) => i.confidence))).toBeGreaterThan(IMPLAUSIBLE_CONF_CAP);
+  });
+
+  it('does not rewrite the numbers — only the confidence and the question', () => {
+    const heavy = parseFoodText('1 kg chicken biryani and 4 naans');
+    expect(heavy.items.map((i) => i.grams)).toEqual([1000, 360]);
+    expect(heavy.items[0].kcal).toBe(1800);
   });
 });

@@ -16,9 +16,13 @@
  * Mapping: OFF nutriments are per 100 g (`*_100g`). We scale them to the
  * label's serving (`serving_quantity`, grams) when present, else to 100 g,
  * and say so in `assumptions` so the user edits the grams to what they ate.
- * Confidence is 0.85 when the four core label values (kcal, protein, fat,
- * carbs) are all present — fiber is missing on a large share of OFF entries
- * and is only noted — else 0.5 (§9 Med band → the sheet asks for a check).
+ *
+ * Confidence (§1g) is about the PORTION, not the label: the macros come off a
+ * printed label and are as good as data gets, but what the user actually ate is
+ * a guess whenever the pack does not state a serving. So 0.75 with a label
+ * serving, 0.6 when all we have is per-100 g and 100 g is an invented portion —
+ * both Med, both prompting the user to check the grams. An incomplete label
+ * (a missing core value, shown as 0) caps it at 0.5 on top of that.
  *
  * `FoodEstimate.source` is 'barcode' so the Log screen can caption the sheet
  * ("label data from Open Food Facts — check the serving").
@@ -29,10 +33,12 @@ import { round } from '../lib/format';
 export const OFF_PRODUCT_ENDPOINT = 'https://world.openfoodfacts.org/api/v2/product/';
 export const OFF_FIELDS = 'product_name,brands,nutriments,serving_size,serving_quantity';
 
-/** Confidence for a complete label (kcal + P/F/C all listed). */
-export const BARCODE_CONFIDENCE_COMPLETE = 0.85;
-/** Confidence when one or more core values are missing (shown as 0). */
-export const BARCODE_CONFIDENCE_PARTIAL = 0.5;
+/** Confidence when the pack states a serving size we can scale to. */
+export const BARCODE_CONFIDENCE_SERVING = 0.75;
+/** Confidence when only per-100 g data exists and 100 g is an assumed portion. */
+export const BARCODE_CONFIDENCE_PER100 = 0.6;
+/** Ceiling when one or more core values are missing from the label (shown as 0). */
+export const BARCODE_CONFIDENCE_INCOMPLETE = 0.5;
 /** Grams assumed when the label lists no serving size. */
 export const DEFAULT_SERVING_G = 100;
 /** kJ → kcal (OFF's `energy_100g` is always kJ; `energy-kcal_100g` is kcal). */
@@ -113,16 +119,20 @@ export function productToEstimate(product: OffProduct, code: string): FoodEstima
   if (fi100 === null) notes.push('fiber not listed');
 
   const servingG = num(product.serving_quantity);
-  const grams = servingG !== null && servingG > 0 ? round(servingG) : DEFAULT_SERVING_G;
+  const hasServing = servingG !== null && servingG > 0;
+  const grams = hasServing ? round(servingG) : DEFAULT_SERVING_G;
   const servingLabel = str(product.serving_size);
   const k = grams / 100;
   const name = productDisplayName(product, code);
 
-  const serving =
-    servingG !== null && servingG > 0
-      ? `label serving ${servingLabel && servingLabel !== `${grams}g` && servingLabel !== `${grams} g` ? `${servingLabel} (${grams} g)` : `${grams} g`}`
-      : `no serving listed — ${DEFAULT_SERVING_G} g assumed`;
+  const serving = hasServing
+    ? `label serving ${servingLabel && servingLabel !== `${grams}g` && servingLabel !== `${grams} g` ? `${servingLabel} (${grams} g)` : `${grams} g`}`
+    : `no serving listed — ${DEFAULT_SERVING_G} g assumed`;
   const assumptions = [`Open Food Facts · ${name}`, `${serving}; edit grams to what you ate`, ...notes].join('; ');
+  const confidence = Math.min(
+    hasServing ? BARCODE_CONFIDENCE_SERVING : BARCODE_CONFIDENCE_PER100,
+    complete ? 1 : BARCODE_CONFIDENCE_INCOMPLETE,
+  );
 
   const item: FoodEstimateItem = {
     name,
@@ -132,7 +142,7 @@ export function productToEstimate(product: OffProduct, code: string): FoodEstima
     fat_g: Math.max(0, round((f100 ?? 0) * k, 1)),
     carbs_g: Math.max(0, round((c100 ?? 0) * k, 1)),
     fiber_g: Math.max(0, round((fi100 ?? 0) * k, 1)),
-    confidence: complete ? BARCODE_CONFIDENCE_COMPLETE : BARCODE_CONFIDENCE_PARTIAL,
+    confidence,
     assumptions,
     tags: [],
   };

@@ -170,4 +170,14 @@ describe('tobaccoInsightNumbers', () => {
     expect(n.delta).toBeNull();
     expect(n.count).toBe(0);
   });
+
+  it('always carries the paired-day counts — a difference of means without its n is not a finding', () => {
+    expect(tobaccoInsightNumbers(alternating(8), ASOF)).toMatchObject({ nFree: 4, nSmoke: 4 });
+    // Below tobaccoHrvComparison's minimum the comparison is suppressed but the
+    // counts still say how far off it is (2 free / 3 smoking).
+    const thin = tobaccoInsightNumbers(alternating(5), ASOF);
+    expect(tobaccoHrvComparison(alternating(5), ASOF)).toBeNull();
+    expect(thin).toMatchObject({ nFree: 2, nSmoke: 3 });
+    expect(tobaccoInsightNumbers([], ASOF)).toMatchObject({ nFree: 0, nSmoke: 0, hrvFree: null, delta: null });
+  });
 });

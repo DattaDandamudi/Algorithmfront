@@ -15,7 +15,9 @@ import type { FoodItem, FoodTag, Macros } from '../data/types';
  * `unitName`/`unitGrams` give the parser a natural counting unit ("2 rotis",
  * "a plate of biryani"); `defaultGrams` is the portion assumed when no
  * quantity is given. Tags feed the §3 frequency counters and §7 #13/#14 insights:
- * 'restaurant' marks typical takeaway dishes, 'home' marks basics.
+ * 'restaurant' marks typical takeaway dishes, 'home' marks basics, 'alcohol'
+ * marks drinks so a beer logged in the food bar reaches the same counters as a
+ * drink logged on the day record.
  */
 
 type Cuisine = NonNullable<FoodItem['cuisine']>;
@@ -147,6 +149,14 @@ export const FOOD_DB: FoodItem[] = [
   item('water', 'Water', [0, 0, 0, 0, 0], 250, { unit: ['glass', 250], aliases: ['plain water', 'tap water', 'still water', 'bottled water', 'h2o'], cuisine: W, tags: ['home'] }),
   item('sparkling-water', 'Sparkling water', [0, 0, 0, 0, 0], 330, { unit: ['can', 330], aliases: ['soda water', 'fizzy water', 'seltzer', 'mineral water', 'carbonated water', 'club soda', 'perrier'], cuisine: W, tags: ['home'] }),
   item('diet-cola', 'Diet cola', [0, 0, 0, 0, 0], 330, { unit: ['can', 330], aliases: ['diet coke', 'coke zero', 'zero sugar cola', 'pepsi max', 'diet soda'], cuisine: W, tags: ['caffeine'] }),
+  // Drinks people log by name. The generic 'juice' alias is deliberate: a fruit
+  // juice is 40–60 kcal/100 g whatever the fruit, so the prior is right even
+  // when the exact fruit is not in the DB (the parser reports it as a weak match).
+  item('orange-juice', 'Orange juice', [45, 0.7, 0.2, 10.4, 0.2], 250, { unit: ['glass', 250], aliases: ['juice', 'fruit juice', 'fresh juice', 'oj', 'apple juice', 'mango juice', 'orange squash'], cuisine: W, tags: ['sweet'] }),
+  item('mango-lassi', 'Mango lassi', [110, 3, 3, 18, 0.3], 250, { unit: ['glass', 250], aliases: ['lassi', 'sweet lassi', 'mango yogurt drink'], cuisine: IN, tags: ['dairy', 'sweet', 'restaurant'] }),
+  // 'alcohol' tagged so the §3 counters and the N-of-1 impact engine see drinks logged as food.
+  item('beer', 'Beer', [43, 0.5, 0, 3.6, 0], 330, { unit: ['can', 330], aliases: ['lager', 'ale', 'pilsner', 'draught beer'], cuisine: W, tags: ['alcohol'] }),
+  item('wine', 'Wine', [83, 0.1, 0, 2.6, 0], 150, { unit: ['glass', 150], aliases: ['red wine', 'white wine', 'rose wine'], cuisine: W, tags: ['alcohol'] }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -209,9 +219,20 @@ function editDistance(a: string, b: string, max: number): number {
   return prev[b.length];
 }
 
-/** Prefix ("shaw" → "shawarma") or near-typo ("biriyani" → "biryani") token match. */
+/** How much longer a query may be than a key it starts with ("roties" → "roti"). */
+const MAX_SUFFIX_OVERHANG = 2;
+
+/**
+ * Prefix ("shaw" → "shawarma") or near-typo ("biriyani" → "biryani") token match.
+ *
+ * The reverse direction — an indexed key that is a prefix of a LONGER query — is
+ * capped at MAX_SUFFIX_OVERHANG characters, i.e. a stray plural or suffix.
+ * Without that cap "watermelon" matches "water" and a smoothie is logged as a
+ * glass of water: the longer the overhang, the less the two words share.
+ */
 function fuzzyToken(q: string, k: string): boolean {
-  if (q.length >= 4 && (k.startsWith(q) || (k.length >= 4 && q.startsWith(k)))) return true;
+  if (q.length >= 4 && k.startsWith(q)) return true;
+  if (k.length >= 4 && q.startsWith(k) && q.length - k.length <= MAX_SUFFIX_OVERHANG) return true;
   const minLen = Math.min(q.length, k.length);
   if (minLen >= 5 && editDistance(q, k, 1) <= 1) return true;
   return minLen >= 8 && editDistance(q, k, 2) <= 2;
@@ -244,10 +265,19 @@ export function scoreTokens(q: string[], k: string[]): number {
   if (hits === 0) return 0;
   if (exact >= qs.size) {
     const s = 0.85 + 0.1 * (qs.size / ks.size);
-    return qs.has(k[0]) ? s : Math.min(s, WEAK_SUBSET);
+    return r6(qs.has(k[0]) ? s : Math.min(s, WEAK_SUBSET));
   }
-  if (exact >= ks.size) return 0.7 + 0.15 * (ks.size / qs.size);
-  return 0.35 + 0.45 * (hits / Math.max(qs.size, ks.size));
+  if (exact >= ks.size) return r6(0.7 + 0.15 * (ks.size / qs.size));
+  return r6(0.35 + 0.45 * (hits / Math.max(qs.size, ks.size)));
+}
+
+/**
+ * Round to 6 dp. `0.7 + 0.15 * (2/3)` is 0.7999999999999999 in binary floating
+ * point, which sits just below the parser's 0.8 "strong match" line — arithmetic
+ * noise must not decide the confidence chip the user sees.
+ */
+function r6(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
 }
 
 const MIN_SCORE = 0.4;
@@ -261,6 +291,8 @@ interface Candidate {
   /** Unboosted best key score. */
   score: number;
   boost: number;
+  /** From the caller's favorites/recents list rather than the built-in DB. */
+  fromExtra: boolean;
   /** The best key strictly contains the query ("chicken" ⊂ "chicken tikka"). */
   subset: boolean;
   order: number;
@@ -268,6 +300,21 @@ interface Candidate {
 
 /** Plain basics ('home') rank ahead of restaurant dishes when scores tie — "chicken" → chicken breast, not tikka. */
 const plainness = (it: FoodItem) => (it.tags?.includes('home') ? 0 : 1);
+
+/**
+ * Scores this close to the best are a statistical tie: the scorer's 0.05
+ * granularity is noise, not evidence. Ties are resolved by the preference
+ * ladder below rather than by whichever entry happens to sit earlier in the DB.
+ */
+export const TIE_BAND = 0.05;
+
+export interface FindFoodOptions {
+  /**
+   * The persona's cuisines (`profile.cuisines`, e.g. ['indian','middle-eastern']).
+   * Used ONLY to break near-ties — it never promotes a worse match past the band.
+   */
+  cuisines?: string[];
+}
 
 /**
  * Rank foods for a free-text query. `extra` (favorites/recents) is searched
@@ -281,8 +328,23 @@ const plainness = (it: FoodItem) => (it.tags?.includes('home') ? 0 : 1);
  * item wins the tie — the parser then reports ≤0.45 confidence with a "low
  * confidence" note instead of picking a restaurant dish at Med. A lone subset
  * match ("scrambled" → eggs) keeps its strong score.
+ *
+ * Tie-break ladder (§1g): everything within TIE_BAND of the best score is
+ * ordered by
+ *   1. the user's own favorites/recents — they eat what they ate before;
+ *   2. the persona's cuisines           — "kofta" is the Middle Eastern one;
+ *   3. the score itself;
+ *   4. plain basics before restaurant dishes (the older R5-14 rule);
+ *   5. the lower-kcal candidate;
+ *   6. DB order, so the result is deterministic.
+ *
+ * Only the two USER signals (1, 2) outrank the score: they are evidence about
+ * this person, and 0.05 of scorer granularity is not. The generic preferences
+ * (4, 5) break what the score leaves tied — putting either of them above the
+ * score would resolve "chicken in butter sauce" (butter-chicken 0.80, butter
+ * 0.75) to a pat of butter.
  */
-export function findFood(query: string, extra: FoodItem[] = []): FoodMatch[] {
+export function findFood(query: string, extra: FoodItem[] = [], opts: FindFoodOptions = {}): FoodMatch[] {
   const q = tokens(query);
   if (!q.length) return [];
   const seen = new Map<string, Candidate>();
@@ -299,7 +361,9 @@ export function findFood(query: string, extra: FoodItem[] = []): FoodMatch[] {
     if (best < MIN_SCORE) return;
     const key = normalise(it.name);
     const prev = seen.get(key);
-    if (!prev || best + boost > prev.score + prev.boost) seen.set(key, { item: it, score: best, boost, subset, order: seen.size });
+    if (!prev || best + boost > prev.score + prev.boost) {
+      seen.set(key, { item: it, score: best, boost, fromExtra: boost > 0, subset, order: prev?.order ?? seen.size });
+    }
   };
   // Favorites/recents get a hair of a boost so they outrank a same-score DB twin.
   for (const it of extra) consider(it, 0.02);
@@ -312,9 +376,29 @@ export function findFood(query: string, extra: FoodItem[] = []): FoodMatch[] {
     const k = WEAK_SUBSET / best.score;
     for (const r of rows) if (r.subset) r.score *= k;
   }
-  return rows
-    .map((r) => ({ item: r.item, score: Math.min(1, r.score + r.boost), plain: plainness(r.item), order: r.order }))
-    .sort((a, b) => b.score - a.score || a.plain - b.plain || a.order - b.order)
+  const cuisines = new Set((opts.cuisines ?? []).map((c) => c.trim().toLowerCase()).filter(Boolean));
+  const scored = rows.map((r) => ({
+    item: r.item,
+    score: Math.min(1, r.score + r.boost),
+    fav: r.fromExtra ? 0 : 1,
+    cuisine: cuisines.size > 0 && r.item.cuisine && cuisines.has(r.item.cuisine) ? 0 : 1,
+    plain: plainness(r.item),
+    kcal: r.item.per100.kc,
+    order: r.order,
+  }));
+  const top = scored.reduce((m, r) => Math.max(m, r.score), 0);
+  // `tied` is the FIRST sort key, so the comparator stays a consistent total
+  // order: every tied row outranks every untied one, and the two groups are
+  // never compared by different rules.
+  return scored
+    .map((r) => ({ ...r, tied: r.score >= top - TIE_BAND ? 0 : 1 }))
+    .sort(
+      (a, b) =>
+        a.tied - b.tied ||
+        (a.tied === 0
+          ? a.fav - b.fav || a.cuisine - b.cuisine || b.score - a.score || a.plain - b.plain || a.kcal - b.kcal || a.order - b.order
+          : b.score - a.score || a.plain - b.plain || a.order - b.order),
+    )
     .map(({ item, score }) => ({ item, score }));
 }
 

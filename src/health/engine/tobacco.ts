@@ -13,6 +13,10 @@
  * ends it. A smoke-free day therefore needs an explicit 0 (store
  * `adjustTobacco(d, 0)` writes one).
  *
+ * Every comparison of means ships its counts (`nFree`/`nSmoke`): a difference
+ * between two averages with no n behind it is not a finding, and the insight
+ * copy is required to quote both.
+ *
  * Pure: records in any order (indexed by date), null for missing data, never
  * NaN, never throws, no clock access.
  */
@@ -116,10 +120,11 @@ function meanOrNull(xs: number[]): number | null {
 
 /**
  * Pair each logged tobacco day in the `days` days before asOf with the
- * following morning's readings (which must be on or before asOf). Null until
- * both groups have ≥ TOBACCO_MIN_GROUP_N paired days.
+ * following morning's readings. Runs whatever the group sizes are — the counts
+ * are part of the answer, so callers can say "3 smoke-free days" instead of
+ * quoting a difference of means with no n behind it.
  */
-export function tobaccoHrvComparison(records: DailyRecord[], asOf: ISODate, days = 30): TobaccoHrvComparison | null {
+function pairedGroups(records: DailyRecord[], asOf: ISODate, days: number): { free: Group; smoke: Group } {
   const n = Math.max(1, Math.floor(days));
   const byDate = indexByDate(records);
   const free: Group = { hrv: [], rhr: [], rec: [], n: 0 };
@@ -139,6 +144,16 @@ export function tobaccoHrvComparison(records: DailyRecord[], asOf: ISODate, days
     if (rhr !== null) g.rhr.push(rhr);
     if (rec !== null) g.rec.push(rec);
   }
+  return { free, smoke };
+}
+
+/**
+ * Pair each logged tobacco day in the `days` days before asOf with the
+ * following morning's readings (which must be on or before asOf). Null until
+ * both groups have ≥ TOBACCO_MIN_GROUP_N paired days.
+ */
+export function tobaccoHrvComparison(records: DailyRecord[], asOf: ISODate, days = 30): TobaccoHrvComparison | null {
+  const { free, smoke } = pairedGroups(records, asOf, days);
 
   if (free.n < TOBACCO_MIN_GROUP_N || smoke.n < TOBACCO_MIN_GROUP_N) return null;
   const hrvSmokeFree = meanOrNull(free.hrv);
@@ -165,16 +180,25 @@ export interface TobaccoInsightNumbers {
   hrvFree: number | null;
   /** hrvFree − mean next-morning HRV after smoking days (needs ≥ 3 smoking days). */
   delta: number | null;
+  /**
+   * Paired days behind each mean over the 30-day window. **A comparison of
+   * means without its counts is not a finding** — the insight quotes both, and
+   * they are reported even when the comparison itself is below its minimum so
+   * the UI can say how far off it is.
+   */
+  nFree: number;
+  nSmoke: number;
 }
 
 /**
  * Numbers for insight template #9: "{count} today vs your {avg} average. On
- * your last 3 smoke-free days HRV averaged {hrv_free} ms — {delta} higher."
- * Looks back 30 days before asOf for the smoke-free mornings.
+ * your last 3 smoke-free days HRV averaged {hrv_free} ms — {delta} higher than
+ * your {nSmoke} smoking days." Looks back 30 days before asOf.
  */
 export function tobaccoInsightNumbers(records: DailyRecord[], asOf: ISODate): TobaccoInsightNumbers {
   const stats = tobaccoStats(records, asOf);
   const cmp = tobaccoHrvComparison(records, asOf, 30);
+  const groups = pairedGroups(records, asOf, 30);
   const byDate = indexByDate(records);
 
   const recentFree: number[] = [];
@@ -188,5 +212,5 @@ export function tobaccoInsightNumbers(records: DailyRecord[], asOf: ISODate): To
   const hrvFree = recentFree.length === 3 ? meanOrNull(recentFree) : null;
   const delta = hrvFree !== null && cmp?.hrvSmoking != null ? round(hrvFree - cmp.hrvSmoking, 1) : null;
 
-  return { count: stats.today, avg: stats.avg7, hrvFree, delta };
+  return { count: stats.today, avg: stats.avg7, hrvFree, delta, nFree: groups.free.n, nSmoke: groups.smoke.n };
 }

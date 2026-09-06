@@ -7,9 +7,11 @@ import {
   FOOD_PROMPT_BASE,
   FOOD_SCHEMA,
   FOOD_TAGS,
+  MAX_FOOD_PRIORS,
   buildFoodSystemPrompt,
   estimateFood,
   estimateFoodWithClaude,
+  foodPriorLines,
   normaliseFoodJSON,
 } from './food';
 
@@ -77,6 +79,37 @@ describe('buildFoodSystemPrompt', () => {
     const p = buildFoodSystemPrompt({ ...DEFAULT_PROFILE, cuisines: [], foodNotes: '' });
     expect(p).toContain('No cuisine preference is set');
     expect(p).not.toContain('User food notes');
+    expect(p).not.toContain('USUAL FOODS');
+  });
+
+  it('lists the favorite/recent priors so "the usual" resolves like the local parser', () => {
+    const p = buildFoodSystemPrompt(DEFAULT_PROFILE, DEFAULT_FAVORITES);
+    expect(p).toContain("THE USER'S USUAL FOODS");
+    expect(p).toContain('- Chicken tikka (200 g typical portion; 1 piece ≈ 35 g; 165 kcal/100 g; also called tikka, murgh tikka)');
+    expect(p).toContain('- Roti (40 g typical portion; 1 roti ≈ 40 g; 300 kcal/100 g');
+    // the rules still follow the priors, so the model reads them in order
+    expect(p.indexOf("THE USER'S USUAL FOODS")).toBeLessThan(p.indexOf('RULES:'));
+  });
+});
+
+describe('foodPriorLines', () => {
+  it('caps at 20, de-duplicates by name and skips blanks', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      id: `f${i}`, name: `Food ${i}`, per100: { kc: 100, p: 5, f: 5, c: 5, fi: 1 }, defaultGrams: 100,
+    }));
+    expect(foodPriorLines(many)).toHaveLength(MAX_FOOD_PRIORS);
+    expect(MAX_FOOD_PRIORS).toBe(20);
+    const dupes = [...DEFAULT_FAVORITES, { ...DEFAULT_FAVORITES[0], id: 'other' }, { ...DEFAULT_FAVORITES[0], id: 'blank', name: '  ' }];
+    expect(foodPriorLines(dupes)).toHaveLength(DEFAULT_FAVORITES.length);
+  });
+
+  it('omits the unit clause when the food has no natural unit', () => {
+    const [line] = foodPriorLines([{ id: 'x', name: 'Beef mince', per100: { kc: 250, p: 26, f: 17, c: 0, fi: 0 }, defaultGrams: 150 }]);
+    expect(line).toBe('- Beef mince (150 g typical portion; 250 kcal/100 g)');
+  });
+
+  it('is empty for an empty library', () => {
+    expect(foodPriorLines([])).toEqual([]);
   });
 });
 
@@ -134,6 +167,17 @@ describe('estimateFood', () => {
     const est = await estimateFood('200 g chicken tikka and one roti', AI_ON, DEFAULT_PROFILE, DEFAULT_FAVORITES, { client });
     expect(est.source).toBe('claude');
     expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the favorites/recents through to the prompt as priors', async () => {
+    const { client, create } = mockClient(async () => textResponse(GOOD));
+    await estimateFood('the usual', AI_ON, DEFAULT_PROFILE, DEFAULT_FAVORITES, { client });
+    const system = (create.mock.calls[0][0] as { system: string }).system;
+    expect(system).toContain("THE USER'S USUAL FOODS");
+    expect(system).toContain('Chicken biryani');
+    // no library → no priors block, same prompt as before
+    await estimateFood('the usual', AI_ON, DEFAULT_PROFILE, [], { client });
+    expect((create.mock.calls[1][0] as { system: string }).system).not.toContain('USUAL FOODS');
   });
 
   it('falls back to the local parser when the client throws, and flags it', async () => {

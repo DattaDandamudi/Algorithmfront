@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  BARCODE_CONFIDENCE_COMPLETE,
-  BARCODE_CONFIDENCE_PARTIAL,
+  BARCODE_CONFIDENCE_INCOMPLETE,
+  BARCODE_CONFIDENCE_PER100,
+  BARCODE_CONFIDENCE_SERVING,
   lookupBarcode,
   normaliseBarcode,
   offProductUrl,
@@ -48,7 +49,7 @@ describe('offProductUrl', () => {
 });
 
 describe('productToEstimate', () => {
-  it('scales per-100 g nutriments to the label serving and marks a complete label 0.85', () => {
+  it('scales per-100 g nutriments to the label serving and marks a stated serving 0.75', () => {
     const est = productToEstimate(OATS, '5000159484695');
     expect(est).not.toBeNull();
     const it = est!.items[0];
@@ -59,7 +60,7 @@ describe('productToEstimate', () => {
     expect(it.fat_g).toBe(3.2);
     expect(it.carbs_g).toBe(24);
     expect(it.fiber_g).toBe(3.6);
-    expect(it.confidence).toBe(BARCODE_CONFIDENCE_COMPLETE);
+    expect(it.confidence).toBe(BARCODE_CONFIDENCE_SERVING);
     expect(it.assumptions).toContain('Open Food Facts');
     expect(it.assumptions).toContain('Quaker Rolled Oats');
     expect(it.assumptions).toContain('40 g');
@@ -67,12 +68,14 @@ describe('productToEstimate', () => {
     expect(est!.source).toBe('barcode');
   });
 
-  it('assumes 100 g when no serving is listed and says so', () => {
+  it('assumes 100 g when no serving is listed, says so, and drops to 0.6', () => {
     const est = productToEstimate({ ...OATS, serving_quantity: undefined, serving_size: undefined }, '1');
     const it = est!.items[0];
     expect(it.grams).toBe(100);
     expect(it.kcal).toBe(375);
     expect(it.assumptions).toContain('100 g assumed');
+    // §1g: the label is exact, the PORTION is invented — that is what the chip reports.
+    expect(it.confidence).toBe(BARCODE_CONFIDENCE_PER100);
   });
 
   it('accepts numeric strings for serving_quantity and nutriments', () => {
@@ -85,14 +88,14 @@ describe('productToEstimate', () => {
     expect(it.kcal).toBe(200);
     expect(it.protein_g).toBe(10);
     expect(it.fiber_g).toBe(0);
-    expect(it.confidence).toBe(BARCODE_CONFIDENCE_COMPLETE);
+    expect(it.confidence).toBe(BARCODE_CONFIDENCE_SERVING);
     expect(it.assumptions).toContain('fiber not listed');
   });
 
-  it('drops to 0.5 and names the gap when a core value is missing', () => {
+  it('caps at 0.5 and names the gap when a core value is missing', () => {
     const est = productToEstimate({ product_name: 'Mystery', nutriments: { 'energy-kcal_100g': 100, proteins_100g: 5 } }, '3');
     const it = est!.items[0];
-    expect(it.confidence).toBe(BARCODE_CONFIDENCE_PARTIAL);
+    expect(it.confidence).toBe(BARCODE_CONFIDENCE_INCOMPLETE);
     expect(it.fat_g).toBe(0);
     expect(it.carbs_g).toBe(0);
     expect(it.assumptions).toContain('fat, carbs not on the label');
@@ -101,7 +104,7 @@ describe('productToEstimate', () => {
   it('derives kcal from kJ when only energy_100g is present', () => {
     const est = productToEstimate({ product_name: 'Juice', nutriments: { energy_100g: 1000, proteins_100g: 1, fat_100g: 0, carbohydrates_100g: 10 } }, '4');
     expect(est!.items[0].kcal).toBe(239);
-    expect(est!.items[0].confidence).toBe(BARCODE_CONFIDENCE_COMPLETE);
+    expect(est!.items[0].confidence).toBe(BARCODE_CONFIDENCE_PER100);
   });
 
   it('returns null when the entry has no nutrition facts at all', () => {

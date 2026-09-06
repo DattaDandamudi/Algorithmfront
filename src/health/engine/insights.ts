@@ -1,23 +1,57 @@
 /**
- * Insight cards — SPEC §7 (the 14 copy templates) plus the promotion rules in
- * "Thresholds that should change behavior/targets", the 8 coach chips (§4),
+ * Insight cards — SPEC §7 (templates #1–#26) plus the promotion rules in
+ * "Thresholds that should change behavior/targets", the coach chips (§4),
  * the per-tile suggested prompts (WHOOP pattern) and the Today empty states (§1).
  *
  * This module computes no metrics: it reads a fully-built CoachContext
- * (engine/context.ts) and turns *state* into cards. Pure and deterministic —
- * no clock, no randomness; ids are `ins-<template>-<date>` so a card keeps its
- * identity across re-renders on the same day.
+ * (engine/context.ts) and turns *state* into cards. It imports the *types* of
+ * the v3 analysis blocks (training, stress, energy, impact, changepoints) but
+ * never the engine modules that produce them — every number arrives as an
+ * argument. Pure and deterministic: no clock, no randomness; ids are
+ * `ins-<template>-<date>` so a card keeps its identity across re-renders.
  *
  * Copy rules (§7): ≤2 sentences, name the number, one action verb, band colour
  * by state. Every number comes from the context; when a datapoint is missing
- * the clause that needs it is dropped rather than invented.
+ * the clause that needs it is dropped, and when the whole block is missing the
+ * template renders nothing rather than a half-finished sentence.
+ *
+ * **Ranking (v3).** `priority = base + (red +12 | yellow +5 | green/neutral −8)
+ * − 4 · streak`, where `streak` is the number of consecutive prior days the
+ * same template was shown (`settings.insightHistory`, passed in). The decay is
+ * a product decision, not a finding: it stops one yellow card owning the top
+ * slot all week, and at −4/day a yellow card gives the slot up inside a week.
+ *
+ * **ACWR is descriptive, never an alert** (Impellizzeri 2020 — the ratio has no
+ * demonstrated predictive validity), so the old ACWR card is gone and template
+ * #18 leads on the week-on-week load ramp instead.
  */
-import type { Band, BloodMarker, CoachContext, HHMM, Insight, Profile, SessionType, Targets } from '../data/types';
-import { formatClock, hhmmToMinutes, minutesSinceNoon, minutesSinceNoonToHHMM } from '../lib/dates';
+import type {
+  Band,
+  BloodMarker,
+  Changepoint,
+  CoachContext,
+  EnergyContext,
+  HHMM,
+  ISODate,
+  Insight,
+  ImpactContext,
+  Muscle,
+  Profile,
+  ResilienceBand,
+  SessionType,
+  StressContext,
+  Targets,
+  TrainingContext,
+} from '../data/types';
+import { addDays, formatClock, formatDateShort, hhmmToMinutes, minutesSinceNoon, minutesSinceNoonToHHMM } from '../lib/dates';
 import { fmt, fmtWeight, round } from '../lib/format';
 import { BASELINE_READINGS } from './hrv';
 
-/** The 8 coach quick-prompt chips (§4), verbatim and in order. */
+/**
+ * The coach quick-prompt chips (§4), verbatim and in order. Indices 0–7 are the
+ * original eight; 8–11 were added with the training and stress stacks and are
+ * referenced by index from the new templates, so nothing here is reordered.
+ */
 export const COACH_CHIPS: string[] = [
   'Should I train today?',
   'What should I eat now?',
@@ -27,19 +61,35 @@ export const COACH_CHIPS: string[] = [
   "How did last night's sleep affect me?",
   'Help me cut back tobacco today.',
   'Are my vitamin D / ferritin / omega-3 habits on track?',
+  'What should I lift today?',
+  'Am I overtraining?',
+  'Why am I so stressed?',
+  'When will I have energy today?',
 ];
 
 /**
- * Sort priorities (higher first). Consistency jumps to 95 when bedtime SD > 60
- * min ("promote a consistency card above duration cards"); the sleep-debt card
- * jumps to 92 — above recovery — when fat loss has stalled AND sleep is short,
- * while the weight and calorie cards drop, so the app asks for sleep before a
- * calorie cut (Nedeltcheva 2010: short sleep turns the deficit into lean loss).
+ * Sort priorities (higher first) *before* the band bonus and streak decay.
+ * Consistency jumps to 95 when bedtime SD > 60 min ("promote a consistency card
+ * above duration cards"); the sleep-debt card jumps to 98 — above a red
+ * recovery card even after both take their band bonus — when fat loss has
+ * stalled AND sleep is short, while the weight and calorie cards drop, so the
+ * app asks for sleep before a calorie cut (Nedeltcheva 2010: short sleep turns
+ * the deficit into lean loss).
  */
 export const INSIGHT_PRIORITY = {
-  recovery: 90, sleepDebt: 80, sleepDebtStall: 92, consistency: 70, consistencyPromoted: 95, protein: 75, fatFloor: 72,
+  recovery: 90, sleepDebt: 80, sleepDebtStall: 98, consistency: 70, consistencyPromoted: 95, protein: 75, fatFloor: 72,
   weight: 65, weightStall: 45, calories: 60, caloriesStall: 40, caffeine: 58, tobacco: 55, steps: 50, carbs: 45, lab: 40,
+  // -- v3 blocks -----------------------------------------------------------
+  illness: 96, deload: 85, strainOutliers: 82, loadRamp: 78, stressTrend: 76, verdictModified: 74,
+  overload: 68, personalRecord: 66, impact: 64, belowMev: 62, resilience: 56, regimeShift: 54,
 } as const;
+
+/** Band bonus applied to every card's base priority. */
+export const INSIGHT_BAND_BONUS: Readonly<Record<Band, number>> = { red: 12, yellow: 5, green: -8, neutral: -8 };
+/** Priority lost per consecutive prior day the same template was shown. */
+export const INSIGHT_STREAK_DECAY = 4;
+/** How far back `insightHistory` is walked when counting a streak. */
+export const INSIGHT_HISTORY_DAYS = 14;
 
 // Thresholds (§6/§7 and the task brief). Commented where non-obvious.
 const SLEEP_DEBT_MIN = 45;
@@ -58,6 +108,29 @@ const RESTAURANT_PCT_MIN = 60;
 const WATER_BUMP_LB = 1; // scale − trend > 1 lb reads as water, not fat
 const SHORT_SLEEP_HRS = 0.5;
 const BEDTIME_EARLIEST_SHIFT_MIN = 120; // never suggest a bedtime > 2 h before the target
+const BEDTIME_MIN_NIGHTS = 3; // #11 needs three nights before it calls a swing a habit
+/**
+ * #9: the smoke-free vs smoking comparison needs this many paired days on EACH
+ * side (the same 5/5 gate `impact` uses, which is WHOOP's) …
+ */
+const TOBACCO_MIN_N = 5;
+/**
+ * … and a difference this large in ms. **Heuristic**: night-to-night rMSSD
+ * moves by more than a millisecond on its own, so a 1 ms gap between two means
+ * is measurement noise dressed as feedback.
+ */
+const TOBACCO_MIN_DELTA_MS = 2;
+/** #18: weekly acute-load rise the body absorbs comfortably (Gabbett's 10% rule of thumb — a heuristic, not a validated threshold). */
+const LOAD_RAMP_PCT = 10;
+/** Where the ramp card turns red. **Heuristic** — no published cut point exists. */
+const LOAD_RAMP_RED_PCT = 30;
+/** #21: the DALDA rule — three consecutive days worse than normal is a call to act. */
+const CHECKIN_WORSE_RUN = 3;
+/** Where it turns red. **Heuristic** — DALDA defines the three-day rule, not a second tier. */
+const CHECKIN_WORSE_RUN_RED = 5;
+/** #22: Apple Vitals' "≥ 2 of 5 overnight metrics are outliers"; ≥ 3 is Oura's major band. */
+const STRAIN_OUTLIER_MIN = 2;
+const STRAIN_OUTLIER_MAJOR = 3;
 
 /** Restaurant-prior portions (kcal) from the default favorites, for "~1 chicken tikka plate" examples. */
 const PORTIONS: Array<[number, string, string]> = [
@@ -82,14 +155,60 @@ const clock = (t: HHMM | null | undefined): string => formatClock(t);
 const plural = (n: number, word: string): string => `${n0(n)} ${word}${n === 1 ? '' : 's'}`;
 const lcFirst = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1);
 /**
+ * Lower-case the first letter only when it starts an ordinary word, so an
+ * engine label folded mid-sentence reads "resting HR" but "HRV" and "SpO₂"
+ * survive intact rather than becoming "hRV".
+ */
+const softLower = (s: string): string => (/^[A-Z][a-z]/.test(s) ? lcFirst(s) : s);
+/**
  * Weights and rates are stored in lb; the copy follows `profile.units` (R1-12:
  * a kg user sees "77.9 kg" and "0.4 kg/wk", never a lb figure). Always the
  * absolute value — the templates supply the direction word.
  */
 const weightStr = (lb: number, profile: Profile): string => fmtWeight(Math.abs(lb), profile.units === 'kg' ? 'kg' : 'lb');
+/** "a, b and c" — Oxford-comma-free, so a reason list reads as one clause. */
+const joinList = (xs: string[]): string =>
+  xs.length <= 1 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+/** 'front-delts' → 'Front delts'. */
+const muscleLabel = (m: Muscle | string): string => {
+  const s = String(m).replace(/-/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+/** A finite string of free-form engine text, trimmed of a trailing full stop. */
+const clause = (s: unknown): string | null => {
+  if (typeof s !== 'string') return null;
+  const t = s.trim().replace(/[.\s]+$/, '');
+  return t.length > 0 ? t : null;
+};
 
 function card(ctx: CoachContext, template: number, title: string, band: Band, body: string, coachPrompt: string, priority: number): Insight {
   return { id: `ins-${template}-${ctx.today}`, template: String(template), band, title, body, coachPrompt, priority };
+}
+
+/**
+ * Consecutive prior days (today excluded) on which `template` was shown, read
+ * from `settings.insightHistory`. A day the app never rendered a card for ends
+ * the streak — an unshown day is not a shown day.
+ */
+export function insightStreak(
+  history: Readonly<Record<ISODate, string[]>> | undefined,
+  template: string,
+  today: ISODate,
+  maxDays = INSIGHT_HISTORY_DAYS,
+): number {
+  if (!history) return 0;
+  let streak = 0;
+  for (let i = 1; i <= Math.max(0, Math.floor(maxDays)); i++) {
+    const ids = history[addDays(today, -i)];
+    if (!Array.isArray(ids) || !ids.includes(template)) break;
+    streak++;
+  }
+  return streak;
+}
+
+/** `base + band bonus − 4 · streak`. */
+export function insightPriority(base: number, band: Band, streak = 0): number {
+  return round(base + (INSIGHT_BAND_BONUS[band] ?? 0) - INSIGHT_STREAK_DECAY * Math.max(0, streak));
 }
 
 /** ctx.bloodwork is the snapshot the rest of the app saw; the profile is only a fallback when it is empty. */
@@ -140,7 +259,21 @@ export function examplePortion(kcal: number): string {
 // Templates (§7 #1–#14). Each returns null when its trigger is not met.
 // ---------------------------------------------------------------------------
 
-type TemplateFn = (ctx: CoachContext, profile: Profile, targets: Targets) => Insight | null;
+/**
+ * Everything a template may need beyond the context: the shown-history the
+ * streak decay reads, and the previous evaluation's bands (the engine holds no
+ * state, so "this changed" facts are passed in).
+ */
+export interface InsightOpts {
+  /** Cards to return, highest priority first. Default 3. */
+  max?: number;
+  /** `settings.insightHistory` — template ids shown per day, for the streak decay. */
+  history?: Readonly<Record<ISODate, string[]>>;
+  /** State from the last evaluation, for the "band changed" templates. */
+  previous?: { resilienceBand?: ResilienceBand | null };
+}
+
+type TemplateFn = (ctx: CoachContext, profile: Profile, targets: Targets, opts: InsightOpts) => Insight | null;
 
 const sleepDebt: TemplateFn = (ctx, profile) => {
   const debt = num(ctx.sleep.debtMin);
@@ -176,7 +309,12 @@ const recovery: TemplateFn = (ctx) => {
   return card(ctx, 3, 'Recovery high', 'green', `${lead}. You're primed — ${action}`, COACH_CHIPS[0], INSIGHT_PRIORITY.recovery);
 };
 
-/** #4 — also carries the §6.5 "< 0.4 g/kg meal slot" nudge when the last occasion fell short (R3-7). */
+/**
+ * #4 — carries the §6.5 "< 0.4 g/kg meal slot" nudge when the last occasion
+ * fell short (R3-7). A per-meal need **above** the 0.55 g/kg optimum is a note,
+ * never a warning: Trommelen 2023 showed a 100 g bolus is used rather than
+ * wasted, so a big sitting is fine and only a *small* one is a problem.
+ */
 const proteinPace: TemplateFn = (ctx, _profile, targets) => {
   const per = num(ctx.nutrition.proteinPerMealNeeded);
   const left = num(ctx.nutrition.remaining.p) ?? 0;
@@ -184,16 +322,19 @@ const proteinPace: TemplateFn = (ctx, _profile, targets) => {
   if (per === null || left <= 0 || meals <= 0) return null;
   const sofar = num(ctx.nutrition.totals.p) ?? 0;
   const target = num(ctx.nutrition.targets.p) ?? targets.protein;
-  const hard = per > (num(ctx.nutrition.maxPerMeal) ?? PROTEIN_PER_MEAL_HI);
-  const suggest = hard ? 'chicken tikka (200 g ≈ 50 g protein)' : 'tandoori prawns or chicken tikka';
+  const optimum = num(ctx.nutrition.maxPerMeal) ?? PROTEIN_PER_MEAL_HI;
+  const big = per > optimum;
+  const suggest = big ? 'chicken tikka (200 g ≈ 50 g protein)' : 'tandoori prawns or chicken tikka';
   const lastP = num(ctx.nutrition.lastMealProtein);
   const minMeal = num(ctx.nutrition.minPerMeal);
   const lowSlot = ctx.nutrition.lastMealBelowMin === true && lastP !== null && minMeal !== null;
   const lead = `You're at ${n0(sofar)} g protein with ${plural(meals, 'meal')} left — you need ~${n0(per)} g each to hit ${n0(target)} g.`;
   const body = lowSlot
     ? `${lead} Your last meal came in at ${n0(lastP as number)} g, under your ${n0(minMeal as number)} g floor — lead your next meal with ${suggest}.`
-    : `${lead} Lead your next meal with ${suggest}.`;
-  return card(ctx, 4, 'Protein pace', hard || lowSlot ? 'yellow' : 'neutral', body, COACH_CHIPS[1], INSIGHT_PRIORITY.protein);
+    : big
+      ? `${lead} That's a bigger sitting than your usual ${n0(optimum)} g and your body still uses it — lead with ${suggest}.`
+      : `${lead} Lead your next meal with ${suggest}.`;
+  return card(ctx, 4, 'Protein pace', lowSlot ? 'yellow' : 'neutral', body, COACH_CHIPS[1], INSIGHT_PRIORITY.protein);
 };
 
 const calories: TemplateFn = (ctx, profile, targets) => {
@@ -261,13 +402,25 @@ const tobacco: TemplateFn = (ctx) => {
   const delta = free !== null && smoking !== null ? free - smoking : null;
   const free3 = num(ctx.tobacco.hrvFree3);
   const delta3 = num(ctx.tobacco.hrvDelta3);
-  // §7 #9 quotes the last 3 smoke-free days (R3-11); the 30-day comparison is the fallback.
-  // Only cite a difference that rounds to ≥ 1 ms — "0 ms higher" is noise, not feedback.
+  const nFree = num(ctx.tobacco.nFree);
+  const nSmoke = num(ctx.tobacco.nSmoke);
+  // §7 #9 quotes the last 3 smoke-free days (R3-11); the 30-day comparison is
+  // the fallback. Both are gated on ≥ 5 paired days a side and a ≥ 2 ms
+  // difference — a comparison of means without its counts is not a finding, and
+  // a 1 ms gap between two 30-day means is measurement noise. The counts are
+  // printed, never implied.
+  const powered =
+    nFree !== null &&
+    nSmoke !== null &&
+    nFree >= TOBACCO_MIN_N &&
+    nSmoke >= TOBACCO_MIN_N &&
+    delta !== null &&
+    Math.round(delta) >= TOBACCO_MIN_DELTA_MS;
   let hrvClause = '';
-  if (free3 !== null && delta3 !== null && Math.round(delta3) >= 1) {
-    hrvClause = ` — on your last 3 smoke-free days HRV averaged ${n0(free3)} ms, ${n0(delta3)} ms higher`;
-  } else if (delta !== null && Math.round(delta) >= 1 && free !== null) {
-    hrvClause = ` — on smoke-free days your HRV averaged ${n0(free)} ms, ${n0(delta)} ms higher`;
+  if (powered && free3 !== null && delta3 !== null && Math.round(delta3) >= TOBACCO_MIN_DELTA_MS) {
+    hrvClause = ` — on your last 3 smoke-free days HRV averaged ${n0(free3)} ms, ${n0(delta3)} ms above your ${plural(nSmoke as number, 'smoking day')}`;
+  } else if (powered && free !== null && delta !== null && Math.round(delta) >= TOBACCO_MIN_DELTA_MS) {
+    hrvClause = ` — across ${plural(nFree as number, 'smoke-free day')} HRV averaged ${n0(free)} ms, ${n0(delta)} ms above your ${plural(nSmoke as number, 'smoking day')}`;
   }
   const lead = avg === null ? `${n0(today)} today so far` : `${n0(today)} today vs your ${n1(avg)} average`;
   const streak = num(ctx.tobacco.streakDays) ?? 0;
@@ -328,9 +481,12 @@ const weightTrend: TemplateFn = (ctx, profile, targets) => {
   return card(ctx, 10, 'Weight trend', band, `Trend is ${weightStr(trend, profile)}, ${rateStr} — ${verdict}. ${second}`, COACH_CHIPS[3], INSIGHT_PRIORITY.weight);
 };
 
+/** #11 — gated on ≥ 3 nights: an SD over one or two nights is not a habit. */
 const bedtimeConsistency: TemplateFn = (ctx, profile) => {
   const sd = num(ctx.sleep.bedtimeSdMin);
+  const nights = num(ctx.sleep.bedtimeNights);
   if (sd === null || sd <= BEDTIME_SD_YELLOW) return null;
+  if (nights === null || nights < BEDTIME_MIN_NIGHTS) return null;
   const red = sd > BEDTIME_SD_RED;
   const body = `Your bedtime swung ${n0(sd)} min this week. Aiming for ${clock(profile.bedTarget)} nightly does more for recovery than total hours.`;
   return card(ctx, 11, 'Bedtime consistency', red ? 'red' : 'yellow', body, 'How do I make my bedtime more consistent?', red ? INSIGHT_PRIORITY.consistencyPromoted : INSIGHT_PRIORITY.consistency);
@@ -365,24 +521,295 @@ const homeCooked: TemplateFn = (ctx, profile) => {
   return card(ctx, 14, 'Home cooking', 'yellow', body, 'What should I ask my doctor about my lead level?', INSIGHT_PRIORITY.lab);
 };
 
-const TEMPLATES: TemplateFn[] = [sleepDebt, recovery, proteinPace, calories, fatFloor, carbDayType, steps, tobacco, weightTrend, bedtimeConsistency, caffeine, fishFrequency, homeCooked];
+// ---------------------------------------------------------------------------
+// Templates #15–#26 — the v3 blocks.
+//
+// Every one of these reads a block that may simply not be there yet (no
+// workouts logged, no overnight signals, not enough days for an effect). The
+// rule is absolute: **a missing block renders nothing**, never a sentence with
+// a hole in it. Each template's first two lines are the guard.
+// ---------------------------------------------------------------------------
+
+/** #15 — the next lift that is ready to move up. */
+const overloadSuggestion: TemplateFn = (ctx) => {
+  const t: TrainingContext | undefined = ctx.training;
+  if (!t || !Array.isArray(t.plannedExercises)) return null;
+  const next = t.plannedExercises.find((p) => p.mode === 'progress' && num(p.loadKg) !== null && clause(p.name) !== null);
+  if (!next) return null;
+  const load = num(next.loadKg) as number;
+  const [lo, hi] = Array.isArray(next.reps) ? next.reps : [0, 0];
+  const reps = num(lo) === null || num(hi) === null ? null : lo === hi ? n0(lo) : `${n0(lo)}–${n0(hi)}`;
+  const sets = num(next.sets);
+  if (reps === null || sets === null || sets <= 0) return null;
+  const last = next.last && num(next.last.loadKg) !== null ? ` Last time: ${trim(next.last.loadKg, 1)} kg.` : '';
+  const body = `${next.name} is ready to move up — take ${trim(load, 1)} kg for ${n0(sets)}×${reps}.${last}`;
+  return card(ctx, 15, 'Progress this lift', 'green', body, COACH_CHIPS[8], INSIGHT_PRIORITY.overload);
+};
+
+/**
+ * #16 — deload, and only ever *reactive*. Coleman 2024 (PeerJ) found a
+ * scheduled mid-program deload produced no hypertrophy benefit, which is
+ * exactly why the app will not put one on your calendar; it waits for the
+ * signals and then says so.
+ */
+const deloadCard: TemplateFn = (ctx) => {
+  const t: TrainingContext | undefined = ctx.training;
+  if (!t || t.deload?.recommended !== true) return null;
+  const reasons = (t.deload.reasons ?? []).map(clause).filter((r): r is string => r !== null);
+  if (reasons.length === 0) return null;
+  const body =
+    `${joinList(reasons.map(softLower))} — cut sets ~40% and load ~10% for a week. ` +
+    `This one is reactive: a deload put on the calendar in advance showed no hypertrophy benefit (Coleman 2024).`;
+  return card(ctx, 16, 'Deload week', 'yellow', body, COACH_CHIPS[9], INSIGHT_PRIORITY.deload);
+};
+
+/** #17 — volume under MEV. An opportunity, never a scolding: these are the cheapest sets on the table. */
+const belowMev: TemplateFn = (ctx) => {
+  const t: TrainingContext | undefined = ctx.training;
+  if (!t || !Array.isArray(t.weeklySets)) return null;
+  const under = t.weeklySets
+    .filter((v) => v.status === 'below-mev' && num(v.sets) !== null && num(v.mev) !== null && v.mev > v.sets)
+    .sort((a, b) => b.mev - b.sets - (a.mev - a.sets) || String(a.muscle).localeCompare(String(b.muscle)));
+  if (under.length === 0) return null;
+  const top = under[0];
+  const gap = Math.max(1, Math.ceil(top.mev - top.sets));
+  const more =
+    under.length > 1
+      ? ` ${plural(under.length - 1, 'other muscle')} ${under.length === 2 ? 'has' : 'have'} the same room.`
+      : '';
+  const body = `${muscleLabel(top.muscle)} got ${plural(top.sets, 'set')} this week — ${n0(gap)} more clears the ${n0(top.mev)} where growth starts, and that is the easiest gain on your plan.${more}`;
+  return card(ctx, 17, 'Room to grow', 'neutral', body, COACH_CHIPS[8], INSIGHT_PRIORITY.belowMev);
+};
+
+/**
+ * #18 — the week-on-week load ramp. This **replaces** the old ACWR alert:
+ * Impellizzeri 2020 showed the acute:chronic ratio has no demonstrated
+ * predictive validity, so ACWR stays on the chart as description and the
+ * actionable number is how much more you did than last week.
+ */
+const loadRamp: TemplateFn = (ctx) => {
+  const t: TrainingContext | undefined = ctx.training;
+  const pct = t ? num(t.load?.weekOverWeekPct) : null;
+  if (!t || pct === null || pct <= LOAD_RAMP_PCT) return null;
+  const band: Band = pct >= LOAD_RAMP_RED_PCT ? 'red' : 'yellow';
+  const weekly = num(t.load.weeklyLoad);
+  const load = weekly === null ? '' : ` (${n0(weekly)} load units)`;
+  const body = `Training load is up ${n0(pct)}% on last week${load} — past the ~${n0(LOAD_RAMP_PCT)}%/wk your body absorbs comfortably. Hold this week's volume where it is and let the jump settle.`;
+  return card(ctx, 18, 'Load ramp', band, body, COACH_CHIPS[9], INSIGHT_PRIORITY.loadRamp);
+};
+
+const PR_KIND: Record<string, { label: string; unit: string }> = {
+  weight: { label: 'weight', unit: 'kg' },
+  reps: { label: 'reps', unit: 'reps' },
+  e1rm: { label: 'estimated 1RM', unit: 'kg' },
+};
+
+/** #19 — a PR in the last 7 days. */
+const personalRecord: TemplateFn = (ctx) => {
+  const t: TrainingContext | undefined = ctx.training;
+  if (!t || !Array.isArray(t.prs7d) || t.prs7d.length === 0) return null;
+  const prs = [...t.prs7d]
+    .filter((p) => num(p.value) !== null && clause(p.name) !== null)
+    .sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0) || b.value - a.value || a.name.localeCompare(b.name));
+  const pr = prs[0];
+  if (!pr) return null;
+  const kind = PR_KIND[pr.kind] ?? { label: String(pr.kind), unit: '' };
+  const unit = kind.unit ? ` ${kind.unit}` : '';
+  const prev = num(pr.previous);
+  const was = prev === null ? '' : `, up from ${trim(prev, 1)}${unit}`;
+  const rest = prs.length > 1 ? ` ${plural(prs.length - 1, 'more PR')} this week.` : '';
+  const body = `New ${kind.label} PR on ${pr.name}: ${trim(pr.value, 1)}${unit}${was}.${rest}`;
+  return card(ctx, 19, 'Personal record', 'green', body, COACH_CHIPS[8], INSIGHT_PRIORITY.personalRecord);
+};
+
+/** #20 — something moved today's verdict after the score was computed. */
+const verdictModified: TemplateFn = (ctx) => {
+  const mods = (ctx.readiness.modifiers ?? []).filter((m) => m.effect === 'downgrade');
+  const m = mods.find((x) => clause(x.reason) !== null && clause(x.label) !== null);
+  const verdict = clause(ctx.readiness.training);
+  if (!m || verdict === null) return null;
+  const score = num(ctx.readiness.score);
+  const scored = score === null ? '' : ` Your score alone read ${n0(score)}%.`;
+  const body = `${m.label} moved today's call to "${verdict}" — ${softLower(clause(m.reason) as string)}.${scored}`;
+  return card(ctx, 20, 'Verdict adjusted', 'yellow', body, COACH_CHIPS[0], INSIGHT_PRIORITY.verdictModified);
+};
+
+/** #21 — the DALDA rule on the daily check-in: three days worse than normal is a call to act. */
+const stressCheckInTrend: TemplateFn = (ctx) => {
+  const s: StressContext | undefined = ctx.stress;
+  const run = s ? num(s.checkIn?.worseRun) : null;
+  if (!s || run === null || run < CHECKIN_WORSE_RUN) return null;
+  const total = num(s.checkIn.total);
+  const hooper = total === null ? '' : ` (Hooper ${n0(total)}/28)`;
+  const band: Band = run >= CHECKIN_WORSE_RUN_RED ? 'red' : 'yellow';
+  const body = `Your check-in has come in worse than normal ${plural(run, 'day')} running${hooper}. Three in a row is the cue to take an easy day rather than push through it.`;
+  return card(ctx, 21, 'Check-in trend', band, body, COACH_CHIPS[10], INSIGHT_PRIORITY.stressTrend);
+};
+
+/**
+ * #22 — how many overnight signals sit outside the personal range. Apple
+ * Vitals' "≥ 2 of 5 metrics are outliers" and Oura's three levels: far more
+ * defensible than any single fused stress number, so it is what leads.
+ */
+const strainOutliers: TemplateFn = (ctx) => {
+  const s: StressContext | undefined = ctx.stress;
+  if (!s || s.calibrating === true) return null;
+  const dev = num(s.signalsDeviating);
+  const avail = num(s.signalsAvailable);
+  if (dev === null || avail === null || avail <= 0 || dev < STRAIN_OUTLIER_MIN) return null;
+  const names = (s.outliers ?? []).filter((o) => o.deviating).map((o) => clause(o.label)).filter((l): l is string => l !== null);
+  const which = names.length ? ` — ${joinList(names.map(softLower))}` : '';
+  const major = dev >= STRAIN_OUTLIER_MAJOR;
+  const action = major ? 'Treat today as a recovery day.' : 'Keep today moderate and check again tomorrow.';
+  const body = `${n0(dev)} of ${n0(avail)} overnight signals are outside your range${which}. ${action}`;
+  return card(ctx, 22, 'Overnight signals', major ? 'red' : 'yellow', body, COACH_CHIPS[10], INSIGHT_PRIORITY.strainOutliers);
+};
+
+const RESILIENCE_ORDER: ResilienceBand[] = ['limited', 'adequate', 'solid', 'strong', 'exceptional'];
+
+/** #23 — the resilience band changed since the previous evaluation (passed in; the engine holds no state). */
+const resilienceChange: TemplateFn = (ctx, _profile, _targets, opts) => {
+  const r = ctx.stress?.resilience;
+  const prev = opts.previous?.resilienceBand ?? null;
+  const band = r?.band ?? null;
+  if (!r || band === null || prev === null || prev === band) return null;
+  if (!RESILIENCE_ORDER.includes(band) || !RESILIENCE_ORDER.includes(prev)) return null;
+  const up = RESILIENCE_ORDER.indexOf(band) > RESILIENCE_ORDER.indexOf(prev);
+  const score = num(r.score);
+  const at = score === null ? '' : ` (${n0(score)}/100)`;
+  const action = up
+    ? 'Your recovery is outpacing your load — room to add work.'
+    : 'Your load is outpacing your recovery — protect sleep before adding any.';
+  const body = `Resilience moved from ${prev} to ${band}${at}. ${action}`;
+  return card(ctx, 23, 'Resilience', up ? 'green' : 'yellow', body, COACH_CHIPS[9], INSIGHT_PRIORITY.resilience);
+};
+
+/** #24 — conjunctive illness/overload flag. Copy is a pattern in the user's own numbers, never a diagnosis. */
+const illnessFlagCard: TemplateFn = (ctx) => {
+  const s: StressContext | undefined = ctx.stress;
+  if (!s || s.illness?.flag !== true) return null;
+  const reasons = (s.illness.reasons ?? []).map(clause).filter((r): r is string => r !== null);
+  if (reasons.length === 0) return null;
+  const since = s.illness.since ? ` since ${formatDateShort(s.illness.since)}` : '';
+  const body = `Possible illness or heavy overload${since}: ${joinList(reasons.map(softLower))}. Take an easy day — this is a pattern in your own numbers, not a diagnosis.`;
+  return card(ctx, 24, 'Possible illness', 'red', body, COACH_CHIPS[2], INSIGHT_PRIORITY.illness);
+};
+
+/** Human phrasing for the behaviours `impact` reports; unknown keys fall back to the effect's own label. */
+const BEHAVIOUR_PHRASE: Record<string, string> = {
+  alcohol: 'drank',
+  tobacco: 'smoked',
+  lateCaffeine: 'had caffeine after your cutoff',
+  lateEating: 'ate late',
+  highLoad: 'trained hard',
+  shortSleep: 'slept short',
+  lateBedtime: 'went to bed late',
+};
+/** Metric label, unit, and whether up is good — used only to pick the card's colour. */
+const IMPACT_METRIC: Record<string, { label: string; unit: string; upIsGood: boolean }> = {
+  readiness: { label: 'recovery', unit: 'points', upIsGood: true },
+  hrv: { label: 'HRV', unit: 'ms', upIsGood: true },
+  rhr: { label: 'resting HR', unit: 'bpm', upIsGood: false },
+  sleepHrs: { label: 'sleep', unit: 'h', upIsGood: true },
+  osi: { label: 'overnight strain', unit: 'points', upIsGood: false },
+};
+
+/**
+ * #25 — a behaviour effect the user's own data confirmed: "on the 9 days you
+ * drank, recovery was 11 points lower, 95% CI 4–18". Only rendered when the
+ * interval clears zero — a "confirmed" effect whose CI straddles zero is not
+ * confirmed, and printing |lo|–|hi| for such an interval would be a lie.
+ */
+const behaviourImpactCard: TemplateFn = (ctx) => {
+  const impact: ImpactContext | undefined = ctx.impact;
+  const effects = impact?.effects ?? [];
+  if (!impact || effects.length === 0) return null;
+  const usable = effects.filter((e) => {
+    const d = num(e.deltaMean);
+    const lo = num(e.lo95);
+    const hi = num(e.hi95);
+    return d !== null && lo !== null && hi !== null && d !== 0 && lo * hi > 0 && num(e.nYes) !== null && num(e.nNo) !== null;
+  });
+  const best = [...usable].sort(
+    (a, b) => a.qValue - b.qValue || Math.abs(b.deltaMean) - Math.abs(a.deltaMean) || a.behaviour.localeCompare(b.behaviour),
+  )[0];
+  if (!best) return null;
+  const metric = IMPACT_METRIC[best.metric] ?? { label: clause(best.metric) ?? 'that metric', unit: '', upIsGood: true };
+  const phrase = BEHAVIOUR_PHRASE[best.behaviour] ?? clause(best.label) ?? clause(best.behaviour);
+  if (phrase === null) return null;
+  const mag = Math.abs(best.deltaMean);
+  const lo = Math.min(Math.abs(best.lo95), Math.abs(best.hi95));
+  const hi = Math.max(Math.abs(best.lo95), Math.abs(best.hi95));
+  const unit = metric.unit ? ` ${metric.unit}` : '';
+  const dir = best.deltaMean < 0 ? 'lower' : 'higher';
+  const adverse = metric.upIsGood ? best.deltaMean < 0 : best.deltaMean > 0;
+  const confound = clause(best.confound);
+  const note = confound ? ` Worth knowing: ${softLower(confound)}.` : '';
+  const body = `On the ${plural(best.nYes, 'day')} you ${phrase}, ${metric.label} was ${trim(mag, 1)}${unit} ${dir}, 95% CI ${trim(lo, 1)}–${trim(hi, 1)} (against ${plural(best.nNo, 'day')} without).${note}`;
+  return card(ctx, 25, 'Your own data', adverse ? 'yellow' : 'neutral', body, COACH_CHIPS[2], INSIGHT_PRIORITY.impact);
+};
+
+/** #26 — a confirmed regime shift: the baseline itself moved, so the old one is no longer the comparison. */
+const regimeShift: TemplateFn = (ctx) => {
+  const cps: Changepoint[] = ctx.changepoints ?? [];
+  const usable = cps.filter(
+    (c) => num(c.meanBefore) !== null && num(c.meanAfter) !== null && clause(c.label) !== null && typeof c.d === 'string' && c.d.length > 0,
+  );
+  const cp = [...usable].sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0) || (num(b.prob) ?? 0) - (num(a.prob) ?? 0))[0];
+  if (!cp) return null;
+  const dir = cp.meanAfter > cp.meanBefore ? 'up' : 'down';
+  const body = `Your ${softLower(cp.label)} has settled at a new level since ${formatDateShort(cp.d)} — ${dir} from ${trim(cp.meanBefore, 1)} to ${trim(cp.meanAfter, 1)}. Your baseline now starts from that date, so today is compared with the new normal.`;
+  return card(ctx, 26, 'New baseline', 'neutral', body, COACH_CHIPS[2], INSIGHT_PRIORITY.regimeShift);
+};
+
+const TEMPLATES: TemplateFn[] = [
+  sleepDebt,
+  recovery,
+  proteinPace,
+  calories,
+  fatFloor,
+  carbDayType,
+  steps,
+  tobacco,
+  weightTrend,
+  bedtimeConsistency,
+  caffeine,
+  fishFrequency,
+  homeCooked,
+  overloadSuggestion,
+  deloadCard,
+  belowMev,
+  loadRamp,
+  personalRecord,
+  verdictModified,
+  stressCheckInTrend,
+  strainOutliers,
+  resilienceChange,
+  illnessFlagCard,
+  behaviourImpactCard,
+  regimeShift,
+];
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Evaluate every §7 template against the context, apply the promotion rules,
- * and return the top `max` (default 3) by priority — ties broken by template
- * number so the order is deterministic.
+ * Evaluate every template against the context, apply the promotion rules, score
+ * each card `base + band bonus − 4 · streak`, and return the top `max`
+ * (default 3) — ties broken by template number so the order is deterministic.
+ *
+ * The base priority each template returns is pre-bonus; this is where it
+ * becomes the number on the card, so a caller reading `insight.priority` sees
+ * the same value the sort used.
  */
-export function generateInsights(ctx: CoachContext, profile: Profile, targets: Targets, opts: { max?: number } = {}): Insight[] {
+export function generateInsights(ctx: CoachContext, profile: Profile, targets: Targets, opts: InsightOpts = {}): Insight[] {
   const max = Math.max(0, Math.floor(opts.max ?? 3));
   if (max === 0) return [];
   const cards: Insight[] = [];
   for (const t of TEMPLATES) {
     try {
-      const c = t(ctx, profile, targets);
+      const c = t(ctx, profile, targets, opts);
       if (c) cards.push(c);
     } catch {
       // A malformed context field must never take the dashboard down; skip the card.
@@ -395,6 +822,9 @@ export function generateInsights(ctx: CoachContext, profile: Profile, targets: T
       else if (c.template === '5') c.priority = INSIGHT_PRIORITY.caloriesStall;
     }
   }
+  for (const c of cards) {
+    c.priority = insightPriority(c.priority, c.band, insightStreak(opts.history, c.template, ctx.today));
+  }
   cards.sort((a, b) => b.priority - a.priority || Number(a.template) - Number(b.template));
   return cards.slice(0, max);
 }
@@ -404,6 +834,8 @@ export interface SuggestedPrompts {
   sleep: string[];
   recovery: string[];
   nutrition: string[];
+  training: string[];
+  stress: string[];
 }
 
 /** Contextual coach chips per tile (WHOOP pattern) — 2–3 each, chosen by state. */
@@ -452,7 +884,40 @@ export function suggestedPrompts(ctx: CoachContext): SuggestedPrompts {
     ],
     [COACH_CHIPS[3], COACH_CHIPS[7]],
   );
-  return { today, sleep, recovery: recoveryChips, nutrition };
+
+  // -- v3 tiles: only ever offer a prompt whose block actually has data ------
+  const t: TrainingContext | undefined = ctx.training;
+  const s: StressContext | undefined = ctx.stress;
+  const e: EnergyContext | undefined = ctx.energy;
+  const training = pick(
+    [
+      COACH_CHIPS[8],
+      t?.deload?.recommended === true
+        ? 'Should I deload this week?'
+        : (t?.plateaus?.length ?? 0) > 0
+          ? 'Why has this lift stalled?'
+          : (num(t?.load?.weekOverWeekPct) ?? 0) > LOAD_RAMP_PCT
+            ? COACH_CHIPS[9]
+            : null,
+      (t?.weeklySets ?? []).some((v) => v.status === 'below-mev') ? 'Which muscles need more volume?' : null,
+    ],
+    [COACH_CHIPS[0], COACH_CHIPS[9]],
+  );
+  const stress = pick(
+    [
+      COACH_CHIPS[10],
+      s?.illness?.flag === true
+        ? 'Am I getting sick or just tired?'
+        : (num(s?.signalsDeviating) ?? 0) >= STRAIN_OUTLIER_MIN
+          ? 'Which overnight signals are off?'
+          : (num(s?.checkIn?.worseRun) ?? 0) >= CHECKIN_WORSE_RUN
+            ? 'What do I do about three bad days?'
+            : null,
+      e?.trough ? COACH_CHIPS[11] : null,
+    ],
+    [COACH_CHIPS[11], 'How do I get my stress down today?'],
+  );
+  return { today, sleep, recovery: recoveryChips, nutrition, training, stress };
 }
 
 /** Dedupe, drop nulls, pad from `fill` to at least 2, cap at 3. */

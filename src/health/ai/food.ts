@@ -87,16 +87,55 @@ function cuisineLabel(c: string): string {
   return CUISINE_LABELS[k] ?? (k ? k.charAt(0).toUpperCase() + k.slice(1) : '');
 }
 
-/** §9 text + the user's cuisine priors and the grams-honouring / one-question rules. */
-export function buildFoodSystemPrompt(profile: Profile): string {
+/**
+ * How many favorite/recent foods are listed in the prompt. Twenty covers the
+ * staples a person actually rotates through without turning the system prompt
+ * into a database dump (each line is ~20 tokens).
+ */
+export const MAX_FOOD_PRIORS = 20;
+
+/**
+ * The user's own library as one line per food, so Claude resolves "the usual",
+ * "my shake" or a bare "tikka" to the same item — and the same portion — the
+ * local parser would. Without this the two paths disagree on the same phrase,
+ * which is what makes an AI estimate feel unreliable next to the offline one.
+ */
+export function foodPriorLines(priors: FoodItem[], limit = MAX_FOOD_PRIORS): string[] {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const f of priors) {
+    const name = (f?.name ?? '').trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    const bits = [`${Math.round(f.defaultGrams)} g typical portion`];
+    if (f.unitName && f.unitGrams) bits.push(`1 ${f.unitName} ≈ ${Math.round(f.unitGrams)} g`);
+    bits.push(`${Math.round(f.per100?.kc ?? 0)} kcal/100 g`);
+    const aka = (f.aliases ?? []).filter((a) => a.trim()).slice(0, 3);
+    if (aka.length) bits.push(`also called ${aka.join(', ')}`);
+    lines.push(`- ${name} (${bits.join('; ')})`);
+    if (lines.length >= limit) break;
+  }
+  return lines;
+}
+
+/**
+ * §9 text + the user's cuisine priors, their favorite/recent foods and the
+ * grams-honouring / one-question rules.
+ */
+export function buildFoodSystemPrompt(profile: Profile, priorFoods: FoodItem[] = []): string {
   const cuisines = (profile.cuisines ?? []).map(cuisineLabel).filter(Boolean);
   const priors = cuisines.length
     ? `The user mostly eats ${cuisines.join(' and ')} food — default to those cuisines' preparations and restaurant portion sizes when a dish name is ambiguous.`
     : 'No cuisine preference is set — use typical restaurant preparations.';
   const notes = profile.foodNotes?.trim() ? `\nUser food notes: ${profile.foodNotes.trim()}` : '';
+  const lines = foodPriorLines(priorFoods);
+  const usual = lines.length
+    ? `\n\nTHE USER'S USUAL FOODS (their starred favorites first, then what they logged recently). Prefer these dishes, portions and unit weights when the description matches one of them, even loosely ("the usual", "my shake", a bare dish name):\n${lines.join('\n')}`
+    : '';
   return `${FOOD_PROMPT_BASE}
 
-CUISINE PRIORS: ${priors}${notes}
+CUISINE PRIORS: ${priors}${notes}${usual}
 
 RULES:
 - When the user states grams (or ml), honour them exactly for that item — never override a stated quantity.
@@ -160,12 +199,14 @@ export async function estimateFoodWithClaude(
   ai: AISettings,
   profile: Profile,
   client: Anthropic,
+  /** Favorites/recents fed to the prompt as portion priors (up to MAX_FOOD_PRIORS). */
+  priorFoods: FoodItem[] = [],
 ): Promise<FoodEstimate> {
   const res = await client.messages.create({
     // resolveModel, not ai.model: a blank stored model must fall back to the default, not send model: '' (R5-11).
     model: resolveModel(ai),
     max_tokens: 2048,
-    system: buildFoodSystemPrompt(profile),
+    system: buildFoodSystemPrompt(profile, priorFoods),
     messages: [{ role: 'user', content: text }],
     output_config: { format: { type: 'json_schema', schema: FOOD_SCHEMA }, effort: 'low' },
   });
@@ -213,19 +254,20 @@ export async function estimateFood(
   deps: { client?: Anthropic | null } = {},
 ): Promise<FoodEstimateResult> {
   const client = deps.client ?? null;
+  const local = () => parseFoodText(text, { extra, cuisines: profile.cuisines ?? [] });
   if (client && ai.provider !== 'none') {
     try {
-      return await estimateFoodWithClaude(text, ai, profile, client);
+      return await estimateFoodWithClaude(text, ai, profile, client, extra);
     } catch (err) {
       const why = toCoachError(err);
       const note = `${AI_UNAVAILABLE_NOTE} (${why.message})`;
-      const local: FoodEstimateResult = { ...parseFoodText(text, { extra }), fallbackReason: why.message, fallbackKind: why.kind };
-      if (local.items.length) {
-        const first = local.items[0];
-        local.items[0] = { ...first, assumptions: first.assumptions ? `${note}; ${first.assumptions}` : note };
+      const out: FoodEstimateResult = { ...local(), fallbackReason: why.message, fallbackKind: why.kind };
+      if (out.items.length) {
+        const first = out.items[0];
+        out.items[0] = { ...first, assumptions: first.assumptions ? `${note}; ${first.assumptions}` : note };
       }
-      return local;
+      return out;
     }
   }
-  return parseFoodText(text, { extra });
+  return local();
 }
