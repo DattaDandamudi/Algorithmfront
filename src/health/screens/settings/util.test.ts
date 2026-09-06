@@ -8,7 +8,8 @@ const NOW = Date.UTC(2026, 8, 6, 12, 0, 0);
 describe('formatBytes', () => {
   it('scales B → KB → MB', () => {
     expect(formatBytes(812)).toBe('812 B');
-    expect(formatBytes(34.2 * 1024)).toBe('34.2 KB');
+    expect(formatBytes(3.5 * 1024)).toBe('3.5 KB'); // one decimal only below 10 KB
+    expect(formatBytes(34.2 * 1024)).toBe('34 KB');
     expect(formatBytes(120 * 1024)).toBe('120 KB');
     expect(formatBytes(1.2 * 1024 * 1024)).toBe('1.20 MB');
     expect(formatBytes(-1)).toBe('—');
