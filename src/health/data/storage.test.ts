@@ -10,6 +10,7 @@ import {
   clearAllStorage,
   createDebouncedWriter,
   discoverShardMonths,
+  discoverWorkoutMonths,
   estimateBytesUsed,
   isQuotaError,
   loadAll,
@@ -18,18 +19,22 @@ import {
   readIndex,
   readSettings,
   readShard,
+  readWorkoutDraft,
   resetStorageCache,
   serializeShard,
   shardMonthFromKey,
   storageAvailable,
+  workoutMonthFromKey,
   writeChat,
   writeIndex,
   writeSettings,
   writeShard,
+  writeWorkoutDraft,
+  writeWorkoutShard,
   type ShardIndex,
 } from './storage';
 import { DEFAULT_SETTINGS } from './defaults';
-import { SCHEMA_VERSION, type ChatMessage, type DailyRecord } from './types';
+import { SCHEMA_VERSION, type ChatMessage, type DailyRecord, type Workout } from './types';
 
 /** Minimal in-memory Storage. `failWith` makes setItem throw for app keys (quota simulation). */
 function memoryStorage(): Storage & { failWith?: unknown } {
@@ -538,5 +543,133 @@ describe('localStorage layer', () => {
     ls.failWith = { name: 'QuotaExceededError' };
     expect(() => writeChat([])).toThrow(/export a JSON backup, then clear the coach history or all data/);
     expect(QUOTA_MESSAGE).not.toMatch(/old months/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Workout shards (hx:wk:YYYY-MM) — the second shard family
+// ---------------------------------------------------------------------------
+
+const WK = (over: Partial<Workout> & { id: string; d: string }): Workout => ({
+  start: '18:00',
+  durationMin: 60,
+  kind: 'strength',
+  source: 'manual',
+  ...over,
+});
+
+describe('workout shards', () => {
+  let ls: Storage & { failWith?: unknown };
+  beforeEach(() => {
+    ls = memoryStorage();
+    installWindow(ls);
+    resetStorageCache();
+  });
+  afterEach(() => {
+    uninstallWindow();
+    resetStorageCache();
+  });
+
+  const SESSIONS: Workout[] = [
+    WK({ id: 'w1', d: '2026-09-01', srpe: 7, load: 420 }),
+    WK({ id: 'w2', d: '2026-09-03', kind: 'cardio', start: '07:15', durationMin: 40 }),
+    WK({ id: 'w3', d: '2026-08-28' }),
+  ];
+
+  it('writes, indexes and reloads both families independently', () => {
+    let index = writeShard('2026-09', REC_SEP, EMPTY_INDEX);
+    index = writeWorkoutShard('2026-09', SESSIONS, index);
+    index = writeWorkoutShard('2026-08', SESSIONS, index);
+
+    expect(Object.keys(index.workouts ?? {})).toEqual(['2026-09', '2026-08']);
+    expect(index.workouts!['2026-09'].count).toBe(2);
+    expect(index.workouts!['2026-08'].count).toBe(1);
+
+    const res = loadAll();
+    expect(Object.keys(res.workouts).sort()).toEqual(['w1', 'w2', 'w3']);
+    expect(res.workouts.w2.kind).toBe('cardio');
+    expect(res.integrity.workoutShards).toBe(2);
+    expect(res.integrity.workouts).toBe(3);
+    expect(res.integrity.problems).toEqual([]);
+    // Day records are untouched by a workout write.
+    expect(Object.keys(res.days)).toHaveLength(REC_SEP.length);
+  });
+
+  it('never treats the draft key as a shard', () => {
+    expect(workoutMonthFromKey('hx:wk:2026-09')).toBe('2026-09');
+    expect(workoutMonthFromKey(KEYS.workoutDraft)).toBeNull();
+    expect(workoutMonthFromKey('hx:wk:draft')).toBeNull();
+    expect(workoutMonthFromKey('hx:log:2026-09')).toBeNull();
+
+    writeWorkoutDraft({ exercises: [], startedAt: '18:00' });
+    const index = writeWorkoutShard('2026-09', SESSIONS, EMPTY_INDEX);
+    expect(discoverWorkoutMonths()).toEqual(['2026-09']);
+    expect(Object.keys(index.workouts ?? {})).toEqual(['2026-09']);
+
+    const res = loadAll();
+    expect(res.integrity.problems).toEqual([]);
+    expect(Object.keys(res.workouts)).toEqual(['w1', 'w2']);
+    expect(readWorkoutDraft()).toEqual({ exercises: [], startedAt: '18:00' });
+  });
+
+  it('reports a checksum mismatch and still loads the sessions', () => {
+    const index = writeWorkoutShard('2026-09', SESSIONS, EMPTY_INDEX);
+    const raw = JSON.parse(ls.getItem(KEYS.wk('2026-09'))!) as { items: Record<string, Workout> };
+    raw.items.w1.durationMin = 999;
+    ls.setItem(KEYS.wk('2026-09'), JSON.stringify(raw));
+
+    const res = loadAll();
+    expect(res.workouts.w1.durationMin).toBe(999);
+    expect(res.integrity.problems.join(' ')).toMatch(/Workout shard 2026-09 does not match its index entry/);
+    expect(index.workouts!['2026-09'].count).toBe(2);
+  });
+
+  it('preserves an unreadable workout shard instead of losing it', () => {
+    const index = writeWorkoutShard('2026-09', SESSIONS, EMPTY_INDEX);
+    ls.setItem(KEYS.wk('2026-09'), '{ this is not json');
+
+    const bad = loadAll();
+    expect(bad.corruptWorkoutMonths).toEqual(['2026-09']);
+    expect(bad.integrity.problems.join(' ')).toMatch(/Workout shard 2026-09 is not valid JSON/);
+
+    writeWorkoutShard('2026-09', SESSIONS, index);
+    expect(ls.getItem(KEYS.corrupt('wk:2026-09'))).toBe('{ this is not json');
+    expect(loadAll().integrity.problems).toEqual([]);
+  });
+
+  it('drops the shard and its index entry when a month empties out', () => {
+    let index = writeWorkoutShard('2026-09', SESSIONS, EMPTY_INDEX);
+    index = writeWorkoutShard('2026-09', [], index);
+    expect(ls.getItem(KEYS.wk('2026-09'))).toBeNull();
+    expect(index.workouts!['2026-09']).toBeUndefined();
+    expect(loadAll().workouts).toEqual({});
+  });
+
+  it('prunes workout index entries whose shard is gone, and leaves day entries alone', () => {
+    let index = writeShard('2026-09', REC_SEP, EMPTY_INDEX);
+    index = writeWorkoutShard('2026-09', SESSIONS, index);
+    ls.removeItem(KEYS.wk('2026-09'));
+    const pruned = pruneIndex(index);
+    expect(pruned.workouts!['2026-09']).toBeUndefined();
+    expect(pruned.shards['2026-09']).toBeDefined();
+  });
+
+  it('loads a v1 index that has no workouts key at all', () => {
+    const v1: ShardIndex = { version: 1, shards: {}, updatedAt: 1 };
+    writeIndex(v1);
+    writeShard('2026-09', REC_SEP, v1);
+    const res = loadAll();
+    expect(res.workouts).toEqual({});
+    expect(res.integrity.workoutShards).toBe(0);
+    expect(res.integrity.problems).toEqual([]);
+  });
+
+  it('clearAllData removes the draft along with both shard families', () => {
+    writeWorkoutShard('2026-09', SESSIONS, writeShard('2026-09', REC_SEP, EMPTY_INDEX));
+    writeWorkoutDraft({ live: true });
+    clearAllStorage();
+    expect(ls.getItem(KEYS.workoutDraft)).toBeNull();
+    expect(ls.getItem(KEYS.wk('2026-09'))).toBeNull();
+    expect(ls.getItem(KEYS.shard('2026-09'))).toBeNull();
   });
 });

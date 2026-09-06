@@ -1,4 +1,16 @@
-import type { AISettings, AppSettings, BloodMarker, FoodItem, Profile, Targets, TrainingSplit } from './types';
+import type {
+  AISettings,
+  AppSettings,
+  BloodMarker,
+  CheckInSettings,
+  FoodItem,
+  Muscle,
+  Profile,
+  Targets,
+  TrainingSettings,
+  TrainingSplit,
+  VolumeLandmark,
+} from './types';
 import { SCHEMA_VERSION } from './types';
 
 /** 4-day upper/lower split: Mon upper, Tue lower, Thu upper, Fri lower. */
@@ -89,6 +101,69 @@ export const DEFAULT_FAVORITES: FoodItem[] = [
   { id: 'fav_rice', name: 'Basmati rice (cooked)', per100: { kc: 130, p: 2.7, f: 0.3, c: 28, fi: 0.4 }, defaultGrams: 150, unitName: 'cup', unitGrams: 160, aliases: ['rice', 'white rice', 'steamed rice'], cuisine: 'indian', tags: ['grain'], starred: true },
 ];
 
+/**
+ * Beginner weekly-set landmarks per muscle (sets/week).
+ *
+ * ADVISORY BANDS, NOT CAPS. The 2025 Sports Medicine meta-regression found
+ * hypertrophy keeps increasing with weekly sets with diminishing returns and no
+ * clear plateau, and MRV in particular has no RCT support — it is shown as
+ * context, never enforced. `engine/exerciseDb.landmarkDefaults(level)` scales
+ * this table (intermediate ×1.4, advanced ×1.7); users can override any row.
+ */
+export const DEFAULT_LANDMARKS: Record<Muscle, VolumeLandmark> = {
+  chest: { mev: 6, mav: 10, mrv: 16 },
+  back: { mev: 8, mav: 12, mrv: 18 },
+  'front-delts': { mev: 0, mav: 4, mrv: 8 },
+  'side-delts': { mev: 4, mav: 8, mrv: 14 },
+  'rear-delts': { mev: 4, mav: 8, mrv: 14 },
+  biceps: { mev: 4, mav: 8, mrv: 14 },
+  triceps: { mev: 4, mav: 8, mrv: 14 },
+  forearms: { mev: 0, mav: 4, mrv: 8 },
+  traps: { mev: 0, mav: 4, mrv: 10 },
+  'lower-back': { mev: 0, mav: 4, mrv: 8 },
+  abs: { mev: 0, mav: 6, mrv: 12 },
+  quads: { mev: 6, mav: 10, mrv: 16 },
+  hamstrings: { mev: 4, mav: 8, mrv: 14 },
+  glutes: { mev: 2, mav: 6, mrv: 12 },
+  calves: { mev: 4, mav: 8, mrv: 12 },
+};
+
+/**
+ * `programs` ships empty: the built-in 4-day upper/lower program lives in
+ * `engine/exerciseDb.DEFAULT_PROGRAM` so the data layer never imports the
+ * engine. The Train screen falls back to it when no program is saved, and
+ * "edit" saves an editable copy here.
+ */
+export const DEFAULT_TRAINING: TrainingSettings = {
+  units: 'lb',
+  volumeLandmarks: DEFAULT_LANDMARKS,
+  progression: {
+    targetRpe: [7, 8],
+    loadStepPctUpper: 2.5,
+    // Lower body takes a bigger step: one 2.5% notch under-loads squats and deadlifts.
+    loadStepPctLower: 5,
+    repRange: [6, 10],
+  },
+  customExercises: [],
+  programs: [],
+  activeProgramId: undefined,
+  restTimerSec: 120,
+};
+
+/**
+ * Daily check-in defaults to the full Hooper index — sleep quality, fatigue,
+ * stress and soreness, 1–7 each. Subjective measures track training load with
+ * better sensitivity than the objective ones (Saw 2016), so this is a
+ * first-class input to readiness, not a decoration. Every item is skippable.
+ */
+export const DEFAULT_CHECKIN: CheckInSettings = {
+  enabled: true,
+  items: ['qs', 'qf', 'qt', 'qo'],
+  promptAfter: '07:00',
+  weeklySrss: false,
+  monthlyPss: false,
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
   version: SCHEMA_VERSION,
   profile: DEFAULT_PROFILE,
@@ -99,6 +174,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   onboarded: false,
   demoLoaded: false,
   whoop: { connected: false },
+  training: DEFAULT_TRAINING,
+  checkIn: DEFAULT_CHECKIN,
 };
 
 /** Deep-ish merge of stored settings over defaults so new fields get defaults. */
@@ -114,5 +191,26 @@ export function mergeSettings(stored: Partial<AppSettings> | null | undefined): 
     favorites: stored.favorites ?? DEFAULT_FAVORITES,
     recents: stored.recents ?? [],
     whoop: { ...DEFAULT_SETTINGS.whoop, ...(stored.whoop ?? {}) },
+    training: mergeTraining(stored.training),
+    checkIn: { ...DEFAULT_CHECKIN, ...(stored.checkIn ?? {}), items: stored.checkIn?.items ?? DEFAULT_CHECKIN.items },
+    insightHistory: stored.insightHistory ?? undefined,
+  };
+}
+
+/**
+ * Training settings merge one level deeper: `progression` gained fields in
+ * engine v3 (separate upper/lower load steps), and a v1 blob that predates
+ * `volumeLandmarks` must still get the full 15-muscle table rather than a
+ * partial one, or `weeklySetsByMuscle` would read `undefined` landmarks.
+ */
+function mergeTraining(stored: Partial<TrainingSettings> | undefined): TrainingSettings {
+  if (!stored) return DEFAULT_TRAINING;
+  return {
+    ...DEFAULT_TRAINING,
+    ...stored,
+    volumeLandmarks: { ...DEFAULT_LANDMARKS, ...(stored.volumeLandmarks ?? {}) },
+    progression: { ...DEFAULT_TRAINING.progression, ...(stored.progression ?? {}) },
+    customExercises: stored.customExercises ?? [],
+    programs: stored.programs ?? [],
   };
 }

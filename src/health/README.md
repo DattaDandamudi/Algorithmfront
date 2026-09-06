@@ -8,8 +8,8 @@ local food database.
 
 ```
 src/health/
-  HealthApp.tsx        shell: providers, 5-tab bottom nav, onboarding gate
-  nav.tsx              tab state + deep links (open Coach pre-filled, open Log section)
+  HealthApp.tsx        shell: providers, 6-tab bottom nav, onboarding gate
+  nav.tsx              tab state + deep links (open Coach pre-filled, open Log section, open Train view/session)
   health.css           design tokens (#0B0D0F / #14181C / #1E252B, WHOOP green/yellow/red)
   data/
     types.ts           THE contract: DailyRecord (compact short-key schema), Profile, Targets, CoachContext…
@@ -19,8 +19,11 @@ src/health/
     export.ts          JSON (full fidelity) + CSV (BOM, flattened) export/import
     seed.ts            deterministic 45-day demo dataset
     whoopImport.ts     WHOOP CSV export parser
+    workoutImport.ts   workout parsers: WHOOP workouts.csv, Strava activities.csv, Apple Health export.xml
   engine/              pure, deterministic logic (all unit-tested with vitest)
+    stats.ts           median/MAD/robust SD, erf & normal CDF, quantiles, EWMA, linreg, Benjamini–Hochberg
     weight.ts          EWMA trend (α = 0.10), weekly rate lb/wk & %BW/wk, 0.5–1 %BW target band
+    kalman.ts          local-linear-trend weight filter + RTS smoother, outlier gate, rate credible band
     expenditure.ts     MacroFactor-style weekly TDEE = intake − Δtrend×3500/7, ≥5 weigh-ins gate, smoothing, ±100–200 kcal steps, fat floor
     baseline.ts        30-day (RHR 28-day) personal baselines + good-direction deltas
     hrv.ts             ln(rMSSD), 7-day rolling mean, SWC = mean ± 0.5 SD, Balanced/Low/Unbalanced/Poor bands, CV trend
@@ -28,6 +31,13 @@ src/health/
     sleep.ts           need = baseline + f(strain) + f(debt) − naps, debt, bedtime/midpoint SD, countdown, caffeine cutoff
     nutrition.ts       day type from split, macro targets, protein pacing (0.4–0.55 g/kg/meal), fat floor, late eating, hydration
     tobacco.ts         counts, streaks, next-morning HRV/RHR/recovery comparison
+    load.ts            session load (sRPE / TRIMP / Edwards), Banister fitness-fatigue-form, ACWR (descriptive), VO₂max
+    strength.ts        e1RM by rep range, PRs, plateaus, weekly sets by muscle, progression & deload checks
+    exerciseDb.ts      exercise catalogue (muscles, patterns, equipment, aliases), search, default program, landmarks
+    stress.ts          Hooper check-in, overnight strain index + outlier count, resilience balance, illness flag
+    energy.ts          two-process predicted-energy curve (homeostatic + circadian + caffeine PK)
+    impact.ts          N-of-1 behaviour effects: Welch se, shrinkage to published priors, BH correction
+    changepoint.ts     Bayesian online changepoint detection (regime shifts in HRV, RHR, weight level, strain)
     adherence.ts       heatmap grid, streaks, weekly/monthly aggregation
     micronutrients.ts  retest reminders + display-only guidance (lead → physician escalation)
     insights.ts        the 14 insight templates, priorities and promotion rules; coach chips; empty-state copy
@@ -44,7 +54,10 @@ src/health/
     barcode.ts         Open Food Facts lookup for barcodes (the app's only non-AI third-party call, made only on a scan/lookup)
     foodImage.ts       photo estimation through Claude vision (same strict JSON schema, confidence capped at 0.6)
   ui/                  design-system primitives (Ring, Tile, Sparkline, MacroBar, Sheet, …) and charts/
-  screens/             Today, Log, Trends, Coach, Settings, Onboarding
+  screens/             Today, Log, Train, Trends, Coach, Settings, Onboarding
+    Train.tsx          the sixth tab: Today / Log / History / Analysis sub-views
+    train/             session logger, exercise picker, history list, e1RM · volume · load analysis
+    stress/            check-in strip, stress & resilience cards, predicted-energy curve, behaviour-impact card
 ```
 
 ## Running

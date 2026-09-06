@@ -60,7 +60,8 @@ describe('parseWhoopCsv', () => {
     expect(res.records).toHaveLength(2);
     const [a, b] = res.records;
     // Day = the morning you woke (wake onset), not the evening the cycle began.
-    expect(a).toEqual({ d: '2026-09-05', rec: 71, rhr: 52, hrv: 58, strn: 11.2, slh: 7.4, sln: 7.9, dbt: 30, bt: '23:10', wk: '06:50' });
+    // rr / skt / spo feed the overnight strain index and the illness flag.
+    expect(a).toEqual({ d: '2026-09-05', rec: 71, rhr: 52, hrv: 58, strn: 11.2, slh: 7.4, sln: 7.9, dbt: 30, bt: '23:10', wk: '06:50', rr: 15.1, skt: 33.1, spo: 97 });
     expect(b.d).toBe('2026-09-06');
     expect(b.bt).toBe('00:15'); // after-midnight bedtime is stored as-is
     expect(b.wk).toBe('07:05');
@@ -70,7 +71,10 @@ describe('parseWhoopCsv', () => {
     expect(res.columnsFound).toEqual(
       expect.arrayContaining(['Cycle start time', 'Recovery score %', 'Resting heart rate (bpm)', 'Heart rate variability (ms)', 'Day Strain', 'Asleep duration (min)', 'Sleep need (min)', 'Sleep debt (min)', 'Sleep onset', 'Wake onset']),
     );
-    expect(res.columnsFound).not.toContain('Skin temp (celsius)');
+    expect(res.columnsFound).toEqual(expect.arrayContaining(['Skin temp (celsius)', 'Blood oxygen %', 'Respiratory rate (rpm)']));
+    // Still ignores the columns the app has no field for.
+    expect(res.columnsFound).not.toContain('Energy burned (cal)');
+    expect(res.columnsFound).not.toContain('Sleep efficiency %');
     // Never writes user-owned fields.
     for (const r of res.records) for (const k of Object.keys(r)) expect(['d', ...WHOOP_FIELDS]).toContain(k);
   });
@@ -103,7 +107,7 @@ describe('parseWhoopCsv', () => {
     expect(noDate.records).toEqual([]);
     expect(noDate.errors[0]).toMatch(/Cycle start time/);
     expect(noDate.skipped).toBe(1);
-    const noMetrics = parseWhoopCsv('Cycle start time,Skin temp (celsius)\n2026-09-01 23:00:00,33\n');
+    const noMetrics = parseWhoopCsv('Cycle start time,Energy burned (cal)\n2026-09-01 23:00:00,2100\n');
     expect(noMetrics.records).toEqual([]);
     expect(noMetrics.errors[0]).toMatch(/No recovery, HRV/);
     expect(parseWhoopCsv('').errors).toEqual(['File is empty.']);
@@ -163,5 +167,29 @@ describe('mergeWhoopRecords', () => {
     const res = mergeWhoopRecords({}, parsed.records);
     expect(res.created).toBe(2);
     expect(res.merged[0]).toEqual(parsed.records[0]);
+  });
+});
+
+describe('parseWhoopCsv — stress-stack physiology columns', () => {
+  const withPhys = (skt: string, spo: string, rr: string) =>
+    parseWhoopCsv(
+      ['Cycle start time,Recovery score %,Skin temp (celsius),Blood oxygen %,Respiratory rate (rpm)', `2026-09-01 23:00:00,70,${skt},${spo},${rr}`].join('\n'),
+    ).records[0];
+
+  it('reads respiratory rate, skin temperature and SpO2 at sensible precision', () => {
+    expect(withPhys('33.456', '96.7', '15.06')).toMatchObject({ skt: 33.46, spo: 96.7, rr: 15.1 });
+  });
+
+  it('drops physiologically impossible cells rather than feeding them to the strain index', () => {
+    const bad = withPhys('120', '4', '90');
+    expect(bad.skt).toBeUndefined();
+    expect(bad.spo).toBeUndefined();
+    expect(bad.rr).toBeUndefined();
+    expect(bad.rec).toBe(70); // the rest of the row still imports
+  });
+
+  it('matches the alternative header spellings WHOOP has shipped', () => {
+    const res = parseWhoopCsv(['Cycle start time,SpO2 %,Skin temp,Resp rate', '2026-09-01 23:00:00,95,33.2,14.8'].join('\n'));
+    expect(res.records[0]).toMatchObject({ spo: 95, skt: 33.2, rr: 14.8 });
   });
 });

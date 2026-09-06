@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyTrend, withTotals } from './store';
-import type { DailyRecord, Meal } from './types';
+import { applyTrend, findDuplicateWorkout, withTotals, withTrainingDerived, workoutLoad } from './store';
+import type { DailyRecord, Meal, Workout } from './types';
 
 const meal = (over: Partial<Meal>): Meal => ({
   id: 'm1',
@@ -99,5 +99,97 @@ describe('R7-13 applyTrend — never stamps a trend on a future-dated record', (
       '2026-09-07': { d: '2026-09-07', w: 171 },
     } as Record<string, DailyRecord>;
     expect(applyTrend(days, 0.1, '2026-09-06')['2026-09-07'].wt).toBe(171.9);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Training-derived day fields
+// ---------------------------------------------------------------------------
+
+const W = (over: Partial<Workout> & { id: string; d: string }): Workout => ({
+  start: '18:00',
+  durationMin: 60,
+  kind: 'strength',
+  source: 'manual',
+  ...over,
+});
+
+describe('workoutLoad', () => {
+  it('prefers the stamped load so history never shifts when the model is retuned', () => {
+    expect(workoutLoad(W({ id: 'a', d: '2026-09-01', load: 400, srpe: 9, durationMin: 60 }))).toBe(400);
+  });
+
+  it('falls back to Foster session RPE × minutes', () => {
+    expect(workoutLoad(W({ id: 'a', d: '2026-09-01', srpe: 7, durationMin: 55 }))).toBe(385);
+  });
+
+  it('is undefined — not 0 — when there is nothing to compute from', () => {
+    expect(workoutLoad(W({ id: 'a', d: '2026-09-01' }))).toBeUndefined();
+    expect(workoutLoad(W({ id: 'a', d: '2026-09-01', srpe: 7, durationMin: 0 }))).toBeUndefined();
+  });
+});
+
+describe('withTrainingDerived', () => {
+  it('sums load, counts sessions and marks a lifting day', () => {
+    const out = withTrainingDerived({ d: '2026-09-01' }, [
+      W({ id: 'a', d: '2026-09-01', load: 420 }),
+      W({ id: 'b', d: '2026-09-01', kind: 'cardio', load: 180 }),
+    ]);
+    expect(out).toMatchObject({ ld: 600, wko: 2, lift: true });
+  });
+
+  it('does not claim a lift day for cardio or mobility alone', () => {
+    const out = withTrainingDerived({ d: '2026-09-01' }, [W({ id: 'a', d: '2026-09-01', kind: 'cardio', load: 180 })]);
+    expect(out.wko).toBe(1);
+    expect(out.lift).toBeUndefined();
+  });
+
+  it('clears the fields when the last session of a day is deleted', () => {
+    const out = withTrainingDerived({ d: '2026-09-01', ld: 600, wko: 2, lift: true }, []);
+    expect(out.ld).toBeUndefined();
+    expect(out.wko).toBeUndefined();
+    expect(out.lift).toBeUndefined();
+  });
+
+  it("keeps a user's explicit rest-day override", () => {
+    const out = withTrainingDerived({ d: '2026-09-01', lift: false }, []);
+    expect(out.lift).toBe(false);
+  });
+
+  it('preserves identity when nothing changed', () => {
+    const rec: DailyRecord = { d: '2026-09-01', ld: 420, wko: 1, lift: true };
+    expect(withTrainingDerived(rec, [W({ id: 'a', d: '2026-09-01', load: 420 })])).toBe(rec);
+  });
+
+  it('ignores a session with no computable load when summing', () => {
+    const out = withTrainingDerived({ d: '2026-09-01' }, [W({ id: 'a', d: '2026-09-01', load: 300 }), W({ id: 'b', d: '2026-09-01' })]);
+    expect(out).toMatchObject({ ld: 300, wko: 2 });
+  });
+});
+
+describe('findDuplicateWorkout', () => {
+  const existing = [
+    W({ id: 'w1', d: '2026-09-01', start: '18:00', externalId: 'whoop:2026-09-01T18:00' }),
+    W({ id: 'w2', d: '2026-09-03', start: '07:15', kind: 'cardio' }),
+  ];
+
+  it('matches on externalId first', () => {
+    const hit = findDuplicateWorkout(W({ id: 'x', d: '2026-01-01', start: '05:00', externalId: 'whoop:2026-09-01T18:00' }), existing);
+    expect(hit?.id).toBe('w1');
+  });
+
+  it('matches the same day and kind within 10 minutes', () => {
+    expect(findDuplicateWorkout(W({ id: 'x', d: '2026-09-01', start: '18:09' }), existing)?.id).toBe('w1');
+    expect(findDuplicateWorkout(W({ id: 'x', d: '2026-09-01', start: '17:51' }), existing)?.id).toBe('w1');
+  });
+
+  it('does not match past the window, a different kind, or a different day', () => {
+    expect(findDuplicateWorkout(W({ id: 'x', d: '2026-09-01', start: '18:11' }), existing)).toBeNull();
+    expect(findDuplicateWorkout(W({ id: 'x', d: '2026-09-01', start: '18:00', kind: 'cardio' }), existing)).toBeNull();
+    expect(findDuplicateWorkout(W({ id: 'x', d: '2026-09-02', start: '18:00' }), existing)).toBeNull();
+  });
+
+  it('never matches on an unparseable start time', () => {
+    expect(findDuplicateWorkout(W({ id: 'x', d: '2026-09-01', start: 'nope' }), existing)).toBeNull();
   });
 });

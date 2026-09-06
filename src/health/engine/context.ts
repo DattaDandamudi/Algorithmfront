@@ -70,7 +70,7 @@ import {
  * Bump when the shape or semantics of the built context change in a way the
  * coach prompt / cached insights would notice (e.g. a window length changes).
  */
-export const ENGINE_VERSION = '2';
+export const ENGINE_VERSION = '3';
 
 /** Baseline windows (§0 "vs your 30-day average"; §1 "RHR vs 28-day baseline"). */
 export const BASELINE_DAYS = 30;

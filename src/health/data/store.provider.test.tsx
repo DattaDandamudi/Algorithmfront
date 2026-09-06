@@ -7,9 +7,9 @@ import { StrictMode } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HealthStoreProvider, useHealth } from './store';
-import { KEYS, readIndex, resetStorageCache, writeChat, writeIndex, writeSettings, writeShard, type Shard, type ShardIndex } from './storage';
+import { KEYS, readIndex, resetStorageCache, writeChat, writeIndex, writeSettings, writeShard, writeWorkoutShard, type Shard, type ShardIndex, type WorkoutShard } from './storage';
 import { DEFAULT_SETTINGS } from './defaults';
-import { SCHEMA_VERSION, type ChatMessage } from './types';
+import { SCHEMA_VERSION, type ChatMessage, type Workout } from './types';
 
 type Ctx = ReturnType<typeof useHealth>;
 
@@ -434,5 +434,145 @@ describe('HealthStoreProvider — self-heal (R4-5)', () => {
     tick(500);
     expect(readIndex()?.shards).toEqual({});
     expect(ctx.state.storage.integrity?.problems).toEqual([]);
+  });
+});
+
+describe('HealthStoreProvider — training sessions', () => {
+  const wkShard = (ym: string): WorkoutShard | null => {
+    const raw = ls.getItem(KEYS.wk(ym));
+    return raw ? (JSON.parse(raw) as WorkoutShard) : null;
+  };
+
+  const session = (over: Partial<Workout> = {}): Omit<Workout, 'id'> => ({
+    d: '2026-09-06',
+    start: '18:00',
+    durationMin: 60,
+    kind: 'strength',
+    source: 'manual',
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.setSystemTime(new Date(2026, 8, 6, 20, 0, 0));
+  });
+
+  it('writes a session to its own shard family and stamps the day', () => {
+    mount();
+    act(() => {
+      ctx.actions.addWorkout(session({ srpe: 7 }));
+    });
+    expect(ctx.state.days['2026-09-06']).toMatchObject({ ld: 420, wko: 1, lift: true });
+    tick(500);
+
+    expect(wkShard('2026-09')?.items && Object.keys(wkShard('2026-09')!.items)).toHaveLength(1);
+    // Both families are written, and the index knows about both.
+    expect(shard('2026-09')?.days['06']).toMatchObject({ ld: 420, wko: 1 });
+    expect(Object.keys(readIndex()?.workouts ?? {})).toEqual(['2026-09']);
+  });
+
+  it('reloads the session (and its derived day fields) on a fresh mount', () => {
+    mount();
+    act(() => {
+      ctx.actions.addWorkout(session({ srpe: 8, durationMin: 50 }));
+    });
+    tick(500);
+    cleanup();
+
+    mount();
+    expect(Object.values(ctx.state.workouts)).toHaveLength(1);
+    expect(ctx.state.days['2026-09-06']).toMatchObject({ ld: 400, wko: 1, lift: true });
+  });
+
+  it('clears the day fields again when the session is deleted', () => {
+    mount();
+    let id = '';
+    act(() => {
+      id = ctx.actions.addWorkout(session({ srpe: 7 })).id;
+    });
+    act(() => {
+      ctx.actions.removeWorkout(id);
+    });
+    expect(ctx.state.workouts[id]).toBeUndefined();
+    expect(ctx.state.days['2026-09-06'].ld).toBeUndefined();
+    expect(ctx.state.days['2026-09-06'].wko).toBeUndefined();
+    tick(500);
+    expect(ls.getItem(KEYS.wk('2026-09'))).toBeNull();
+  });
+
+  it('finishWorkout stamps duration, session RPE and the load', () => {
+    mount();
+    let id = '';
+    act(() => {
+      id = ctx.actions.addWorkout(session({ durationMin: 0 })).id;
+    });
+    act(() => {
+      ctx.actions.finishWorkout(id, { durationMin: 47, srpe: 8 });
+    });
+    expect(ctx.state.workouts[id]).toMatchObject({ durationMin: 47, srpe: 8, load: 376 });
+    expect(ctx.state.days['2026-09-06'].ld).toBe(376);
+  });
+
+  it('importWorkouts dedupes by externalId and by a 10-minute window, keeping the manual entry', () => {
+    mount();
+    act(() => {
+      ctx.actions.addWorkout(session({ start: '18:00', title: 'typed by hand' }));
+    });
+    let result = { added: 0, skipped: 0, errors: [] as string[] };
+    act(() => {
+      result = ctx.actions.importWorkouts([
+        { id: 'i1', ...session({ start: '18:06', title: 'from WHOOP' }) } as Workout,
+        { id: 'i2', ...session({ d: '2026-09-05', start: '07:00', kind: 'cardio' }), externalId: 'whoop:a' } as Workout,
+        { id: 'i3', ...session({ d: '2026-09-05', start: '09:30', kind: 'cardio' }), externalId: 'whoop:a' } as Workout,
+      ]);
+    });
+    expect(result).toMatchObject({ added: 1, skipped: 2 });
+    const titles = Object.values(ctx.state.workouts).map((w) => w.title);
+    expect(titles).toContain('typed by hand');
+    expect(titles).not.toContain('from WHOOP');
+  });
+
+  it('picks up another tab’s workout shard without touching this tab’s pending edits', () => {
+    mount();
+    const other: Workout = { id: 'w-other', d: '2026-09-04', start: '17:00', durationMin: 30, kind: 'cardio', source: 'manual', srpe: 5 };
+    const index = writeWorkoutShard('2026-09', [other], readIndex() ?? EMPTY_INDEX);
+    writeIndex(index);
+    storageEvent(KEYS.wk('2026-09'));
+    expect(ctx.state.workouts['w-other']).toBeDefined();
+    expect(ctx.state.days['2026-09-04']).toMatchObject({ ld: 150, wko: 1 });
+  });
+
+  it('ignores the draft key: it is this tab’s scratch space, not shared state', () => {
+    mount();
+    const before = ctx.state.workouts;
+    ls.setItem(KEYS.workoutDraft, JSON.stringify({ live: true }));
+    storageEvent(KEYS.workoutDraft);
+    expect(ctx.state.workouts).toBe(before);
+  });
+
+  it('a calorie target change stamps the freeze date', () => {
+    mount();
+    act(() => {
+      ctx.actions.updateTargets({ kcal: 2100 });
+    });
+    expect(ctx.state.settings.targets.lastKcalChangeAt).toBe('2026-09-06');
+    act(() => {
+      ctx.actions.updateTargets({ protein: 190 });
+    });
+    expect(ctx.state.settings.targets.lastKcalChangeAt).toBe('2026-09-06');
+  });
+
+  it('saveCheckIn writes the Hooper items in one go, and recordInsightsShown keeps 14 days', () => {
+    mount();
+    act(() => {
+      ctx.actions.saveCheckIn('2026-09-06', { qs: 3, qf: 4, qt: 2, qo: 5 });
+    });
+    expect(ctx.state.days['2026-09-06']).toMatchObject({ qs: 3, qf: 4, qt: 2, qo: 5 });
+
+    act(() => {
+      for (let i = 1; i <= 20; i++) ctx.actions.recordInsightsShown(`2026-08-${String(i).padStart(2, '0')}`, ['t1']);
+    });
+    const history = ctx.state.settings.insightHistory ?? {};
+    expect(Object.keys(history)).toHaveLength(14);
+    expect(Object.keys(history)[0]).toBe('2026-08-07');
   });
 });

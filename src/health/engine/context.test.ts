@@ -472,8 +472,10 @@ describe('buildCoachContext — 40-day synthetic dataset', () => {
 
 describe('engine barrel', () => {
   it('re-exports every engine module and the context builder', () => {
-    expect(ENGINE_VERSION).toBe('2'); // bumped for the R3 semantics changes (HRV banding, sleep debt, weekly TDEE cadence)
-    expect(engine.ENGINE_VERSION).toBe('2');
+    // v3: engine upgrade — Kalman decision trend, training load & strength,
+    // the stress stack, predicted energy, N-of-1 impact and regime detection.
+    expect(ENGINE_VERSION).toBe('3');
+    expect(engine.ENGINE_VERSION).toBe('3');
     expect(engine.buildCoachContext).toBe(buildCoachContext);
     expect(engine.buildInsights).toBe(buildInsights);
     expect(engine.contextForDate).toBe(contextForDate);

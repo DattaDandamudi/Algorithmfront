@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildCSV, buildExportBundle, buildExportJSON, CSV_COLUMNS, csvCell, downloadText, EXPORT_NOTE, exportFilename, parseImport } from './export';
+import { buildCSV, buildExportBundle, buildExportJSON, buildWorkoutsCSV, CSV_COLUMNS, csvCell, downloadText, EXPORT_NOTE, exportFilename, parseImport, WORKOUT_CSV_COLUMNS } from './export';
 import { DEFAULT_SETTINGS, mergeSettings } from './defaults';
-import { SCHEMA_VERSION, type ChatMessage, type DailyRecord } from './types';
+import { SCHEMA_VERSION, type ChatMessage, type DailyRecord, type Workout } from './types';
 
 const BOM = '\uFEFF';
 
@@ -231,5 +231,142 @@ describe('exportFilename / downloadText', () => {
 
   it('is a no-op outside the browser', () => {
     expect(() => downloadText('x.json', '{}')).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Workouts (schema v2)
+// ---------------------------------------------------------------------------
+
+const WORKOUTS: Record<string, Workout> = {
+  w1: {
+    id: 'w1',
+    d: '2026-09-05',
+    start: '18:10',
+    durationMin: 62,
+    kind: 'strength',
+    session: 'upper',
+    title: 'Upper A',
+    srpe: 7,
+    load: 434,
+    source: 'manual',
+    exercises: [
+      { exerciseId: 'bench-press', sets: [{ w: 60, r: 8, rpe: 7 }, { w: 60, r: 8, rpe: 8 }, { w: 40, r: 10, k: 'wu' }] },
+      { exerciseId: 'row', sets: [{ w: 50, r: 10 }], note: 'felt "easy", +5 next time' },
+    ],
+  },
+  w2: {
+    id: 'w2',
+    d: '2026-09-06',
+    start: '07:20',
+    durationMin: 35,
+    kind: 'cardio',
+    source: 'whoop',
+    externalId: 'whoop:2026-09-06T07:20',
+    cardio: { sport: 'run', distanceKm: 6.2, avgHr: 148, maxHr: 171, elevM: 40, kcal: 410 },
+  },
+};
+
+describe('workouts in the JSON bundle', () => {
+  it('exports them sorted and round-trips through parseImport', () => {
+    const bundle = buildExportBundle(DEFAULT_SETTINGS, DAYS, CHAT, WORKOUTS);
+    expect(bundle.workouts.map((w) => w.id)).toEqual(['w1', 'w2']);
+
+    const back = parseImport(JSON.stringify(bundle));
+    expect(back.ok).toBe(true);
+    expect(back.workouts).toHaveLength(2);
+    expect(back.workouts[0].exercises?.[0].sets[0]).toEqual({ w: 60, r: 8, rpe: 7 });
+    expect(back.workouts[1].cardio?.distanceKm).toBe(6.2);
+    expect(back.errors).toEqual([]);
+  });
+
+  it('defaults the workouts array so a v1 bundle still imports cleanly', () => {
+    const v1 = { app: 'hx', version: 1, exportedAt: '2026-09-06T00:00:00.000Z', exportNote: '', settings: DEFAULT_SETTINGS, days: Object.values(DAYS), chat: CHAT };
+    const back = parseImport(JSON.stringify(v1));
+    expect(back.ok).toBe(true);
+    expect(back.workouts).toEqual([]);
+    expect(back.days.length).toBe(3);
+  });
+
+  it('normalises a hand-edited session: id, numbers, unknown enums, bad sets', () => {
+    const back = parseImport(
+      JSON.stringify({
+        days: [],
+        workouts: [
+          { d: '2026-09-05', start: '9:5', durationMin: '45', kind: 'yoga', source: 'nowhere', srpe: '6', exercises: [{ exerciseId: 'squat', sets: [{ w: '100', r: '5' }, { r: 5 }, { w: 80 }, 'nope'] }, { sets: [] }] },
+          { d: 'not-a-date' },
+        ],
+      }),
+    );
+    const w = back.workouts[0];
+    expect(back.workouts).toHaveLength(1);
+    expect(w.id).toMatch(/^w/);
+    expect(w.durationMin).toBe(45);
+    expect(w.srpe).toBe(6);
+    expect(w.kind).toBe('strength'); // unknown kind falls back
+    expect(w.source).toBe('manual'); // unknown source falls back
+    expect(w.start).toBe('12:00'); // malformed time falls back
+    expect(w.exercises?.[0].sets).toEqual([{ w: 100, r: 5 }, { w: 0, r: 5 }]); // set without reps dropped, bodyweight → 0
+    expect(back.errors.join(' ')).toMatch(/1 workout\(s\) had no valid date/);
+  });
+
+  it('gives colliding ids fresh ones so the store cannot lose a session', () => {
+    const back = parseImport(JSON.stringify({ days: [], workouts: [{ id: 'dup', d: '2026-09-05', start: '10:00' }, { id: 'dup', d: '2026-09-06', start: '10:00' }] }));
+    expect(back.workouts).toHaveLength(2);
+    expect(back.workouts[0].id).not.toBe(back.workouts[1].id);
+  });
+
+  it('imports a file that contains only workouts', () => {
+    const back = parseImport(JSON.stringify({ workouts: [{ id: 'w9', d: '2026-09-05', start: '10:00' }] }));
+    expect(back.ok).toBe(true);
+    expect(back.workouts).toHaveLength(1);
+  });
+});
+
+describe('buildWorkoutsCSV', () => {
+  const csv = buildWorkoutsCSV(Object.values(WORKOUTS));
+  const lines = csv.slice(1).split('\r\n');
+
+  it('has the BOM, header and one row per set (plus one for the cardio session)', () => {
+    expect(csv.startsWith(BOM)).toBe(true);
+    expect(lines[0]).toBe(WORKOUT_CSV_COLUMNS.join(','));
+    expect(lines).toHaveLength(1 + 3 + 1 + 1); // 3 bench sets + 1 row set + 1 cardio row
+  });
+
+  it('labels warm-ups and carries set numbers', () => {
+    expect(lines[1]).toContain('bench-press,1,working,60,8,7');
+    expect(lines[3]).toContain('bench-press,3,warmup,40,10');
+  });
+
+  it('writes cardio fields on the session row', () => {
+    const cardio = lines[lines.length - 1];
+    expect(cardio).toContain('run,6.2,148,171,40,410');
+  });
+
+  it('quotes a note containing a comma or quote and never lets it run as a formula', () => {
+    expect(lines[4]).toContain('"felt ""easy"", +5 next time"');
+    expect(csvCell('=1+1')).toBe("'=1+1");
+  });
+});
+
+describe('exportFilename', () => {
+  it('names the workouts file distinctly', () => {
+    const d = new Date('2026-09-06T12:00:00Z');
+    expect(exportFilename('json', d)).toBe('health-log-2026-09-06.json');
+    expect(exportFilename('csv', d, 'workouts')).toBe('health-workouts-2026-09-06.csv');
+  });
+});
+
+describe('new day fields in the CSV', () => {
+  it('adds check-in, stress and Kalman columns and converts the slope to lb/week', () => {
+    const csv = buildCSV([{ d: '2026-09-06', kl: 171.4, ks: -0.14, ld: 434, wko: 1, qs: 3, qf: 4, qt: 5, qo: 2, rr: 15.2, skt: 33.4, spo: 96, alc: 2, osi: 58, vo2: 44.1 }]);
+    const row = csv.slice(1).split('\r\n')[1].split(',');
+    const at = (name: string) => row[CSV_COLUMNS.indexOf(name as (typeof CSV_COLUMNS)[number])];
+    expect(at('kalman_lb')).toBe('171.4');
+    expect(at('kalman_rate_lb_wk')).toBe('-0.98');
+    expect(at('load')).toBe('434');
+    expect(at('checkin_stress')).toBe('5');
+    expect(at('stress_index')).toBe('58');
+    expect(at('vo2max')).toBe('44.1');
   });
 });

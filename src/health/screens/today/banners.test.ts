@@ -86,7 +86,7 @@ describe('storage + backup banners (§10, R2-6)', () => {
     expect(quota[0].id).toBe('storage:quota');
     expect(quota[0].message).toContain('80% full');
 
-    const integ = allTodayBanners(inputs({ storage: { ...okStorage, integrity: { version: 1, shards: 2, records: 30, problems: ['a', 'b'], checkedAt: NOW } } }));
+    const integ = allTodayBanners(inputs({ storage: { ...okStorage, integrity: { version: 1, shards: 2, records: 30, workoutShards: 0, workouts: 0, problems: ['a', 'b'], checkedAt: NOW } } }));
     expect(integ[0].id).toBe('storage:integrity');
     expect(integ[0].message).toContain('2 data integrity problems');
   });

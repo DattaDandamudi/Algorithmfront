@@ -1,7 +1,13 @@
 /**
- * Settings — SPEC §5 and §10. Nine collapsible cards, top → bottom:
- *   1 Profile & goals   2 Targets   3 Training split   4 Bloodwork
- *   5 Food preferences  6 WHOOP     7 Coach & AI       8 Data      9 About
+ * Settings — SPEC §5 and §10. Twelve collapsible cards, top → bottom:
+ *   1 Profile & goals   2 Targets    3 Training split  4 Training
+ *   5 Daily check-in    6 Bloodwork  7 Food preferences
+ *   8 WHOOP             9 Imports   10 Coach & AI     11 Data     12 About
+ *
+ * Training, Daily check-in and Imports are placeholders in this release: each
+ * is a titled card with one line of copy and no controls, reachable through
+ * `openSettings('training' | 'checkin' | 'imports')`. Phase 2e fills them with
+ * TrainingSection / CheckInSection / ImportsSection.
  *
  * Every section reads/writes the store directly (`useHealth()`); this file
  * only composes them, supplies the shared clock (`useNow()` → today / now for
@@ -19,7 +25,7 @@
  * matching <Section> as a nonce so it expands and scrolls into view (R2-10).
  */
 import { useEffect, useState } from 'react';
-import { Bot, Database, Dumbbell, FlaskConical, Info, Target, User, Utensils, Watch } from 'lucide-react';
+import { Bot, ClipboardCheck, Database, Dumbbell, FileUp, FlaskConical, Info, SlidersHorizontal, Target, User, Utensils, Watch } from 'lucide-react';
 import { useHealth, useRecords, useNow } from '../data/store';
 import { toISODate } from '../lib/dates';
 import { useNav, type SettingsSection } from '../nav';
@@ -33,9 +39,30 @@ import ProfileSection from './settings/ProfileSection';
 import SplitSection from './settings/SplitSection';
 import TargetsSection from './settings/TargetsSection';
 import WhoopSection from './settings/WhoopSection';
-import { aboutCaption, bloodworkCaption, coachCaption, dataCaption, foodCaption, profileCaption, splitCaption, targetsCaption, whoopCaption } from './settings/captions';
+import {
+  aboutCaption,
+  bloodworkCaption,
+  checkInCaption,
+  coachCaption,
+  dataCaption,
+  foodCaption,
+  importsCaption,
+  profileCaption,
+  splitCaption,
+  targetsCaption,
+  trainingCaption,
+  whoopCaption,
+} from './settings/captions';
 import { Section } from './settings/fields';
 import { backupOverdue } from './settings/util';
+
+/**
+ * Body of a section whose controls have not shipped yet: one line of copy, no
+ * inputs. Kept at module level so it never remounts, like the real sections.
+ */
+function ComingSoon({ children }: { children: string }) {
+  return <p className="text-[13px] leading-5 text-hx-text2">{children}</p>;
+}
 
 export default function Settings() {
   const { state } = useHealth();
@@ -82,6 +109,20 @@ export default function Settings() {
             <SplitSection />
           </Section>
 
+          <Section id="hx-set-training" title="Training" icon={<SlidersHorizontal aria-hidden />} caption={trainingCaption()} openSignal={signal('training')}>
+            <ComingSoon>
+              Units, rest timer, progression rules, per-muscle volume landmarks, custom exercises and programs will live here once the Train tab can log a
+              workout.
+            </ComingSoon>
+          </Section>
+
+          <Section id="hx-set-checkin" title="Daily check-in" icon={<ClipboardCheck aria-hidden />} caption={checkInCaption()} openSignal={signal('checkin')}>
+            <ComingSoon>
+              A 20-second daily check-in — sleep quality, fatigue, stress and soreness — that feeds the readiness score. You will choose here whether the app
+              asks, and which of the four items it asks for.
+            </ComingSoon>
+          </Section>
+
           <Section id="hx-set-bloodwork" title="Bloodwork" icon={<FlaskConical aria-hidden />} caption={bloodworkCaption(settings, today)} openSignal={signal('bloodwork')}>
             <BloodworkSection today={today} />
           </Section>
@@ -92,6 +133,13 @@ export default function Settings() {
 
           <Section id="hx-set-whoop" title="WHOOP" icon={<Watch aria-hidden />} caption={whoopCaption(settings, now)} openSignal={signal('whoop')}>
             <WhoopSection today={today} now={now} />
+          </Section>
+
+          <Section id="hx-set-imports" title="Imports" icon={<FileUp aria-hidden />} caption={importsCaption()} openSignal={signal('imports')}>
+            <ComingSoon>
+              Workout imports from WHOOP, Strava and an Apple Health export will land here, next to the WHOOP CSV import above. Files are parsed in this
+              browser and never uploaded.
+            </ComingSoon>
           </Section>
 
           <Section id="hx-set-coach" title="Coach & AI" icon={<Bot aria-hidden />} caption={coachCaption(settings)} openSignal={signal('coach')}>

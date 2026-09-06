@@ -9,7 +9,19 @@
  * - CSV text cells starting with = + - @ TAB CR are prefixed with a quote so a
  *   meal name or note can't run as a spreadsheet formula (R4-8).
  */
-import type { AppSettings, ChatMessage, DailyRecord, ISODate, Meal } from './types';
+import type {
+  AppSettings,
+  CardioDetail,
+  ChatMessage,
+  DailyRecord,
+  ISODate,
+  Meal,
+  SetEntry,
+  Workout,
+  WorkoutExercise,
+  WorkoutKind,
+  WorkoutSource,
+} from './types';
 import { SCHEMA_VERSION } from './types';
 import { mergeSettings } from './defaults';
 import { uid } from '../lib/format';
@@ -24,6 +36,8 @@ export interface ExportBundle {
   exportNote: string;
   settings: AppSettings;
   days: DailyRecord[];
+  /** Training sessions (schema v2+). A v1 build ignores this key. */
+  workouts: Workout[];
   chat: ChatMessage[];
 }
 
@@ -34,7 +48,12 @@ export function stripSecrets(settings: AppSettings): AppSettings {
   return { ...settings, ai };
 }
 
-export function buildExportBundle(settings: AppSettings, days: Record<ISODate, DailyRecord>, chat: ChatMessage[]): ExportBundle {
+export function buildExportBundle(
+  settings: AppSettings,
+  days: Record<ISODate, DailyRecord>,
+  chat: ChatMessage[],
+  workouts: Record<string, Workout> = {},
+): ExportBundle {
   return {
     app: 'hx',
     version: SCHEMA_VERSION,
@@ -42,17 +61,24 @@ export function buildExportBundle(settings: AppSettings, days: Record<ISODate, D
     exportNote: EXPORT_NOTE,
     settings: stripSecrets(settings),
     days: Object.values(days).sort((a, b) => (a.d < b.d ? -1 : 1)),
+    workouts: Object.values(workouts).sort((a, b) => (a.d === b.d ? (a.start < b.start ? -1 : 1) : a.d < b.d ? -1 : 1)),
     chat,
   };
 }
 
-export function buildExportJSON(settings: AppSettings, days: Record<ISODate, DailyRecord>, chat: ChatMessage[]): string {
-  return JSON.stringify(buildExportBundle(settings, days, chat), null, 1);
+export function buildExportJSON(
+  settings: AppSettings,
+  days: Record<ISODate, DailyRecord>,
+  chat: ChatMessage[],
+  workouts: Record<string, Workout> = {},
+): string {
+  return JSON.stringify(buildExportBundle(settings, days, chat, workouts), null, 1);
 }
 
 export interface ParsedImport {
   ok: boolean;
   days: DailyRecord[];
+  workouts: Workout[];
   settings: AppSettings | null;
   chat: ChatMessage[] | null;
   errors: string[];
@@ -93,8 +119,30 @@ function sanitizeSettings(raw: Record<string, unknown>, errors: string[]): Parti
   } else if (profile !== undefined) {
     delete out.profile;
   }
-  for (const key of ['targets', 'ai', 'whoop'] as const) {
+  for (const key of ['targets', 'ai', 'whoop', 'training', 'checkIn', 'insightHistory'] as const) {
     if (out[key] !== undefined && (typeof out[key] !== 'object' || out[key] === null)) delete out[key];
+  }
+  // A hand-edited `training` block must not hand the engine a broken landmark
+  // table or a non-array program list; mergeTraining fills whatever we drop.
+  const training = out.training;
+  if (training && typeof training === 'object') {
+    const t = { ...(training as Record<string, unknown>) };
+    for (const key of ['customExercises', 'programs'] as const) {
+      if (t[key] !== undefined && !Array.isArray(t[key])) {
+        errors.push(`Settings.training.${key} was not a list and was ignored.`);
+        delete t[key];
+      }
+    }
+    for (const key of ['volumeLandmarks', 'progression'] as const) {
+      if (t[key] !== undefined && (typeof t[key] !== 'object' || t[key] === null || Array.isArray(t[key]))) delete t[key];
+    }
+    out.training = t;
+  }
+  const checkIn = out.checkIn;
+  if (checkIn && typeof checkIn === 'object') {
+    const c = { ...(checkIn as Record<string, unknown>) };
+    if (c.items !== undefined && !Array.isArray(c.items)) delete c.items;
+    out.checkIn = c;
   }
   return out as Partial<AppSettings>;
 }
@@ -106,7 +154,12 @@ function isRecord(x: unknown): x is DailyRecord {
 // --- Normalisation (R4-3) ---------------------------------------------------
 
 /** DailyRecord fields that must be numbers when present. */
-const NUMERIC_DAY_KEYS = ['w', 'wt', 'kc', 'p', 'f', 'c', 'fi', 'st', 'rec', 'hrv', 'rhr', 'slh', 'sln', 'dbt', 'strn', 'nap', 'tob', 'h2o'] as const;
+const NUMERIC_DAY_KEYS = [
+  'w', 'wt', 'kc', 'p', 'f', 'c', 'fi', 'st', 'rec', 'hrv', 'rhr', 'slh', 'sln', 'dbt', 'strn', 'nap', 'tob', 'h2o',
+  // engine v3: Kalman weight state, training load, and the stress stack
+  'kl', 'ks', 'kv', 'ld', 'wko',
+  'qs', 'qf', 'qt', 'qo', 'rr', 'skt', 'spo', 'alc', 'osi', 'vo2',
+] as const;
 /** Meal fields that must always be numbers (the spec's compact schema may omit f/c/fi). */
 const MEAL_NUMERIC_KEYS = ['g', 'kc', 'p', 'f', 'c', 'fi'] as const;
 
@@ -124,6 +177,8 @@ interface NormStats {
   droppedFields: number;
   droppedMeals: number;
   mealIds: number;
+  workoutIds: number;
+  droppedExercises: number;
 }
 
 /**
@@ -175,6 +230,93 @@ function normalizeRecord(rec: DailyRecord, stats: NormStats): DailyRecord {
   return r as unknown as DailyRecord;
 }
 
+const WORKOUT_KINDS: WorkoutKind[] = ['strength', 'cardio', 'mobility', 'sport'];
+const WORKOUT_SOURCES: WorkoutSource[] = ['manual', 'whoop', 'strava', 'apple', 'demo'];
+const SET_NUMERIC_KEYS = ['w', 'r', 'rpe', 'rir'] as const;
+const CARDIO_NUMERIC_KEYS = ['distanceKm', 'avgHr', 'maxHr', 'elevM', 'kcal'] as const;
+
+function normalizeSet(raw: unknown): SetEntry | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const s = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of SET_NUMERIC_KEYS) {
+    const n = toNumber(s[k]);
+    if (n !== undefined) out[k] = n;
+  }
+  // A set without reps is not a set; load may legitimately be 0 (bodyweight).
+  if (out.r === undefined) return null;
+  if (out.w === undefined) out.w = 0;
+  if (s.k === 'wu' || s.k === 'dr' || s.k === 'am') out.k = s.k;
+  if (s.x === true) out.x = true;
+  return out as unknown as SetEntry;
+}
+
+function normalizeWorkoutExercise(raw: unknown): WorkoutExercise | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const e = raw as Record<string, unknown>;
+  if (typeof e.exerciseId !== 'string' || !e.exerciseId) return null;
+  const sets = Array.isArray(e.sets) ? e.sets.map(normalizeSet).filter((s): s is SetEntry => s !== null) : [];
+  const out: WorkoutExercise = { exerciseId: e.exerciseId, sets };
+  if (typeof e.note === 'string') out.note = e.note;
+  if (typeof e.superset === 'string') out.superset = e.superset;
+  return out;
+}
+
+function normalizeCardio(raw: unknown): CardioDetail | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const c = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  if (typeof c.sport === 'string') out.sport = c.sport;
+  for (const k of CARDIO_NUMERIC_KEYS) {
+    const n = toNumber(c[k]);
+    if (n !== undefined) out[k] = n;
+  }
+  if (Array.isArray(c.zoneMin) && c.zoneMin.length === 6) {
+    const zones = c.zoneMin.map((z) => toNumber(z) ?? 0);
+    out.zoneMin = zones;
+  }
+  return Object.keys(out).length ? (out as CardioDetail) : undefined;
+}
+
+/**
+ * A workout must survive a hand-edited file: unknown kinds/sources fall back to
+ * safe defaults, ids are backfilled (the store keys on them), and every numeric
+ * field is coerced. Returns null when the session has no usable date.
+ */
+export function normalizeWorkout(raw: unknown, stats: NormStats): Workout | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const w = raw as Record<string, unknown>;
+  if (typeof w.d !== 'string' || !DATE_RE.test(w.d)) return null;
+  const kind = WORKOUT_KINDS.includes(w.kind as WorkoutKind) ? (w.kind as WorkoutKind) : 'strength';
+  const source = WORKOUT_SOURCES.includes(w.source as WorkoutSource) ? (w.source as WorkoutSource) : 'manual';
+  const out: Workout = {
+    id: typeof w.id === 'string' && w.id ? w.id : uid('w'),
+    d: w.d,
+    start: typeof w.start === 'string' && /^\d{2}:\d{2}$/.test(w.start) ? w.start : '12:00',
+    durationMin: Math.max(0, toNumber(w.durationMin) ?? 0),
+    kind,
+    source,
+  };
+  if (typeof w.id !== 'string' || !w.id) stats.workoutIds++;
+  if (typeof w.title === 'string') out.title = w.title;
+  if (typeof w.note === 'string') out.note = w.note;
+  if (typeof w.session === 'string') out.session = w.session as Workout['session'];
+  if (typeof w.externalId === 'string') out.externalId = w.externalId;
+  if (typeof w.programId === 'string') out.programId = w.programId;
+  const srpe = toNumber(w.srpe);
+  if (srpe !== undefined) out.srpe = srpe;
+  const load = toNumber(w.load);
+  if (load !== undefined) out.load = load;
+  if (Array.isArray(w.exercises)) {
+    const exercises = w.exercises.map(normalizeWorkoutExercise).filter((e): e is WorkoutExercise => e !== null);
+    stats.droppedExercises += w.exercises.length - exercises.length;
+    if (exercises.length) out.exercises = exercises;
+  }
+  const cardio = normalizeCardio(w.cardio);
+  if (cardio) out.cardio = cardio;
+  return out;
+}
+
 /** Transcript keys on `id` and updateChat matches by it; the coach needs a real role. */
 function normalizeChat(raw: unknown[], errors: string[]): ChatMessage[] {
   const out: ChatMessage[] = [];
@@ -210,10 +352,11 @@ export function parseImport(json: string): ParsedImport {
   try {
     parsed = JSON.parse(json);
   } catch (e) {
-    return { ok: false, days: [], settings: null, chat: null, errors: [`Not valid JSON: ${e instanceof Error ? e.message : 'parse error'}`] };
+    return { ok: false, days: [], workouts: [], settings: null, chat: null, errors: [`Not valid JSON: ${e instanceof Error ? e.message : 'parse error'}`] };
   }
 
   let rawDays: unknown[] = [];
+  let rawWorkouts: unknown[] = [];
   let settings: AppSettings | null = null;
   let chat: ChatMessage[] | null = null;
 
@@ -234,23 +377,43 @@ export function parseImport(json: string): ParsedImport {
         errors.push('Settings block could not be read; skipped.');
       }
     }
+    if (Array.isArray(obj.workouts)) rawWorkouts = obj.workouts;
+    else if (obj.workouts && typeof obj.workouts === 'object') rawWorkouts = Object.values(obj.workouts as Record<string, unknown>);
     if (Array.isArray(obj.chat)) chat = normalizeChat(obj.chat, errors);
   } else {
-    return { ok: false, days: [], settings: null, chat: null, errors: ['Unrecognised file shape.'] };
+    return { ok: false, days: [], workouts: [], settings: null, chat: null, errors: ['Unrecognised file shape.'] };
   }
 
   const days: DailyRecord[] = [];
-  const stats: NormStats = { droppedFields: 0, droppedMeals: 0, mealIds: 0 };
+  const stats: NormStats = { droppedFields: 0, droppedMeals: 0, mealIds: 0, workoutIds: 0, droppedExercises: 0 };
   let dropped = 0;
   for (const r of rawDays) {
     if (isRecord(r)) days.push(normalizeRecord(r, stats));
     else dropped++;
   }
+
+  const workouts: Workout[] = [];
+  let droppedWorkouts = 0;
+  const seenWorkoutIds = new Set<string>();
+  for (const w of rawWorkouts) {
+    const norm = normalizeWorkout(w, stats);
+    if (!norm) {
+      droppedWorkouts++;
+      continue;
+    }
+    // Two sessions sharing an id would silently overwrite each other in the store.
+    if (seenWorkoutIds.has(norm.id)) norm.id = uid('w');
+    seenWorkoutIds.add(norm.id);
+    workouts.push(norm);
+  }
+
   if (dropped) errors.push(`${dropped} record(s) had no valid date and were skipped.`);
   if (stats.droppedFields) errors.push(`${stats.droppedFields} field(s) with non-numeric values were dropped.`);
   if (stats.droppedMeals) errors.push(`${stats.droppedMeals} malformed meal(s) were skipped.`);
+  if (droppedWorkouts) errors.push(`${droppedWorkouts} workout(s) had no valid date and were skipped.`);
+  if (stats.droppedExercises) errors.push(`${stats.droppedExercises} malformed exercise entr(ies) were skipped.`);
 
-  return { ok: days.length > 0 || settings !== null, days, settings, chat, errors };
+  return { ok: days.length > 0 || workouts.length > 0 || settings !== null, days, workouts, settings, chat, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +444,20 @@ export const CSV_COLUMNS = [
   'caffeine_times',
   'water_cups',
   'lift_day',
+  'kalman_lb',
+  'kalman_rate_lb_wk',
+  'load',
+  'workouts',
+  'checkin_sleep',
+  'checkin_fatigue',
+  'checkin_stress',
+  'checkin_soreness',
+  'resp_rate',
+  'skin_temp_c',
+  'spo2',
+  'alcohol',
+  'stress_index',
+  'vo2max',
   'meal_count',
   'meals',
   'note',
@@ -328,11 +505,82 @@ export function buildCSV(days: DailyRecord[]): string {
       (r.caf ?? []).join(' '),
       r.h2o,
       r.lift === undefined ? '' : r.lift ? 1 : 0,
+      r.kl,
+      r.ks === undefined ? '' : Math.round(r.ks * 7 * 100) / 100,
+      r.ld,
+      r.wko,
+      r.qs,
+      r.qf,
+      r.qt,
+      r.qo,
+      r.rr,
+      r.skt,
+      r.spo,
+      r.alc,
+      r.osi,
+      r.vo2,
       r.meals?.length ?? '',
       meals,
       r.note,
     ].map(csvCell);
     rows.push(row.join(','));
+  }
+  return '﻿' + rows.join('\r\n');
+}
+
+export const WORKOUT_CSV_COLUMNS = [
+  'date',
+  'start',
+  'kind',
+  'session',
+  'title',
+  'duration_min',
+  'session_rpe',
+  'load',
+  'source',
+  'exercise',
+  'set_index',
+  'set_kind',
+  'weight_kg',
+  'reps',
+  'rpe',
+  'rir',
+  'sport',
+  'distance_km',
+  'avg_hr',
+  'max_hr',
+  'elevation_m',
+  'kcal',
+  'note',
+] as const;
+
+/**
+ * One row per SET for strength sessions, one row per session for everything
+ * else — the shape a lifter can pivot in a spreadsheet. Same BOM and
+ * formula-injection guard as the daily CSV.
+ */
+export function buildWorkoutsCSV(workouts: Workout[]): string {
+  const rows = [WORKOUT_CSV_COLUMNS.join(',')];
+  const sorted = [...workouts].sort((a, b) => (a.d === b.d ? (a.start < b.start ? -1 : 1) : a.d < b.d ? -1 : 1));
+  for (const w of sorted) {
+    const head = [w.d, w.start, w.kind, w.session ?? '', w.title ?? '', w.durationMin, w.srpe, w.load, w.source];
+    const c = w.cardio;
+    const cardioCells = [c?.sport ?? '', c?.distanceKm, c?.avgHr, c?.maxHr, c?.elevM, c?.kcal];
+    const exercises = w.exercises ?? [];
+    if (!exercises.length) {
+      rows.push([...head, '', '', '', '', '', '', '', ...cardioCells, w.note].map(csvCell).join(','));
+      continue;
+    }
+    for (const ex of exercises) {
+      if (!ex.sets.length) {
+        rows.push([...head, ex.exerciseId, '', '', '', '', '', '', ...cardioCells, ex.note ?? w.note].map(csvCell).join(','));
+        continue;
+      }
+      ex.sets.forEach((s, i) => {
+        const kind = s.k === 'wu' ? 'warmup' : s.k === 'dr' ? 'drop' : s.k === 'am' ? 'amrap' : s.x ? 'skipped' : 'working';
+        rows.push([...head, ex.exerciseId, i + 1, kind, s.w, s.r, s.rpe, s.rir, ...cardioCells, ex.note ?? ''].map(csvCell).join(','));
+      });
+    }
   }
   return '﻿' + rows.join('\r\n');
 }
@@ -354,7 +602,7 @@ export function downloadText(filename: string, content: string, mime = 'applicat
   }, 0);
 }
 
-export function exportFilename(ext: 'json' | 'csv', date = new Date()): string {
+export function exportFilename(ext: 'json' | 'csv', date = new Date(), kind: 'log' | 'workouts' = 'log'): string {
   const iso = date.toISOString().slice(0, 10);
-  return `health-log-${iso}.${ext}`;
+  return `health-${kind}-${iso}.${ext}`;
 }

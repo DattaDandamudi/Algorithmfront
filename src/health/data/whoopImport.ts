@@ -38,8 +38,15 @@ export interface WhoopParseResult {
   columnsFound: string[];
 }
 
-/** Fields the import may write — everything else on a day (meals, weight, tobacco…) is user data. */
-export const WHOOP_FIELDS = ['rec', 'hrv', 'rhr', 'strn', 'slh', 'sln', 'dbt', 'bt', 'wk', 'nap'] as const;
+/**
+ * Fields the import may write — everything else on a day (meals, weight,
+ * tobacco…) is user data.
+ *
+ * `rr` / `skt` / `spo` feed the overnight strain index and the illness flag
+ * (engine/stress.ts): they are the three signals Apple Vitals and Oura's
+ * Symptom Radar lean on, and WHOOP exports all three.
+ */
+export const WHOOP_FIELDS = ['rec', 'hrv', 'rhr', 'strn', 'slh', 'sln', 'dbt', 'bt', 'wk', 'nap', 'rr', 'skt', 'spo'] as const;
 export type WhoopField = (typeof WHOOP_FIELDS)[number];
 
 type MetricField = Exclude<WhoopField, 'bt' | 'wk'>;
@@ -58,6 +65,9 @@ const ALIASES: Record<ColumnKey, string[]> = {
   sln: ['sleepneedmin', 'sleepneed'],
   dbt: ['sleepdebtmin', 'sleepdebt'],
   nap: ['napdurationmin', 'napduration', 'napmin', 'nap'],
+  rr: ['respiratoryraterpm', 'respiratoryrate', 'respiratoryratebrpm', 'resprate'],
+  skt: ['skintempcelsius', 'skintempc', 'skintemperaturecelsius', 'skintemp'],
+  spo: ['bloodoxygen%', 'bloodoxygen', 'spo2%', 'spo2'],
 };
 
 const MAX_ERRORS = 20;
@@ -202,6 +212,9 @@ export function parseWhoopCsv(text: string): WhoopParseResult {
       sln: num(cell('sln')),
       dbt: num(cell('dbt')),
       nap: num(cell('nap')),
+      rr: num(cell('rr')),
+      skt: num(cell('skt')),
+      spo: num(cell('spo')),
     };
     if (v.rec !== null) rec.rec = Math.round(Math.min(100, Math.max(0, v.rec)));
     if (v.rhr !== null && v.rhr > 0) rec.rhr = Math.round(v.rhr);
@@ -211,6 +224,11 @@ export function parseWhoopCsv(text: string): WhoopParseResult {
     if (v.sln !== null && v.sln > 0) rec.sln = round(v.sln / 60, 2);
     if (v.dbt !== null) rec.dbt = Math.round(Math.max(0, v.dbt));
     if (v.nap !== null && v.nap > 0) rec.nap = Math.round(v.nap);
+    // Plausibility gates: a physiologically impossible cell is a parse artefact,
+    // and the stress engine must never take one as a real deviation.
+    if (v.rr !== null && v.rr >= 4 && v.rr <= 40) rec.rr = round(v.rr, 1);
+    if (v.skt !== null && v.skt >= 20 && v.skt <= 45) rec.skt = round(v.skt, 2);
+    if (v.spo !== null && v.spo >= 50 && v.spo <= 100) rec.spo = round(v.spo, 1);
     const onset = parseWhoopDateTime(cell('onset'));
     if (onset?.time) rec.bt = onset.time;
     if (wake?.time) rec.wk = wake.time;

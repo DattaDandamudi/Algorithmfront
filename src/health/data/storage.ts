@@ -2,27 +2,39 @@
  * §10 Data durability — sharded localStorage persistence.
  *
  * Keys:
- *   hx:log:index        → ShardIndex  { version, shards: { 'YYYY-MM': { count, sum } }, updatedAt }
- *   hx:log:YYYY-MM      → Shard       { v, ym, days: { 'DD': DailyRecord } }
+ *   hx:log:index        → ShardIndex  { version, shards: { 'YYYY-MM': { count, sum } },
+ *                                       workouts?: { 'YYYY-MM': { count, sum } }, updatedAt }
+ *   hx:log:YYYY-MM      → Shard         { v, ym, days: { 'DD': DailyRecord } }
+ *   hx:wk:YYYY-MM       → WorkoutShard  { v, ym, items: { <id>: Workout } }
+ *   hx:wk:draft         → the in-progress training session (not a shard; never parsed as one)
  *   hx:settings         → AppSettings
  *   hx:chat             → ChatMessage[]
  *   hx:corrupt:<name>   → raw text of an unreadable shard/settings/chat value, captured just
  *                         before the app overwrote or removed it (R4-5: nothing is silently lost)
  *
+ * Workouts are a SECOND shard family with the same month sharding, checksum
+ * validation and corrupt-preservation as days: a training session is far bigger
+ * than a day record (≈ 1 KB for 6 exercises × 4 sets), so mixing them into the
+ * day shards would rewrite a month of days on every set logged.
+ *
  * Every setItem is wrapped for QuotaExceededError. Shards are validated on load
  * against the index (count + FNV-1a checksum) and problems are reported, never
  * thrown — a corrupt shard is skipped, not fatal.
  */
-import type { AppSettings, ChatMessage, DailyRecord, ISODate, IntegrityReport } from './types';
+import type { AppSettings, ChatMessage, DailyRecord, ISODate, IntegrityReport, Workout } from './types';
 import { SCHEMA_VERSION } from './types';
 import { yearMonthOf } from '../lib/dates';
 
 export const KEYS = {
   index: 'hx:log:index',
   shard: (ym: string) => `hx:log:${ym}`,
+  /** Workout shard for a month. */
+  wk: (ym: string) => `hx:wk:${ym}`,
+  /** The live session being logged, restored if the app is closed mid-workout. */
+  workoutDraft: 'hx:wk:draft',
   settings: 'hx:settings',
   chat: 'hx:chat',
-  /** Raw copy of an unreadable value; `name` is 'YYYY-MM', 'settings' or 'chat'. */
+  /** Raw copy of an unreadable value; `name` is 'YYYY-MM', 'wk:YYYY-MM', 'settings' or 'chat'. */
   corrupt: (name: string) => `hx:corrupt:${name}`,
   prefix: 'hx:',
 } as const;
@@ -41,6 +53,11 @@ export const QUOTA_MESSAGE = 'Storage quota exceeded — export a JSON backup, t
 export interface ShardIndex {
   version: number;
   shards: Record<string, { count: number; sum: number }>;
+  /**
+   * Workout shards. Optional so a v1 index (days only) loads unchanged — a
+   * missing key means "no workouts", never "corrupt".
+   */
+  workouts?: Record<string, { count: number; sum: number }>;
   updatedAt: number;
 }
 
@@ -48,6 +65,12 @@ export interface Shard {
   v: number;
   ym: string;
   days: Record<string, DailyRecord>;
+}
+
+export interface WorkoutShard {
+  v: number;
+  ym: string;
+  items: Record<string, Workout>;
 }
 
 export class StorageWriteError extends Error {
@@ -242,10 +265,21 @@ export function writeIndex(index: ShardIndex): void {
 export function pruneIndex(index: ShardIndex): ShardIndex {
   const present = new Set(discoverShardMonths());
   const stale = Object.keys(index.shards).filter((ym) => !present.has(ym));
-  if (!stale.length) return index;
-  const shards = { ...index.shards };
-  for (const ym of stale) delete shards[ym];
-  return { ...index, shards };
+  const presentWk = new Set(discoverWorkoutMonths());
+  const staleWk = Object.keys(index.workouts ?? {}).filter((ym) => !presentWk.has(ym));
+  if (!stale.length && !staleWk.length) return index;
+  const next = { ...index };
+  if (stale.length) {
+    const shards = { ...index.shards };
+    for (const ym of stale) delete shards[ym];
+    next.shards = shards;
+  }
+  if (staleWk.length) {
+    const workouts = { ...(index.workouts ?? {}) };
+    for (const ym of staleWk) delete workouts[ym];
+    next.workouts = workouts;
+  }
+  return next;
 }
 
 export function serializeShard(ym: string, records: DailyRecord[]): { json: string; count: number; sum: number } {
@@ -309,6 +343,98 @@ export function discoverShardMonths(): string[] {
   return months.sort();
 }
 
+// ---------------------------------------------------------------------------
+// Workout shards (hx:wk:YYYY-MM)
+// ---------------------------------------------------------------------------
+
+/**
+ * 'hx:wk:YYYY-MM' → 'YYYY-MM'; null for anything else. The strict date shape is
+ * what keeps `hx:wk:draft` from ever being loaded, written or pruned as a shard.
+ */
+export function workoutMonthFromKey(key: string): string | null {
+  const m = /^hx:wk:(\d{4}-\d{2})$/.exec(key);
+  return m ? m[1] : null;
+}
+
+export function discoverWorkoutMonths(): string[] {
+  const months: string[] = [];
+  for (const k of appKeys()) {
+    const ym = workoutMonthFromKey(k);
+    if (ym) months.push(ym);
+  }
+  return months.sort();
+}
+
+export function serializeWorkoutShard(ym: string, workouts: Workout[]): { json: string; count: number; sum: number } {
+  const items: Record<string, Workout> = {};
+  for (const w of workouts) {
+    if (yearMonthOf(w.d) !== ym) continue;
+    items[w.id] = w;
+  }
+  const shard: WorkoutShard = { v: SCHEMA_VERSION, ym, items };
+  const json = JSON.stringify(shard);
+  return { json, count: Object.keys(items).length, sum: checksum(json) };
+}
+
+function readWorkoutShardRaw(ym: string, raw: string): { shard: WorkoutShard | null; raw: string; error?: string } {
+  try {
+    const parsed = JSON.parse(raw) as WorkoutShard;
+    if (!parsed || typeof parsed !== 'object' || !parsed.items || typeof parsed.items !== 'object') {
+      return { shard: null, raw, error: `Workout shard ${ym} has an unexpected shape` };
+    }
+    return { shard: parsed, raw };
+  } catch (e) {
+    return { shard: null, raw, error: `Workout shard ${ym} is not valid JSON (${e instanceof Error ? e.message : 'parse error'})` };
+  }
+}
+
+export function readWorkoutShard(ym: string): { shard: WorkoutShard | null; raw: string | null; error?: string } {
+  const raw = safeGet(KEYS.wk(ym));
+  if (!raw) return { shard: null, raw: null };
+  return readWorkoutShardRaw(ym, raw);
+}
+
+/** Write one month of workouts and update the index entry. Throws StorageWriteError on failure. */
+export function writeWorkoutShard(ym: string, workouts: Workout[], index: ShardIndex): ShardIndex {
+  const { json, count, sum } = serializeWorkoutShard(ym, workouts);
+  const next: ShardIndex = {
+    ...index,
+    version: SCHEMA_VERSION,
+    shards: { ...index.shards },
+    workouts: { ...(index.workouts ?? {}) },
+    updatedAt: Date.now(),
+  };
+  preserveIfCorrupt(KEYS.wk(ym), `wk:${ym}`, (raw) => readWorkoutShardRaw(ym, raw).shard !== null);
+  if (count === 0) {
+    safeRemove(KEYS.wk(ym));
+    delete next.workouts![ym];
+  } else {
+    safeSet(KEYS.wk(ym), json);
+    next.workouts![ym] = { count, sum };
+  }
+  writeIndex(next);
+  return next;
+}
+
+/** The in-progress session, or null. Draft shape is the caller's concern. */
+export function readWorkoutDraft(): unknown {
+  const raw = safeGet(KEYS.workoutDraft);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function writeWorkoutDraft(draft: unknown): void {
+  if (draft === null || draft === undefined) {
+    safeRemove(KEYS.workoutDraft);
+    return;
+  }
+  safeSet(KEYS.workoutDraft, JSON.stringify(draft));
+}
+
 export function readSettings(): AppSettings | null {
   const raw = safeGet(KEYS.settings);
   if (!raw) return null;
@@ -333,6 +459,7 @@ export function readChat(): ChatMessage[] {
 
 export interface LoadResult {
   days: Record<ISODate, DailyRecord>;
+  workouts: Record<string, Workout>;
   settings: AppSettings | null;
   chat: ChatMessage[];
   integrity: IntegrityReport;
@@ -346,6 +473,8 @@ export interface LoadResult {
   index: ShardIndex;
   /** Months whose shard exists but cannot be parsed; a save of that month moves the raw text to hx:corrupt:YYYY-MM. */
   corruptMonths: string[];
+  /** Same, for workout shards (raw text goes to hx:corrupt:wk:YYYY-MM). */
+  corruptWorkoutMonths: string[];
 }
 
 /** Load everything and validate shards against the index. Never throws. */
@@ -356,11 +485,18 @@ export function loadAll(): LoadResult {
   const corruptMonths: string[] = [];
   let records = 0;
 
+  const workouts: Record<string, Workout> = {};
+  const corruptWorkoutMonths: string[] = [];
+  let workoutCount = 0;
+
   const index = readIndex();
-  const rebuilt: ShardIndex = { version: index?.version ?? SCHEMA_VERSION, shards: {}, updatedAt: index?.updatedAt ?? 0 };
+  const rebuilt: ShardIndex = { version: index?.version ?? SCHEMA_VERSION, shards: {}, workouts: {}, updatedAt: index?.updatedAt ?? 0 };
   const indexed = index ? Object.keys(index.shards) : [];
   const discovered = discoverShardMonths();
   const months = Array.from(new Set([...indexed, ...discovered])).sort();
+  const indexedWk = index?.workouts ? Object.keys(index.workouts) : [];
+  const discoveredWk = discoverWorkoutMonths();
+  const workoutMonths = Array.from(new Set([...indexedWk, ...discoveredWk])).sort();
 
   if (available && !index && discovered.length) problems.push('Shard index missing — rebuilt from stored months.');
 
@@ -369,6 +505,43 @@ export function loadAll(): LoadResult {
       loadShardInto(ym);
     } catch (e) {
       problems.push(`Shard ${ym} could not be read (${e instanceof Error ? e.message : 'error'}).`);
+    }
+  }
+
+  for (const ym of workoutMonths) {
+    try {
+      loadWorkoutShardInto(ym);
+    } catch (e) {
+      problems.push(`Workout shard ${ym} could not be read (${e instanceof Error ? e.message : 'error'}).`);
+    }
+  }
+
+  function loadWorkoutShardInto(ym: string): void {
+    const { shard, raw, error } = readWorkoutShard(ym);
+    const entry = index?.workouts?.[ym];
+    if (!raw) {
+      if (entry) problems.push(`Workout shard ${ym} listed in index (${entry.count} sessions) but missing from storage — the entry is dropped on the next save.`);
+      return;
+    }
+    if (!entry) problems.push(`Workout shard ${ym} present in storage but not in index.`);
+    if (error || !shard) {
+      corruptWorkoutMonths.push(ym);
+      problems.push(`${error ?? `Workout shard ${ym} unreadable`}. Its raw text is kept under ${KEYS.corrupt(`wk:${ym}`)} on the next save.`);
+      return;
+    }
+    if (entry && entry.sum !== checksum(raw)) problems.push(`Workout shard ${ym} does not match its index entry. Data was loaded; the index is rebuilt on the next save.`);
+    const ids = Object.keys(shard.items);
+    if (entry && entry.count !== ids.length) problems.push(`Workout shard ${ym} has ${ids.length} sessions, index expected ${entry.count}.`);
+    rebuilt.workouts![ym] = { count: ids.length, sum: checksum(raw) };
+    for (const id of ids) {
+      const w = shard.items[id];
+      if (!w || typeof w !== 'object' || typeof w.d !== 'string' || typeof w.id !== 'string') {
+        problems.push(`Workout shard ${ym}: session ${id} is malformed and was skipped.`);
+        continue;
+      }
+      if (!w.d.startsWith(ym)) problems.push(`Workout shard ${ym}: session ${w.id} is dated ${w.d}.`);
+      workouts[w.id] = w;
+      workoutCount++;
     }
   }
 
@@ -419,13 +592,23 @@ export function loadAll(): LoadResult {
 
   return {
     days,
+    workouts,
     settings,
     chat,
-    integrity: { version: index?.version ?? SCHEMA_VERSION, shards: months.length, records, problems, checkedAt: Date.now() },
+    integrity: {
+      version: index?.version ?? SCHEMA_VERSION,
+      shards: months.length,
+      records,
+      workoutShards: workoutMonths.length,
+      workouts: workoutCount,
+      problems,
+      checkedAt: Date.now(),
+    },
     bytesUsed: estimateBytesUsed(),
     available,
     index: rebuilt,
     corruptMonths,
+    corruptWorkoutMonths,
   };
 }
 

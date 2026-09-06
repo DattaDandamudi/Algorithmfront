@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
-import { Activity, BarChart3, MessageCircle, PlusCircle, Settings as SettingsIcon } from 'lucide-react';
+import { Activity, BarChart3, Dumbbell, MessageCircle, PlusCircle, Settings as SettingsIcon } from 'lucide-react';
 import './health.css';
 import { HealthStoreProvider, useHealth } from './data/store';
 import { NavProvider, TABS, useNav, type Tab } from './nav';
@@ -8,6 +8,7 @@ import { ToastHost } from './ui/Toast';
 
 const Today = lazy(() => import('./screens/Today'));
 const Log = lazy(() => import('./screens/Log'));
+const Train = lazy(() => import('./screens/Train'));
 const Trends = lazy(() => import('./screens/Trends'));
 const Coach = lazy(() => import('./screens/Coach'));
 const Settings = lazy(() => import('./screens/Settings'));
@@ -15,6 +16,7 @@ const Settings = lazy(() => import('./screens/Settings'));
 const ICONS: Record<Tab, typeof Activity> = {
   today: Activity,
   log: PlusCircle,
+  train: Dumbbell,
   trends: BarChart3,
   coach: MessageCircle,
   settings: SettingsIcon,
@@ -26,6 +28,8 @@ function Screen({ tab }: { tab: Tab }) {
       return <Today />;
     case 'log':
       return <Log />;
+    case 'train':
+      return <Train />;
     case 'trends':
       return <Trends />;
     case 'coach':
@@ -42,7 +46,7 @@ function TabBar() {
       aria-label="Primary"
       className="hx-tabbar fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] border-t border-hx-border bg-hx-base/95 backdrop-blur px-2 pt-2 z-30"
     >
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {TABS.map((t) => {
           const Icon = ICONS[t.id];
           const active = tab === t.id;
@@ -52,12 +56,13 @@ function TabBar() {
                 type="button"
                 onClick={() => setTab(t.id)}
                 aria-current={active ? 'page' : undefined}
-                className={`w-full flex flex-col items-center gap-1 py-1.5 rounded-xl transition-colors ${
+                className={`w-full min-h-[44px] flex flex-col items-center justify-center gap-1 py-1.5 rounded-xl transition-colors ${
                   active ? 'text-hx-text' : 'text-hx-muted hover:text-hx-text2'
                 }`}
               >
                 <Icon className="w-5 h-5" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
-                <span className="text-[12px] leading-3 font-medium tracking-wide">{t.label}</span>
+                {/* 11 px, no tracking: six labels ("Settings" is the widest) fit a 390 px bar without wrapping. */}
+                <span className="text-[11px] leading-3 font-medium whitespace-nowrap">{t.label}</span>
               </button>
             </li>
           );

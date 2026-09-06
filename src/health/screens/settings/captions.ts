@@ -76,6 +76,24 @@ export function dataCaption(storage: StorageStatus, records: DailyRecord[], now:
   return `${records.length} day${records.length === 1 ? '' : 's'} · ${used} · saved ${relativeTime(storage.lastSavedAt, now)}`;
 }
 
+/**
+ * Placeholder captions for the three sections this release adds. They take no
+ * arguments on purpose: the settings they will summarise (`settings.training`,
+ * `settings.checkIn`, `settings.training.imports`) do not exist yet, and Phase
+ * 2e replaces each one with a live summary when the controls land.
+ */
+export function trainingCaption(): string {
+  return 'Units, rest timer, progression, volume landmarks — coming with Train';
+}
+
+export function checkInCaption(): string {
+  return 'Daily 4-item check-in prompt — coming with Train';
+}
+
+export function importsCaption(): string {
+  return 'WHOOP, Strava and Apple Health workouts — coming with Train';
+}
+
 export function aboutCaption(): string {
   return `Pulse v${APP_VERSION} · evidence anchors · disclaimer`;
 }

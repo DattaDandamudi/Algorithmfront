@@ -85,12 +85,13 @@ export default function DataSection({ now }: { now: number }) {
     }
     const preview = parseImport(text);
     if (!preview.ok) {
-      setImportResult({ ok: false, recordsImported: 0, settingsImported: false, chatImported: false, errors: preview.errors });
+      setImportResult({ ok: false, recordsImported: 0, workoutsImported: 0, settingsImported: false, chatImported: false, errors: preview.errors });
       toast('Nothing importable in that file', 'error');
       return;
     }
     const what = [
       `${preview.days.length} day record${preview.days.length === 1 ? '' : 's'}`,
+      preview.workouts.length ? `${preview.workouts.length} workout${preview.workouts.length === 1 ? '' : 's'}` : null,
       preview.settings ? 'settings' : null,
       preview.chat ? `${preview.chat.length} chat messages` : null,
     ]

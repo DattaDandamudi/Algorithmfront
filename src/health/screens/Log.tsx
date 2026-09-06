@@ -576,7 +576,9 @@ export default function Log() {
     if (!logSection) return;
     const section = logSection;
     consumeLogSection();
-    const targets: Record<Exclude<LogSection, 'meal'>, RefObject<HTMLDivElement>> = {
+    // 'checkin' has no card yet: Phase 2g adds screens/log/CheckInSection.tsx, its
+    // ref goes in this map and it drops out of the Exclude.
+    const targets: Record<Exclude<LogSection, 'meal' | 'checkin'>, RefObject<HTMLDivElement>> = {
       weight: weightRef,
       tobacco: tobaccoRef,
       bedtime: bedtimeRef,
@@ -588,7 +590,7 @@ export default function Log() {
     requestAnimationFrame(() => {
       if (section === 'meal') {
         focusBar();
-      } else {
+      } else if (section !== 'checkin') {
         const el = targets[section].current;
         if (!el) return;
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
