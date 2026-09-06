@@ -1,5 +1,5 @@
 import type { DailyRecord, ISODate, Targets } from '../data/types';
-import { addDays } from '../lib/dates';
+import { addDays, diffDays } from '../lib/dates';
 import { clamp, fmt, mean, round, stddev } from '../lib/format';
 import {
   clampAlpha,
@@ -16,11 +16,26 @@ import {
  *
  *   TDEE ≈ mean daily intake − (trend Δweight × 3,500 kcal/lb ÷ 7 days)
  *
- * The reverse calculation runs over consecutive, non-overlapping 7-day blocks
- * ending at `asOf`. Each block is gated (≥5 weigh-ins AND ≥5 intake days) so a
- * sparse week can't produce a wild estimate, and the valid blocks are then
- * smoothed with a second EWMA (default α=0.3) so one week's fluid swing can't
- * over-correct — adjustments deliberately do *not* scale 1:1 with expenditure.
+ * Cadence (R3-4): the reverse calculation runs over 7-day blocks anchored to
+ * the user's FIRST weigh-in — block k covers days [first + 7k, first + 7k + 6]
+ * — and only a COMPLETED block (its last day strictly before `asOf`) can
+ * publish. The estimate therefore changes once a week, the morning after a
+ * block closes, never as a sliding window that moves every day. The block
+ * containing `asOf` is "this week": its counts feed the empty-state nudge
+ * ("Weigh in 5+ days this week…") but never the estimate.
+ *
+ * Gates: each block needs ≥ 5 weigh-ins AND ≥ 5 intake days so a sparse week
+ * can't produce a wild estimate, and (R3-5) a block must START at least
+ * CALIBRATION_DAYS (14) after the first weigh-in — the EWMA trend seeded on
+ * that weigh-in lags a real loss for ~2 weeks, so the first two blocks would
+ * under-read the deficit by hundreds of kcal (≈ −375 kcal on a 1 lb/wk loss).
+ * The first estimate lands on day 22 ("Adaptation shows in 14–30 days").
+ *
+ * Smoothing: valid blocks are folded, oldest → newest, into a second EWMA
+ * (default α = 0.3) that runs over EVERY completed block since the first
+ * weigh-in — the smoothed value is carried forward as state between weeks,
+ * so it never re-seeds when the chart window slides. One week's fluid swing
+ * cannot over-correct: adjustments deliberately do *not* scale 1:1.
  *
  * Pure & deterministic: records in (any order), plain numbers or null out —
  * never NaN, never throws, never reads the clock.
@@ -30,11 +45,15 @@ import {
 export const KCAL_PER_LB = 3500;
 /** Half-width of the water-noise band when there are too few residuals to measure it. */
 export const DEFAULT_NOISE_BAND_LB = 1.5;
+/** A block must start this many days after the first weigh-in before it can publish (R3-5). */
+export const CALIBRATION_DAYS = 14;
+/** Days of weigh-ins before the first estimate can exist: the first eligible block closes on day 21. */
+export const FIRST_ESTIMATE_DAYS = CALIBRATION_DAYS + 7;
 
 export interface WeekEstimate {
   /** First day of the 7-day block (inclusive). */
   start: ISODate;
-  /** Last day of the block (inclusive). The most recent block ends at `asOf`. */
+  /** Last day of the block (inclusive). Blocks are anchored to the first weigh-in (see module header). */
   end: ISODate;
   weighIns: number;
   /** Days in the block with kc > 0. */
@@ -52,30 +71,38 @@ export interface WeekEstimate {
   /**
    * Smoothed TDEE after folding this block into the EWMA over valid blocks —
    * the value the Trends chart plots at `end`. Null for invalid blocks.
-   * (Extra field beyond the shared contract; see report notes.)
    */
   smoothedTdee: number | null;
   valid: boolean;
   /** Short diagnostic, e.g. "Only 3 of 5 weigh-ins" — for chart tooltips. */
   reason: string;
+  /** Block starts < CALIBRATION_DAYS after the first weigh-in: computed, never published (R3-5). */
+  calibrating: boolean;
 }
 
 export interface ExpenditureResult {
   /**
-   * The estimate to display right now: equals `smoothedTdee` when the most
-   * recent block passed its gates, otherwise null so the empty state shows.
+   * The estimate to display right now: equals `smoothedTdee` when the latest
+   * completed block passed its gates, otherwise null so the empty state shows.
    */
   tdee: number | null;
-  /** Last calibrated (smoothed) estimate, even if this week's gate failed — null when no block has ever been valid. */
+  /** Last calibrated (smoothed) estimate, even if the latest block failed — null when no block has ever been valid. */
   smoothedTdee: number | null;
-  /** True when the most recent block (ending at `asOf`) produced a valid estimate. */
+  /** True when the latest completed block produced a valid estimate. */
   valid: boolean;
   /** Empty-state copy when invalid ("Weigh in 5+ days this week…"), otherwise a short calibration summary. */
   reason: string;
-  /** One entry per block, OLDEST FIRST; `weeks[weeks.length − 1]` is the block ending at `asOf`. */
+  /** The last `weeks` COMPLETED blocks, OLDEST FIRST; `weeks[weeks.length − 1]` is the latest completed block. */
   weeks: WeekEstimate[];
+  /** Weigh-ins so far in the in-progress block ("this week"). */
   weighInsThisWeek: number;
   intakeDaysThisWeek: number;
+  /** Date of the first weigh-in — the block anchor; null before any weigh-in. */
+  firstWeighIn: ISODate | null;
+  /** True while no block starting ≥ CALIBRATION_DAYS after the first weigh-in has completed yet. */
+  calibrating: boolean;
+  /** The day the next estimate can publish (morning after the in-progress block closes); null before any weigh-in. */
+  nextUpdate: ISODate | null;
 }
 
 export interface ExpenditureOpts {
@@ -85,7 +112,7 @@ export interface ExpenditureOpts {
   minWeighIns?: number;
   /** Intake days (kc > 0) required per block (default 5). */
   minIntakeDays?: number;
-  /** Number of 7-day blocks to evaluate (default 6). */
+  /** Number of completed 7-day blocks to return (default 6). The smoothing state always uses every block. */
   weeks?: number;
   /** EWMA α across valid weekly estimates (default 0.3). 1 = no smoothing. */
   smoothing?: number;
@@ -101,6 +128,15 @@ function clampSmoothing(s: number): number {
   return Math.min(1, Math.max(0.05, s));
 }
 
+/** Earliest weigh-in on or before `asOf` — the block anchor. */
+function firstWeighInDate(records: DailyRecord[], asOf: ISODate): ISODate | null {
+  let first: ISODate | null = null;
+  for (const r of records) {
+    if (r.d <= asOf && isWeight(r.w) && (first === null || r.d < first)) first = r.d;
+  }
+  return first;
+}
+
 function estimateWeek(
   records: DailyRecord[],
   trend: Map<ISODate, number>,
@@ -108,6 +144,7 @@ function estimateWeek(
   end: ISODate,
   minWeighIns: number,
   minIntakeDays: number,
+  calibrating: boolean,
 ): WeekEstimate {
   const intakes: number[] = [];
   for (const r of records) {
@@ -121,7 +158,8 @@ function estimateWeek(
 
   // Δ over 7 daily trend updates: end vs the day before the block starts.
   // Before the first weigh-in that day has no trend; the block start (the seed
-  // weigh-in) is the documented fallback so the very first week can calibrate.
+  // weigh-in) is the fallback so the raw number exists for tooltips — the
+  // calibrating gate keeps such a block off the screen.
   const trendEnd = trendAt(trend, end) ?? null;
   const trendStart = trendAt(trend, addDays(start, -1)) ?? trendAt(trend, start) ?? null;
   const deltaRaw = trendStart !== null && trendEnd !== null ? trendEnd - trendStart : null;
@@ -135,6 +173,9 @@ function estimateWeek(
   } else if (intakeDays < minIntakeDays) {
     valid = false;
     reason = `Only ${intakeDays} of ${minIntakeDays} intake days`;
+  } else if (calibrating) {
+    valid = false;
+    reason = `Calibrating — needs ${CALIBRATION_DAYS} days of weigh-in history before this block`;
   } else if (tdeeRaw === null) {
     valid = false;
     reason = 'No trend data for this week';
@@ -153,13 +194,27 @@ function estimateWeek(
     smoothedTdee: null,
     valid,
     reason,
+    calibrating,
   };
 }
 
+/** Weigh-ins / intake days in the in-progress block, counted only through `asOf`. */
+function progressCounts(records: DailyRecord[], start: ISODate, asOf: ISODate): { weighIns: number; intakeDays: number } {
+  let weighIns = 0;
+  let intakeDays = 0;
+  for (const r of records) {
+    if (r.d < start || r.d > asOf) continue;
+    if (isWeight(r.w)) weighIns++;
+    if (intakeOf(r) !== null) intakeDays++;
+  }
+  return { weighIns, intakeDays };
+}
+
 /**
- * Weekly reverse-calculated expenditure over the `weeks` consecutive 7-day
- * blocks ending at `asOf`. Blocks are returned oldest → newest, and the
- * smoothing EWMA runs in that order, seeded by the oldest valid block.
+ * Weekly reverse-calculated expenditure. Returns the last `weeks` completed
+ * blocks (oldest → newest) plus the smoothed estimate carried over every
+ * completed block since the first weigh-in. See the module header for the
+ * cadence and gates.
  */
 export function weeklyExpenditure(
   records: DailyRecord[],
@@ -172,37 +227,78 @@ export function weeklyExpenditure(
   const nWeeks = Math.max(1, Math.floor(opts.weeks ?? 6));
   const smoothing = clampSmoothing(opts.smoothing ?? 0.3);
 
-  // `through = asOf` so the current block has a trend value even on a day
+  // `through = asOf` so the in-progress block has a trend value even on a day
   // without a weigh-in yet.
   const trend = computeEwmaTrend(records, alpha, asOf);
+  const anchor = firstWeighInDate(records, asOf);
+  const weighNudge = `Weigh in ${minWeighIns}+ days this week so your trend and expenditure calibrate.`;
+  const intakeNudge = `Log intake on ${minIntakeDays}+ days this week so your expenditure can calibrate.`;
 
-  const weeks: WeekEstimate[] = [];
-  for (let k = nWeeks - 1; k >= 0; k--) {
-    const end = addDays(asOf, -7 * k);
-    const start = addDays(end, -6);
-    weeks.push(estimateWeek(records, trend, start, end, minWeighIns, minIntakeDays));
+  if (anchor === null) {
+    // No weigh-in yet: trailing blocks ending at asOf keep the shape (and the
+    // nudge counts) meaningful; nothing can be valid.
+    const weeks: WeekEstimate[] = [];
+    for (let k = nWeeks - 1; k >= 0; k--) {
+      const end = addDays(asOf, -7 * k);
+      weeks.push(estimateWeek(records, trend, addDays(end, -6), end, minWeighIns, minIntakeDays, true));
+    }
+    const current = weeks[weeks.length - 1];
+    return {
+      tdee: null,
+      smoothedTdee: null,
+      valid: false,
+      reason: weighNudge,
+      weeks,
+      weighInsThisWeek: current.weighIns,
+      intakeDaysThisWeek: current.intakeDays,
+      firstWeighIn: null,
+      calibrating: false,
+      nextUpdate: null,
+    };
   }
 
+  const daysSince = diffDays(anchor, asOf);
+  /** Index of the in-progress block; blocks 0 … j − 1 are complete (their last day is before asOf). */
+  const j = Math.floor(daysSince / 7);
+  const blockStart = (k: number): ISODate => addDays(anchor, 7 * k);
+  const estimate = (k: number): WeekEstimate => {
+    const start = blockStart(k);
+    return estimateWeek(records, trend, start, addDays(start, 6), minWeighIns, minIntakeDays, 7 * k < CALIBRATION_DAYS);
+  };
+
+  // Smoothing state over every completed block since the anchor.
+  const byIndex = new Map<number, WeekEstimate>();
   let smoothed: number | null = null;
   let validCount = 0;
-  for (const wk of weeks) {
-    if (!wk.valid || wk.tdee === null) continue;
-    smoothed = smoothed === null ? wk.tdee : smoothed + smoothing * (wk.tdee - smoothed);
-    wk.smoothedTdee = round(smoothed);
-    validCount++;
+  for (let k = 0; k < j; k++) {
+    const wk = estimate(k);
+    if (wk.valid && wk.tdee !== null) {
+      smoothed = smoothed === null ? wk.tdee : smoothed + smoothing * (wk.tdee - smoothed);
+      wk.smoothedTdee = round(smoothed);
+      validCount++;
+    }
+    byIndex.set(k, wk);
   }
-  const smoothedTdee = smoothed === null ? null : round(smoothed);
+  const weeks: WeekEstimate[] = [];
+  for (let k = j - nWeeks; k < j; k++) weeks.push(byIndex.get(k) ?? estimate(k));
 
-  const current = weeks[weeks.length - 1];
-  const valid = current.valid && smoothedTdee !== null;
+  const last = j > 0 ? (byIndex.get(j - 1) as WeekEstimate) : null;
+  const current = progressCounts(records, blockStart(j), asOf);
+  const smoothedTdee = smoothed === null ? null : round(smoothed);
+  const valid = last !== null && last.valid && smoothedTdee !== null;
+  // No block starting ≥ CALIBRATION_DAYS after the anchor has closed until block 2 does (day 21).
+  const calibrating = j < FIRST_ESTIMATE_DAYS / 7;
+  const nextUpdate = blockStart(Math.max(j + 1, FIRST_ESTIMATE_DAYS / 7));
 
   let reason: string;
-  if (valid) {
-    reason = `Calibrated from ${validCount} valid week${validCount === 1 ? '' : 's'} — ${current.weighIns} weigh-ins and ${current.intakeDays} intake days this week.`;
-  } else if (current.weighIns < minWeighIns) {
-    reason = `Weigh in ${minWeighIns}+ days this week so your trend and expenditure calibrate.`;
-  } else if (current.intakeDays < minIntakeDays) {
-    reason = `Log intake on ${minIntakeDays}+ days this week so your expenditure can calibrate.`;
+  if (valid && last !== null) {
+    reason = `Calibrated from ${validCount} valid week${validCount === 1 ? '' : 's'} — ${last.weighIns} weigh-ins and ${last.intakeDays} intake days in your last full week.`;
+  } else if (calibrating) {
+    reason = `Calibrating — your first expenditure estimate lands after 3 weeks of weigh-ins (day ${daysSince + 1} of ${FIRST_ESTIMATE_DAYS}). Weigh in ${minWeighIns}+ days each week.`;
+  } else if (last !== null && last.weighIns < minWeighIns) {
+    reason = `Only ${last.weighIns} of ${minWeighIns} weigh-ins in your last full week. ${weighNudge}`;
+  } else if (last !== null && last.intakeDays < minIntakeDays) {
+    reason = `Only ${last.intakeDays} of ${minIntakeDays} intake days in your last full week. ${intakeNudge}`;
   } else {
     reason = 'Keep weighing in — expenditure needs a full week of trend data.';
   }
@@ -215,6 +311,9 @@ export function weeklyExpenditure(
     weeks,
     weighInsThisWeek: current.weighIns,
     intakeDaysThisWeek: current.intakeDays,
+    firstWeighIn: anchor,
+    calibrating,
+    nextUpdate,
   };
 }
 
@@ -244,6 +343,7 @@ export interface RecommendIntakeInput {
    * How many consecutive weeks the rate has sat outside the band (default 1 =
    * this week). 0 holds — the spec adjusts only after a *full* week outside.
    * ≥2 escalates a 100-kcal step to 200 because the smaller step didn't land.
+   * context.ts derives it with `weeksOutsideBand` (R3-3).
    */
   consecutiveWeeksOutside?: number;
 }
@@ -383,8 +483,8 @@ export function waterNoiseBand(records: DailyRecord[], asOf: ISODate, days = 30)
 }
 
 /**
- * Points for the TDEE line: one per valid week, plotted at the week's end
- * date with the smoothed value, oldest first.
+ * Points for the TDEE line: one per valid completed week, plotted at the
+ * block's end date with the smoothed value, oldest first.
  */
 export function expenditureSeries(
   records: DailyRecord[],
