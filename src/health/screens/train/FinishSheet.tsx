@@ -128,7 +128,15 @@ export default function FinishSheet({
           <p className="text-[12px] leading-4 text-hx-muted mb-1.5">
             Session RPE — how hard the whole session felt, 1 (nothing) to 10 (maximal)
           </p>
-          <div role="group" aria-label="Session RPE" className="flex gap-1.5 overflow-x-auto hx-no-scrollbar -mx-1 px-1">
+          {/*
+            Two rows of five rather than one scrolling row. Ten chips cannot fit
+            across 390 px: they measured 33.2 px wide, under the 44 px touch
+            floor, and "10" sat outside the scroll viewport — so the maximal
+            effort, the one a user most wants after a brutal session, was the
+            option they had to go looking for. The grid gives every chip 66 px
+            and puts all ten on screen.
+          */}
+          <div role="group" aria-label="Session RPE" className="grid grid-cols-5 gap-1.5">
             {SRPE_CHOICES.map((v) => (
               <Chip
                 key={v}
@@ -138,6 +146,7 @@ export default function FinishSheet({
                 pressed={srpe === v}
                 onClick={() => setSrpe(srpe === v ? null : v)}
                 aria-label={`Session RPE ${v}`}
+                className="w-full px-0"
               >
                 {v}
               </Chip>

@@ -4,6 +4,30 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      DM Sans used to arrive through an `@import` at the top of src/index.css.
+      A CSS @import is only discovered once the app stylesheet has landed, and
+      it blocks first paint, so the font request was serialised behind the
+      bundle and then held the page. Measured on a slow link to
+      fonts.googleapis.com it dragged first render from ~200 ms to ~12.6 s.
+      Declaring it here lets the browser start the connection immediately, and
+      the media="print" swap means the page paints in the fallback stack rather
+      than waiting for a third party. `display=swap` handles the changeover.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
+      media="print"
+      onload="this.media='all'; this.onload=null;"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
+      />
+    </noscript>
     <title>Algoritm</title>
     <meta property="og:image" content="https://bolt.new/static/og_default.png" />
     <meta name="twitter:card" content="summary_large_image" />
