@@ -11,6 +11,7 @@
  */
 import { Coffee, Droplets, Minus, Plus } from 'lucide-react';
 import type { CoachContext, DailyRecord, Profile } from '../../data/types';
+import { ML_PER_CUP } from '../../engine/nutrition';
 import { caffeineCheck } from '../../engine/sleep';
 import { formatClock } from '../../lib/dates';
 import { fmt } from '../../lib/format';
@@ -68,7 +69,7 @@ export default function HydrationCard({ ctx, todayRecord, profile, nowHHMM, onCa
             <div className="text-[17px] leading-6 font-semibold text-hx-text">
               {cups} <span className="text-[13px] font-medium text-hx-text2">/ {target} cups</span>
             </div>
-            <div className="text-[12px] leading-4 text-hx-muted">1 cup ≈ 250 ml · target from {fmt(profile.weightLb > 0 ? Math.round((target * 250) / 100) * 100 : 0)} ml/day</div>
+            <div className="text-[12px] leading-4 text-hx-muted">1 cup ≈ {ML_PER_CUP} ml · ≈ {fmt(target * ML_PER_CUP)} ml/day for your weight</div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0" role="group" aria-label="Water cups">

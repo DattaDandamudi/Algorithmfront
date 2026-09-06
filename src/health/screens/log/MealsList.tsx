@@ -2,6 +2,9 @@
  * MealsList — today's entries grouped by eating occasion (INTEGRATION_NOTES:
  * one entry per food item, grouped by clock time `t`), with per-entry edit and
  * delete, plus the running totals row (kcal · P · F · C · fiber vs targets).
+ * AI-sourced entries (those carrying `conf`) also show their `assumptions`
+ * as a subtitle — the whole row is the edit button, so tapping it opens the
+ * editor (§9).
  *
  * Empty state uses the SPEC §1 copy: "Log your first meal to see protein
  * remaining."
@@ -56,6 +59,7 @@ export default function MealsList({ meals, totals, targets, onEdit, onDelete, on
                         <span className="block text-[12px] leading-4 text-hx-text2">
                           {fmt(m.g)} g · {fmt(m.kc)} kcal · {fmt(m.p)} g P · {fmt(m.f)} g F · {fmt(m.c)} g C
                         </span>
+                        {m.as && band && <span className="block text-[12px] leading-4 text-hx-muted truncate">{m.as}</span>}
                       </button>
                       <button
                         type="button"

@@ -3,6 +3,7 @@
  * they can be unit-tested and reused by the Data / WHOOP / Bloodwork panels.
  */
 import type { BloodMarker, MarkerStatus, SessionType } from '../../data/types';
+import type { RetestReminder } from '../../engine/micronutrients';
 import type { Tone } from '../../ui';
 
 export const DAY_MS = 86_400_000;
@@ -47,6 +48,16 @@ export function markerTone(status: MarkerStatus): Tone {
     default:
       return 'red';
   }
+}
+
+/** Retest reminders are surfaced from this many days out (a month's notice to book the draw). */
+export const REMIND_WITHIN_DAYS = 30;
+
+/** Retest reminders due within the window, overdue first, soonest next. */
+export function dueReminders(reminders: RetestReminder[]): RetestReminder[] {
+  return reminders
+    .filter((r) => r.dueInDays !== null && r.dueInDays <= REMIND_WITHIN_DAYS)
+    .sort((a, b) => (a.dueInDays as number) - (b.dueInDays as number));
 }
 
 export const MARKER_STATUS_OPTIONS: Array<{ value: MarkerStatus; label: string }> = [

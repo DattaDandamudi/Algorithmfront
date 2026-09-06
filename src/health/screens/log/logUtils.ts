@@ -4,9 +4,11 @@
  *
  * Conventions honoured here (INTEGRATION_NOTES):
  * - Sleep record semantics: on record D, `bt` describes the sleep that ENDED
- *   on the morning of D. "Going to bed" pressed before midnight therefore
- *   writes to TOMORROW's record; pressed after midnight (and before noon) it
- *   writes to today's. See `bedtimeRecordDate`.
+ *   on the morning of D. "Going to bed" pressed in the evening therefore
+ *   writes to TOMORROW's record; pressed after midnight it writes to today's.
+ *   The night boundary is 04:00 (same as the engine's eating-day start):
+ *   anything before 04:00 still counts as the PREVIOUS calendar day's
+ *   bedtime. See `bedtimeNightOf` / `bedtimeRecordDate`.
  * - Meals are one entry per food item sharing a clock time `t`; the list is
  *   grouped by `t` and "meals" means eating occasions (`mealOccasions`).
  * - Weights are stored in lb; `profile.units` only changes display.
@@ -22,20 +24,37 @@ import { mealClockMinutes, mealOccasions } from '../../engine/nutrition';
 // Bedtime
 // ---------------------------------------------------------------------------
 
-/** Presses at or after this hour count as "tonight" (→ tomorrow's record). */
-export const BEDTIME_NOON_HOUR = 12;
+/**
+ * Night rollover hour. A "Going to bed" press before 04:00 is a late night
+ * that belongs to the PREVIOUS calendar day (00:20 on 7 Sep is still the
+ * night of 6 Sep); from 04:00 onwards a press belongs to the current day's
+ * night. 04:00 matches the engine's eating-day boundary (nutrition.ts
+ * EATING_DAY_START_MIN) so a 00:20 supper and a 00:30 bedtime land on the
+ * same night.
+ */
+export const BEDTIME_ROLLOVER_HOUR = 4;
 
 /**
- * Which record a "Going to bed" press belongs to. The bedtime `bt` lives on
- * the record of the morning the sleep ends on (engine/sleep.ts), so:
- *   23:10 on 6 Sep → 2026-09-07 (tomorrow)
- *   00:20 on 7 Sep → 2026-09-07 (today — already past midnight)
- * Anything before noon is treated as a late night that has already crossed
- * midnight; noon onwards is tonight.
+ * The calendar date of the night a "Going to bed" press belongs to:
+ *   23:10 on 6 Sep → 2026-09-06
+ *   00:20 on 7 Sep → 2026-09-06 (before 04:00 → previous day)
+ *   04:00 on 7 Sep → 2026-09-07
+ */
+export function bedtimeNightOf(now: Date): ISODate {
+  const today = toISODate(now);
+  return now.getHours() < BEDTIME_ROLLOVER_HOUR ? addDays(today, -1) : today;
+}
+
+/**
+ * Which record a "Going to bed" press writes `bt` to. The bedtime lives on
+ * the record of the morning the sleep ENDS on (engine/sleep.ts), i.e. the
+ * night's date + 1:
+ *   23:10 on 6 Sep → night of 6 Sep → record 2026-09-07
+ *   00:20 on 7 Sep → night of 6 Sep → record 2026-09-07 (same night)
+ *   04:00 on 7 Sep → night of 7 Sep → record 2026-09-08
  */
 export function bedtimeRecordDate(now: Date): ISODate {
-  const today = toISODate(now);
-  return now.getHours() < BEDTIME_NOON_HOUR ? today : addDays(today, 1);
+  return addDays(bedtimeNightOf(now), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -164,9 +183,7 @@ export function foodItemFromEstimate(item: FoodEstimateItem, extra: FoodItem[] =
  * list and the edit card surface later (itemToMeal keeps `conf` only for
  * src 'ai'). The assumptions text already says when the local parser was used.
  */
-export function mealSourceForEstimate(_est: FoodEstimate): MealSource {
-  return 'ai';
-}
+export const ESTIMATE_MEAL_SRC: MealSource = 'ai';
 
 export type EstimateOrigin = 'claude' | 'local' | 'ai-fallback';
 
@@ -238,6 +255,12 @@ export function displayToLb(value: number, units: Units): number {
 // ---------------------------------------------------------------------------
 // Caffeine
 // ---------------------------------------------------------------------------
+
+/** Copy of `xs` with the first occurrence of `v` removed (duplicate times are separate logs). */
+export function withoutOne<T>(xs: readonly T[], v: T): T[] {
+  const i = xs.indexOf(v);
+  return i < 0 ? [...xs] : [...xs.slice(0, i), ...xs.slice(i + 1)];
+}
 
 /** True when `now` is later than the caffeine cutoff on the same clock day. */
 export function isAfterCutoff(now: HHMM, cutoff: HHMM): boolean {

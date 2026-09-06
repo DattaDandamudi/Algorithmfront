@@ -5,6 +5,7 @@ import { AI_UNAVAILABLE_NOTE } from '../../ai/food';
 import {
   appendClarification,
   appendNote,
+  bedtimeNightOf,
   bedtimeRecordDate,
   displayToLb,
   estimateNote,
@@ -20,22 +21,30 @@ import {
   sumMacros,
   tobaccoStamp,
   tobaccoStampsFromNote,
+  withoutOne,
 } from './logUtils';
 
 const meal = (id: string, t: string, n: string, kc: number, p = 0): Meal => ({ id, t, n, g: 100, kc, p, f: 0, c: 0, fi: 0 });
 
-describe('bedtimeRecordDate', () => {
-  it('writes to tomorrow when pressed before midnight', () => {
+describe('bedtimeNightOf / bedtimeRecordDate', () => {
+  it('an evening press is tonight → tomorrow\'s record', () => {
+    expect(bedtimeNightOf(new Date(2026, 8, 6, 23, 10))).toBe('2026-09-06');
     expect(bedtimeRecordDate(new Date(2026, 8, 6, 23, 10))).toBe('2026-09-07');
     expect(bedtimeRecordDate(new Date(2026, 8, 6, 21, 0))).toBe('2026-09-07');
   });
-  it('writes to today when pressed after midnight and before noon', () => {
+  it('before 04:00 still counts as the previous calendar day\'s night → today\'s record', () => {
+    expect(bedtimeNightOf(new Date(2026, 8, 7, 0, 20))).toBe('2026-09-06');
     expect(bedtimeRecordDate(new Date(2026, 8, 7, 0, 20))).toBe('2026-09-07');
     expect(bedtimeRecordDate(new Date(2026, 8, 7, 3, 59))).toBe('2026-09-07');
   });
-  it('treats noon onwards as tonight', () => {
-    expect(bedtimeRecordDate(new Date(2026, 8, 6, 12, 0))).toBe('2026-09-07');
-    expect(bedtimeRecordDate(new Date(2026, 8, 6, 11, 59))).toBe('2026-09-06');
+  it('rolls over at 04:00', () => {
+    expect(bedtimeNightOf(new Date(2026, 8, 7, 4, 0))).toBe('2026-09-07');
+    expect(bedtimeRecordDate(new Date(2026, 8, 7, 4, 0))).toBe('2026-09-08');
+    expect(bedtimeRecordDate(new Date(2026, 8, 6, 11, 59))).toBe('2026-09-07');
+  });
+  it('crosses a month boundary', () => {
+    expect(bedtimeRecordDate(new Date(2026, 8, 30, 23, 30))).toBe('2026-10-01');
+    expect(bedtimeRecordDate(new Date(2026, 9, 1, 1, 0))).toBe('2026-10-01');
   });
 });
 
@@ -144,6 +153,12 @@ describe('caffeine / time helpers', () => {
     expect(isAfterCutoff('14:30', '14:00')).toBe(true);
     expect(isAfterCutoff('14:00', '14:00')).toBe(false);
     expect(isAfterCutoff('08:00', '14:00')).toBe(false);
+  });
+  it('withoutOne removes a single occurrence and never mutates', () => {
+    const caf = ['08:05', '14:30', '14:30'];
+    expect(withoutOne(caf, '14:30')).toEqual(['08:05', '14:30']);
+    expect(withoutOne(caf, '09:00')).toEqual(caf);
+    expect(caf).toHaveLength(3);
   });
   it('normalises time-input values', () => {
     expect(normaliseTime('9:05', '12:00')).toBe('09:05');

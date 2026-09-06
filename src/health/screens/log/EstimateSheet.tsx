@@ -44,6 +44,13 @@ export interface EstimateSheetProps {
   onClarify?: (answer: string) => void;
 }
 
+/**
+ * One-tap answers for the clarify question (§9: a single prompt with quick
+ * answers). They cover the two things that move an estimate most — portion
+ * size and home vs restaurant preparation; anything else goes in the box.
+ */
+const QUICK_ANSWERS = ['about 150 g', 'about 250 g', 'about 400 g', 'home-cooked', 'restaurant'] as const;
+
 /** Quick portion-confirm multipliers relative to the original estimate (§2 small/medium/large vocabulary). */
 const PORTIONS: Array<{ label: string; k: number }> = [
   { label: 'Small', k: 0.75 },
@@ -113,6 +120,13 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
         {clarify && onClarify && (
           <div className="rounded-2xl border border-hx-blue/40 bg-hx-blue/10 p-3">
             <p className="text-[14px] leading-5 text-hx-text">{clarify}</p>
+            <div className="mt-2 flex gap-1.5 flex-wrap" role="group" aria-label="Quick answers">
+              {QUICK_ANSWERS.map((a) => (
+                <Chip key={a} size="sm" color="blue" onClick={() => onClarify(a)} disabled={busy}>
+                  {a}
+                </Chip>
+              ))}
+            </div>
             <div className="mt-2 flex gap-2">
               <input
                 type="text"

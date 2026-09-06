@@ -40,7 +40,10 @@ import {
   sleepSummary,
   swcBandSeries,
   waterNoiseBand,
+  weeklyExpenditure,
   type DayAdherence,
+  type ExpenditureResult,
+  type FrequencyCounters,
 } from '../../engine';
 import {
   RANGE_DAYS,
@@ -55,6 +58,7 @@ import {
   type DatedValue,
   type HeatLevel,
   type HeatmapDay,
+  type TimeSeriesAnnotation,
   type TimeSeriesBandPoint,
 } from '../../ui/charts';
 
@@ -105,6 +109,16 @@ export function rangeWindow(range: ChartRange, today: ISODate): RangeWindow {
     tdeeWeeks: TDEE_WEEKS[range],
     label: RANGE_LABEL[range],
   };
+}
+
+/** 'Last 30 days · daily · 8 Aug – 6 Sep' — the sticky header's second line. */
+export function rangeCaption(win: RangeWindow): string {
+  const day = (d: ISODate) => {
+    const dt = parseISODate(d);
+    return `${dt.getDate()} ${MONTH_SHORT[dt.getMonth()]}`;
+  };
+  const label = win.label.charAt(0).toUpperCase() + win.label.slice(1);
+  return `${label} · ${BUCKET_LABEL[win.bucket]} · ${day(win.start)} – ${day(win.end)}`;
 }
 
 /** Tooltip date header per bucket: 'Sat 6 Sep' / 'Week of 1 Sep' / 'Sep 2026'. */
@@ -243,15 +257,19 @@ export function hrvSeries(records: DailyRecord[], win: RangeWindow): BandedSerie
   return { dots, line, band: zipBand(lo, hi) };
 }
 
-/** Garmin-style band → semantic tone (SPEC §6.3; 'poor' suppresses "balanced" only). */
+/**
+ * Garmin-style band → semantic tone (SPEC §6.3). Matches the Today HRV tile
+ * (screens/today/MetricTiles.tsx) so the two screens never disagree:
+ * balanced green · unbalanced yellow · low / poor red · insufficient neutral.
+ */
 export function hrvBandTone(band: HrvBand): Band {
   switch (band) {
     case 'balanced':
       return 'green';
     case 'low':
+    case 'poor':
       return 'red';
     case 'unbalanced':
-    case 'poor':
       return 'yellow';
     default:
       return 'neutral';
@@ -449,4 +467,108 @@ export function heatLegend(mode: HeatMode, targets: Targets): string[] {
   }
   if (mode === 'kcal') return ['> 300 over', '≤ 300 over / far under', '≤ 150 over', 'On target'];
   return ['Totals only', '1 meal', '2–3 meals', '4+ meals'];
+}
+
+// ---------------------------------------------------------------------------
+// Expenditure (§6.2) — weekly points + update markers
+// ---------------------------------------------------------------------------
+
+export interface TdeeSeries {
+  /**
+   * One point per 7-day block, oldest first, plotted at the block's END date
+   * (the day the estimate updated). Blocks that failed the ≥5 weigh-in /
+   * ≥5 intake-day gate are `null` so the gap stays visible.
+   */
+  points: DatedValue[];
+  /** ▼ markers on the weeks whose estimate actually updated (valid blocks). */
+  annotations: TimeSeriesAnnotation[];
+  /** The full engine result — current/last-calibrated TDEE, this week's gate counts, reasons. */
+  result: ExpenditureResult;
+}
+
+/**
+ * `expenditureSeries` is a filter over `weeklyExpenditure(...).weeks`; we call
+ * the latter directly so the invalid weeks (gaps) and the gate counts for the
+ * annotations come from the same pass. `alpha` must be the store's EWMA α
+ * (INTEGRATION_NOTES) so the chart matches the Today tile.
+ */
+export function tdeeSeries(records: DailyRecord[], win: RangeWindow, alpha: number): TdeeSeries {
+  const result = weeklyExpenditure(records, win.end, { alpha, weeks: win.tdeeWeeks });
+  const points: DatedValue[] = [];
+  const annotations: TimeSeriesAnnotation[] = [];
+  for (const wk of result.weeks) {
+    const ok = wk.valid && wk.smoothedTdee !== null;
+    points.push({ d: wk.end, value: ok ? wk.smoothedTdee : null });
+    if (ok) annotations.push({ d: wk.end, label: `Updated · ${wk.weighIns} weigh-ins, ${wk.intakeDays} intake days` });
+  }
+  return { points, annotations, result };
+}
+
+/** The TDEE chart always plots weekly points, so its date labels use the '6 Sep' (90D) or 'Sep' (1Y) format. */
+export function tdeeChartRange(range: ChartRange): ChartRange {
+  return range === '1Y' ? '1Y' : '90D';
+}
+
+/** Tooltip header for a weekly TDEE point: 'Week ending 6 Sep'. */
+export function weekEndingFormat(d: ISODate): string {
+  const dt = parseISODate(d);
+  return `Week ending ${dt.getDate()} ${MONTH_SHORT[dt.getMonth()]}`;
+}
+
+export interface IntakeSuggestion {
+  /** "Hold 1,950 kcal" / "Adjust to 1,850 kcal — losing slower than target". */
+  text: string;
+  tone: Band;
+  hold: boolean;
+}
+
+/**
+ * One-line version of `recommendIntake` for the readout row. Null when this
+ * week's expenditure is not valid — an unreliable week must not move the
+ * target (§6.2), so there is nothing to suggest. `ctx.expenditure.reason`
+ * carries the full sentence for the detail line.
+ */
+export function intakeSuggestion(ctx: CoachContext): IntakeSuggestion | null {
+  const exp = ctx.expenditure;
+  if (!exp.valid || exp.suggestedKcal === null || exp.suggestedDelta === null) return null;
+  if (exp.suggestedDelta === 0) return { text: `Hold ${fmt(exp.suggestedKcal)} kcal`, tone: 'green', hold: true };
+  const rate = ctx.weight.weeklyRateLb;
+  const why =
+    ctx.weight.inBand === 'above'
+      ? 'losing faster than target'
+      : rate !== null && rate > 0
+        ? 'trend is rising'
+        : 'losing slower than target';
+  return { text: `Adjust to ${fmt(exp.suggestedKcal)} kcal — ${why}`, tone: 'yellow', hold: false };
+}
+
+// ---------------------------------------------------------------------------
+// Nutrition frequency counters (§3, §7 #13/#14)
+// ---------------------------------------------------------------------------
+
+export interface FrequencyRow {
+  key: 'red-meat' | 'fish' | 'home' | 'fiber';
+  label: string;
+  /** Trailing 7 days. */
+  week: string;
+  /** The selected range, normalised per week where it is a count. */
+  range: string;
+  hint: string;
+}
+
+/**
+ * Rows for the frequency table. Counts are shown as servings per week —
+ * whole numbers for the 7-day column, 1 dp when normalised over a longer
+ * range — so 90D and 1Y stay comparable with "this week".
+ */
+export function frequencyRows(week: FrequencyCounters, range: FrequencyCounters, fiberTarget: number): FrequencyRow[] {
+  const perWk = (n: number, c: FrequencyCounters) => `${fmt(perWeek(n, c.days), c.days <= 7 ? 0 : 1)}×/wk`;
+  const pct = (v: number | null) => (v === null ? '—' : `${fmt(v)}%`);
+  const fib = (v: number | null) => (v === null ? '—' : `${fmt(v, 1)} g`);
+  return [
+    { key: 'red-meat', label: 'Red meat', week: perWk(week.redMeatServings, week), range: perWk(range.redMeatServings, range), hint: 'servings' },
+    { key: 'fish', label: 'Fish', week: perWk(week.fishServings, week), range: perWk(range.fishServings, range), hint: 'servings' },
+    { key: 'home', label: 'Home-cooked', week: pct(week.homeCookedPct), range: pct(range.homeCookedPct), hint: 'of meals' },
+    { key: 'fiber', label: 'Fiber', week: fib(week.fiberAvg), range: fib(range.fiberAvg), hint: `avg/day · ${fmt(fiberTarget)} g target` },
+  ];
 }

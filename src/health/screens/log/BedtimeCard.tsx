@@ -3,10 +3,12 @@
  * actual bed time → feeds the consistency metric" (§6.4 bedtime SD).
  *
  * Record semantics (INTEGRATION_NOTES / engine/sleep.ts): `bt` on record D is
- * the bedtime of the sleep that ENDED on the morning of D. So the button
- * writes to TOMORROW's record before midnight and to TODAY's after midnight
- * (before noon) — `bedtimeRecordDate` in logUtils implements the rule; the
- * store's `logBedtime(d, time)` just patches `bt`.
+ * the bedtime of the sleep that ENDED on the morning of D. A press before
+ * 04:00 counts as the PREVIOUS calendar day's night, so 23:10 on 6 Sep and
+ * 00:20 on 7 Sep both write to record 2026-09-07 — `bedtimeRecordDate` in
+ * logUtils implements the rule; the store's `logBedtime(d, time)` just
+ * patches `bt`. The card labels the save with the night's date, not the
+ * record's, because that is how people think about it.
  *
  * Shows last night's logged bedtime (today's record), tonight's if already
  * pressed (with Undo), the countdown nudge from `bedtimeCountdown`, and the
@@ -15,7 +17,7 @@
 import { Moon } from 'lucide-react';
 import type { CoachContext, DailyRecord, Profile } from '../../data/types';
 import { bedtimeCountdown } from '../../engine/sleep';
-import { formatClock, formatDateShort } from '../../lib/dates';
+import { addDays, formatClock, formatDateShort, nowHHMM } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { Button, SectionHeader } from '../../ui';
 
@@ -40,6 +42,8 @@ export default function BedtimeCard({ ctx, now, profile, targetDate, targetRecor
   const lastKnown = lastNight ?? (tonight ? null : ctx.sleep.lastBedtime);
   const countdown = bedtimeCountdown(now, profile.bedTarget, profile.wakeTarget);
   const sd = ctx.sleep.bedtimeSdMin;
+  // The record is dated the morning after; show the night it belongs to.
+  const nightOf = addDays(targetDate, -1);
 
   return (
     <div className="hx-card p-4 space-y-3">
@@ -54,7 +58,7 @@ export default function BedtimeCard({ ctx, now, profile, targetDate, targetRecor
         <div className="flex items-center justify-between gap-3">
           <p className="text-[14px] leading-5 text-hx-text">
             Tonight logged · <span className="font-semibold">{formatClock(tonight)}</span>
-            <span className="block text-[12px] text-hx-muted">saved to {formatDateShort(targetDate)}’s sleep</span>
+            <span className="block text-[12px] text-hx-muted">night of {formatDateShort(nightOf)}</span>
           </p>
           <Button variant="secondary" size="sm" onClick={onUndo}>
             Undo
@@ -62,7 +66,7 @@ export default function BedtimeCard({ ctx, now, profile, targetDate, targetRecor
         </div>
       ) : (
         <Button size="lg" fullWidth icon={<Moon aria-hidden />} onClick={onGoingToBed}>
-          Going to bed · {formatClock(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)}
+          Going to bed · {formatClock(nowHHMM(now))}
         </Button>
       )}
       <div className="flex items-baseline justify-between gap-3 text-[13px] leading-5">

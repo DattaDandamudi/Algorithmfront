@@ -5,11 +5,14 @@
  * while estimating, an inline question when the parser found no food, and a
  * reminder that the offline parser is in use when no AI key is configured.
  */
-import { useState, type FormEvent, type RefObject } from 'react';
+import type { FormEvent, RefObject } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 
 export interface AIBarProps {
   inputRef: RefObject<HTMLInputElement>;
+  /** Controlled text — the screen clears it after a successful save and reuses it for clarifications. */
+  value: string;
+  onChange: (text: string) => void;
   busy: boolean;
   aiConfigured: boolean;
   /** Question to show under the bar when the last submit produced no items. */
@@ -19,9 +22,7 @@ export interface AIBarProps {
 
 export const AI_BAR_PLACEHOLDER = '200 g chicken tikka and one roti';
 
-export default function AIBar({ inputRef, busy, aiConfigured, question, onSubmit }: AIBarProps) {
-  const [text, setText] = useState('');
-
+export default function AIBar({ inputRef, value: text, onChange: setText, busy, aiConfigured, question, onSubmit }: AIBarProps) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const t = text.trim();
