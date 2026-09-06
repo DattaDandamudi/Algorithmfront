@@ -14,20 +14,21 @@ src/health/
   data/
     types.ts           THE contract: DailyRecord (compact short-key schema), Profile, Targets, CoachContext…
     defaults.ts        spec persona defaults (1,950 kcal, 180 g protein, 60 g fat floor, 4-day split, labs)
-    storage.ts         sharded localStorage (hx:log:YYYY-MM + hx:log:index), FNV-1a checksums, quota handling, debounced writer
-    store.tsx          React context; keeps meal totals + EWMA trend in sync; hooks useHealth/useRecords/useDay/useNow
-    export.ts          JSON (full fidelity) + CSV (BOM, flattened) export/import
-    seed.ts            deterministic 45-day demo dataset
+    storage.ts         two sharded localStorage families (hx:log:YYYY-MM days, hx:wk:YYYY-MM workouts, hx:log:index), FNV-1a checksums, quota handling, debounced writer
+    store.tsx          React context; keeps meal totals, EWMA + Kalman trend and the day's training derivations in sync; hooks useHealth/useRecords/useDay/useWorkouts/useNow
+    export.ts          JSON (full fidelity) + CSV (BOM, flattened) days and workouts export/import
+    prng.ts            seeded generator so the demo dataset is byte-identical every time
+    seed.ts            deterministic 45-day demo dataset (days, workouts, check-ins, a seeded illness window)
     whoopImport.ts     WHOOP CSV export parser
     workoutImport.ts   workout parsers: WHOOP workouts.csv, Strava activities.csv, Apple Health export.xml
   engine/              pure, deterministic logic (all unit-tested with vitest)
     stats.ts           median/MAD/robust SD, erf & normal CDF, quantiles, EWMA, linreg, Benjamini–Hochberg
     weight.ts          EWMA trend (α = 0.10), weekly rate lb/wk & %BW/wk, 0.5–1 %BW target band
     kalman.ts          local-linear-trend weight filter + RTS smoother, outlier gate, rate credible band
-    expenditure.ts     MacroFactor-style weekly TDEE = intake − Δtrend×3500/7, ≥5 weigh-ins gate, smoothing, ±100–200 kcal steps, fat floor
+    expenditure.ts     Bayesian TDEE posterior over weight- and steps-derived observations, Hall/Forbes energy density, glycogen–water correction, two-tier intake coaching
     baseline.ts        30-day (RHR 28-day) personal baselines + good-direction deltas
-    hrv.ts             ln(rMSSD), 7-day rolling mean, SWC = mean ± 0.5 SD, Balanced/Low/Unbalanced/Poor bands, CV trend
-    readiness.ts       hero score: WHOOP recovery when present, else HRV-derived; 67/34 bands; training verdict
+    hrv.ts             ln(rMSSD) vs a 60-day robust reference, SWC = median ± 0.5 SD, Balanced/Low/Unbalanced/Poor bands, CV trend, vagal-saturation guard
+    readiness.ts       hero score: WHOOP recovery blended over a 7-day ramp with an own five-term logistic; 67/34 bands; contributors, confidence band, training verdict
     sleep.ts           need = baseline + f(strain) + f(debt) − naps, debt, bedtime/midpoint SD, countdown, caffeine cutoff
     nutrition.ts       day type from split, macro targets, protein pacing (0.4–0.55 g/kg/meal), fat floor, late eating, hydration
     tobacco.ts         counts, streaks, next-morning HRV/RHR/recovery comparison
@@ -40,14 +41,15 @@ src/health/
     changepoint.ts     Bayesian online changepoint detection (regime shifts in HRV, RHR, weight level, strain)
     adherence.ts       heatmap grid, streaks, weekly/monthly aggregation
     micronutrients.ts  retest reminders + display-only guidance (lead → physician escalation)
-    insights.ts        the 14 insight templates, priorities and promotion rules; coach chips; empty-state copy
+    insights.ts        the 25 insight templates, priorities, promotion rules and streak decay; the 12 coach chips; empty-state copy
     context.ts         buildCoachContext(): one snapshot every screen, insight and the coach share
+    simFixtures.ts     test-only seeded generators (weight trajectories, HRV series, illness episodes) behind the simulation gates
   ai/
     config.ts          dependency-free settings helpers (isAIConfigured, model list) — safe to import from screens
     client.ts          async Anthropic SDK client factory (lazy-imports the SDK; BYO key in browser, or proxy base URL)
     coach.ts           §8 system prompt, compact 30-day context, streaming askCoach with refusal fallbacks
     guardrails.ts      emergency detection, medical-ask cue, ≤120-word check, bold-action enforcement
-    offlineCoach.ts    rule-based answers for the 8 chips when no key is configured
+    offlineCoach.ts    rule-based answers for all 12 chips when no key is configured
     food.ts            §9 strict-JSON food estimator (structured outputs)
     foodLocal.ts       offline natural-language food parser ("200 g chicken tikka and one roti")
     foodDb.ts          Indian / Middle-Eastern / basics food database (per 100 g)
@@ -69,6 +71,17 @@ npm run test         # vitest — engine, storage, AI prompt/guardrail tests
 npm run typecheck
 npm run build
 ```
+
+The suite includes seeded **simulation gates** as ordinary tests: a stationary user must not be
+told to back off more than 5% of days, a behaviour with no real effect must survive multiplicity
+correction as "confirmed" in under 5% of runs, and so on. They are build gates rather than
+documentation — when one fails the algorithm is wrong, not the bound.
+
+The `buildCoachContext` budget is enforced as a **ratio against a calibration loop measured on the
+same machine**, not as wall-clock milliseconds, because contention on a shared runner made an
+absolute threshold flaky. Load slows both sides, so the ratio holds; a regression slows only the
+builder, so the ratio moves. The budget leaves about 40% over the worst ratio seen under four
+competing CPU-bound processes, which is tighter than the millisecond gate it replaces.
 
 Static hosts need an SPA rewrite so `/health` serves `index.html` (or use `/#/health`; tab
 navigation keeps the `#/health/<tab>` hash so reloads land back in the app).
