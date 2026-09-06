@@ -8,6 +8,7 @@ import {
   ensureBoldAction,
   ensureDoctorCue,
   isMedicalAsk,
+  isSymptomAsk,
   maskKey,
   wordCount,
 } from './guardrails';
@@ -143,9 +144,10 @@ describe('ensureDoctorCue', () => {
 });
 
 describe('ensureBoldAction', () => {
-  it('keeps a reply that already has a bold span', () => {
-    const t = 'HRV is 42 ms. **Keep today light.** See you tomorrow.';
+  it('keeps a reply whose single bold span is already the final sentence', () => {
+    const t = 'HRV is 42 ms. **Keep today light.**';
     expect(ensureBoldAction(t)).toBe(t);
+    expect(ensureBoldAction('**Eat 40 g protein.**')).toBe('**Eat 40 g protein.**');
   });
 
   it('bolds the last sentence', () => {
@@ -190,4 +192,107 @@ describe('DISCLAIMER', () => {
   it('is the spec footer copy', () => {
     expect(DISCLAIMER).toBe('Wellness information only — not medical advice. Confirm labs, dosing and symptoms with your doctor.');
   });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 5 reproductions
+// ---------------------------------------------------------------------------
+
+describe('R5-1 / R5-5 detectEmergency — acute phrases fire, ordinary logging language does not', () => {
+  const positives = [
+    "I think I'm having a heart attack",
+    'heart attack symptoms — should I still train?',
+    'my chest hurts really badly',
+    "chest tightness that won't go away",
+    'I had a seizure this morning',
+    "I'm not breathing well and my lips are blue",
+    "he's not breathing",
+    'I collapsed at the gym and woke up on the floor',
+    'my friend is unconscious',
+    'vomiting blood since last night',
+    'I keep coughing up blood',
+    "I can't feel my legs",
+    "can't move my face on one side",
+    'my speech is slurred and my face is drooping',
+    'I think I have a concussion after hitting my head',
+    'I overdosed on sleeping pills',
+    'severe allergic reaction, my throat is closing',
+    'should I call 911 for this?',
+    'I need an ambulance',
+    "I'm choking on a piece of chicken",
+    "I've been cutting myself",
+    'I passed out during my workout',
+    'worst headache of my life came on suddenly',
+  ];
+  const negatives = [
+    "I'm at 911 kcal so far today, what should I eat?",
+    'I ate 911 calories',
+    "I'm cutting myself down to 1800 kcal",
+    "I'm cutting myself some slack today",
+    'I keep hurting myself in the gym, how do I progress safely',
+    'choking down protein shakes is hard',
+    'I get a mild allergic reaction to peanuts, what snacks instead?',
+    'I drive an ambulance on night shifts, how do I fix my sleep?',
+    'passed out on the couch after lunch, why so sleepy?',
+    'my chest workout was brutal today',
+    'chest day tomorrow or legs?',
+    'out of breath after 5 min of cardio, is that normal?',
+    'I swam 40 strokes this morning',
+    'do blackout curtains help sleep?',
+    'cut myself off from late-night snacks — good idea?',
+    'my HRV collapsed after the night out, why?',
+    'unconscious eating habits are wrecking my deficit',
+    'breathing during squats — brace or exhale?',
+    "my dad's family history of heart attack worries me, how do I lower risk?",
+    ...CHIPS,
+  ];
+
+  it.each(positives)('flags "%s"', (q) => expect(detectEmergency(q).emergency).toBe(true));
+  it.each(negatives)('does not flag "%s"', (q) => expect(detectEmergency(q).emergency).toBe(false));
+});
+
+describe('R5-7 ensureBoldAction — exactly one bold span, and it is the final sentence', () => {
+  const oneTrailingSpan = /^[^*]*\*\*[^*]+\*\*$/;
+
+  it.each([
+    ['**Verdict:** train today. Your HRV is 54 ms. Hold loads.', 'Verdict: train today. Your HRV is 54 ms. **Hold loads.**'],
+    ['Your **HRV is 54 ms**, 2 above baseline. **Progress loads.** Also **sleep more.**', 'Your HRV is 54 ms, 2 above baseline. Progress loads. **Also sleep more.**'],
+    ['HRV is 42 ms. **Keep today light.** See you tomorrow.', 'HRV is 42 ms. Keep today light. **See you tomorrow.**'],
+    ['Readiness 71%. **Progress your', 'Readiness 71%. **Progress your.**'],
+    ['Readiness 71%. **Progress your lower-body loads today.**  ', 'Readiness 71%. **Progress your lower-body loads today.**'],
+  ])('%j → %j', (input, expected) => {
+    const out = ensureBoldAction(input);
+    expect(out).toBe(expected);
+    expect(out).toMatch(oneTrailingSpan);
+  });
+});
+
+describe('R5-9 isMedicalAsk — supplement dosing', () => {
+  it.each([
+    'should I take creatine',
+    'how much melatonin for sleep',
+    'take 5 g creatine daily?',
+    'what about ZMA before bed',
+    'is ashwagandha worth it',
+    'pre-workout before a morning session?',
+    'caffeine pills instead of coffee?',
+  ])('true for "%s"', (q) => expect(isMedicalAsk(q)).toBe(true));
+
+  it.each(['180 g protein a day is my target, right?', 'how much rice on a rest day', 'Plan my carbs for a lift day.'])(
+    'false for "%s" (nutrition amounts are not dosing)',
+    (q) => expect(isMedicalAsk(q)).toBe(false),
+  );
+});
+
+describe('R5-6 isSymptomAsk — the symptom subset of medical asks', () => {
+  it.each(['I feel dizzy after training', 'my knee hurts when I squat', 'I get palpitations after coffee', 'headache all day, train or rest?', 'feeling faint on the stairs'])(
+    'true for "%s"',
+    (q) => {
+      expect(isSymptomAsk(q)).toBe(true);
+      expect(isMedicalAsk(q)).toBe(true);
+    },
+  );
+  it.each(['how many mg of zinc should I take', 'is my ferritin ok', 'Should I train today?', 'my legs are sore from squats', ''])('false for "%s"', (q) =>
+    expect(isSymptomAsk(q)).toBe(false),
+  );
 });

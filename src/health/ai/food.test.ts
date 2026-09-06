@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type Anthropic from '@anthropic-ai/sdk';
+import Anthropic from '@anthropic-ai/sdk';
 import { DEFAULT_AI, DEFAULT_FAVORITES, DEFAULT_PROFILE } from '../data/defaults';
 import type { AISettings } from '../data/types';
 import {
@@ -157,5 +157,54 @@ describe('estimateFood', () => {
     const noClient = await estimateFood('2 rotis', AI_ON, DEFAULT_PROFILE, []);
     expect(noClient.source).toBe('local');
     expect(noClient.items[0].assumptions).not.toContain(AI_UNAVAILABLE_NOTE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 5 reproductions
+// ---------------------------------------------------------------------------
+
+describe('R5-11 estimateFoodWithClaude resolves the model like the coach does', () => {
+  it.each(['', '   '])('an empty stored model (%j) falls back to the default instead of sending model: ""', async (model) => {
+    const { client, create } = mockClient(async () => textResponse(GOOD));
+    await estimateFoodWithClaude('2 rotis', { ...AI_ON, model }, DEFAULT_PROFILE, client);
+    const params = create.mock.calls[0][0] as Record<string, unknown>;
+    expect(params.model).toBe('claude-opus-5');
+  });
+
+  it('a padded model id is trimmed', async () => {
+    const { client, create } = mockClient(async () => textResponse(GOOD));
+    await estimateFoodWithClaude('2 rotis', { ...AI_ON, model: ' claude-sonnet-5 ' }, DEFAULT_PROFILE, client);
+    expect((create.mock.calls[0][0] as Record<string, unknown>).model).toBe('claude-sonnet-5');
+  });
+});
+
+describe('R5-12 estimateFood surfaces the readable failure reason in the fallback note', () => {
+  const cases: Array<[string, unknown, RegExp, string]> = [
+    ['401', new Anthropic.AuthenticationError(401, undefined, 'invalid x-api-key', new Headers()), /API key.*401/, 'auth'],
+    ['403', new Anthropic.PermissionDeniedError(403, undefined, 'no access', new Headers()), /403/, 'permission'],
+    ['404', new Anthropic.NotFoundError(404, undefined, 'model: nope', new Headers()), /Model not found/, 'not_found'],
+    ['network', new Anthropic.APIConnectionError({ message: 'fetch failed' }), /Network\/proxy/, 'network'],
+    ['bad json', new Error('Claude returned invalid JSON for the food estimate.'), /invalid JSON/, 'unknown'],
+  ];
+
+  it.each(cases)('%s → local estimate + reason', async (_label, err, re, kind) => {
+    const { client } = mockClient(async () => {
+      throw err;
+    });
+    const est = await estimateFood('200 g chicken tikka and one roti', AI_ON, DEFAULT_PROFILE, DEFAULT_FAVORITES, { client });
+    expect(est.source).toBe('local');
+    expect(est.items[0]).toMatchObject({ grams: 200, confidence: 0.9 });
+    expect(est.items[0].assumptions.startsWith(AI_UNAVAILABLE_NOTE)).toBe(true);
+    expect(est.items[0].assumptions).toMatch(re);
+    expect(est.fallbackReason).toMatch(re);
+    expect(est.fallbackKind).toBe(kind);
+    expect(est.items[1].assumptions).not.toContain(AI_UNAVAILABLE_NOTE);
+  });
+
+  it('no fallback fields when Claude answered or AI is off', async () => {
+    const { client } = mockClient(async () => textResponse(GOOD));
+    expect((await estimateFood('2 rotis', AI_ON, DEFAULT_PROFILE, [], { client })).fallbackReason).toBeUndefined();
+    expect((await estimateFood('2 rotis', { ...AI_ON, provider: 'none' }, DEFAULT_PROFILE, [], { client })).fallbackReason).toBeUndefined();
   });
 });

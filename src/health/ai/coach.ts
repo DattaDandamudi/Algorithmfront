@@ -29,7 +29,7 @@ import type {
   TrainingSplit,
 } from '../data/types';
 import { lbToKg, round } from '../lib/format';
-import { checkLength, ensureBoldAction, ensureDoctorCue, isMedicalAsk } from './guardrails';
+import { checkLength, ensureBoldAction, ensureDoctorCue, isMedicalAsk, wordCount } from './guardrails';
 
 // ---------------------------------------------------------------------------
 // System prompt (§8)
@@ -87,9 +87,30 @@ function toneLine(tone: AISettings['tone']): string {
 }
 
 /**
+ * What each DERIVED key means and its unit. Static text: it lives in the system
+ * block (not the per-turn context) so the cached prefix stays identical across
+ * turns and long enough to be cacheable at all (R5-13, see askCoach).
+ */
+const DERIVED_LEGEND = [
+  'DERIVED legend (units: lb, ms, bpm, hours, minutes, g, kcal, HH:MM; missing/null fields are omitted — say so, never guess):',
+  '- readiness: score 0–100, band green/yellow/red/neutral, source whoop|hrv|none, training = the verdict to ground advice in.',
+  '- hrv: today and baseline7 in ms; swcLower–swcUpper is the smallest-worthwhile-change band (inside = normal for this user);',
+  '  band balanced/low/high/insufficient; delta = today vs baseline with pct and good.',
+  '- rhr: today in bpm with baseline, delta and pct. sleep: hours vs need, debtMin, bedtimeSdMin (consistency), lastBedtime.',
+  '- steps: today vs baseline and goalMin–goalMax. weight: latest scale reading, trend (smoothed), weeklyRateLb and weeklyRatePct',
+  '  vs targetLbPerWk with inBand below/in/above, weighInsThisWeek.',
+  '- expenditure: tdee reverse-calculated from intake and trend, valid only with 5+ weigh-ins (reason says why not);',
+  '  suggestedKcal/suggestedDelta = the weekly check.',
+  '- nutrition: totals, targets and remaining in g/kcal; fatBelowFloor; carbsRange for today\'s dayType; mealsLogged/mealsLeft;',
+  '  proteinPerMealNeeded; lateEating; hydrationCups; caffeineAfterCutoff.',
+  '- tobacco: today, avg7, avg30, streakDays, hrvSmokeFree vs hrvSmoking (ms). frequency: 7-day food counters.',
+  '- adherence: 30-day protein/kcal/weigh-in hit counts and the logging streak.',
+];
+
+/**
  * The §8 prompt. PROFILE is rendered from live settings; RULES, GUARDRAILS and
  * OUTPUT are verbatim from the spec. Keep this deterministic (no dates/IDs) so
- * the cache_control breakpoint on it actually hits.
+ * the cache_control breakpoint on it can hit.
  */
 export function buildSystemPrompt(profile: Profile, targets: Targets, ai: AISettings): string {
   const appName = ai.appName?.trim() || 'Pulse';
@@ -115,6 +136,8 @@ export function buildSystemPrompt(profile: Profile, targets: Targets, ai: AISett
     '3. TODAY (partial log so far).',
     '4. DERIVED (numbers the app already computed: readiness band, HRV baseline & SWC, trend weight & weekly rate,',
     '   expenditure, macros remaining, tobacco, adherence). Cite these; do not recompute them.',
+    '',
+    ...DERIVED_LEGEND,
     '',
     toneLine(ai.tone),
     '',
@@ -218,8 +241,9 @@ export const DEFAULT_MAX_TURNS = 8;
 /**
  * Prior turns are replayed as plain text (their original context blocks are
  * stale and would bloat the prompt); only the new user turn carries context.
- * Error bubbles and half-streamed messages are skipped, and the replay is
- * trimmed so it starts on a user turn (the API requires that).
+ * Error bubbles, guardrail bubbles (the emergency / refusal copy is ours, not
+ * the model's — R5-10) and half-streamed messages are skipped, and the replay
+ * is trimmed so it starts on a user turn (the API requires that).
  */
 export function buildMessages(
   history: ChatMessage[],
@@ -229,7 +253,8 @@ export function buildMessages(
 ): Anthropic.Beta.BetaMessageParam[] {
   const maxTurns = Math.max(0, opts?.maxTurns ?? DEFAULT_MAX_TURNS);
   const usable = history.filter(
-    (m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim().length > 0 && m.source !== 'error' && !m.streaming,
+    (m) =>
+      (m.role === 'user' || m.role === 'assistant') && m.text.trim().length > 0 && m.source !== 'error' && m.source !== 'guardrail' && !m.streaming,
   );
   let prior = maxTurns > 0 ? usable.slice(-maxTurns) : [];
   while (prior.length && prior[0].role !== 'user') prior = prior.slice(1);
@@ -297,8 +322,16 @@ export function toCoachError(err: unknown): CoachError {
 export const REFUSAL_TEXT =
   "I can't help with that one. Ask me about training, food, sleep, recovery or tobacco and I'll work from your numbers.";
 
-/** Coach replies are ≤120 words; 1024 tokens leaves headroom without inviting essays. */
-const MAX_TOKENS = 1024;
+/** Shown instead of a cut-off fragment (R5-4); postProcessReply passes it through untouched. */
+export const TRUNCATED_TEXT = 'That reply was cut off before it reached the action — ask again.';
+
+/**
+ * A ≤120-word reply is ~200 tokens, but on Opus 5 / Fable 5.1 adaptive thinking
+ * is on by default and its tokens count against max_tokens, so 1024 could be
+ * spent before any text arrived (R5-4). 4096 leaves room for thinking at
+ * effort 'medium'; a max_tokens stop is still surfaced as `truncated`.
+ */
+const MAX_TOKENS = 4096;
 
 export interface AskCoachInput {
   client: Anthropic;
@@ -310,8 +343,13 @@ export interface AskCoachInput {
 }
 
 export interface AskCoachResult {
+  /** The reply, or REFUSAL_TEXT / TRUNCATED_TEXT when `refused` / `truncated`. */
   text: string;
   refused: boolean;
+  /** stop_reason 'max_tokens', or no text at all (thinking used the budget) — show TRUNCATED_TEXT, do not post-process (R5-4). */
+  truncated?: boolean;
+  /** Whatever text did arrive before the cut-off (may be empty). */
+  partialText?: string;
   stopReason: string | null;
   /** Model that actually produced the reply (differs from `model` when a server-side fallback ran). */
   servedBy?: string;
@@ -322,8 +360,13 @@ export interface AskCoachResult {
 /**
  * Stream one coach turn.
  *
- * - `system` carries a cache_control breakpoint: it is identical every turn,
- *   so after the first call it is served from cache.
+ * - `system` carries a cache_control breakpoint. It is identical every turn,
+ *   but caching only kicks in above a model-specific minimum prefix — 512
+ *   tokens on Opus 5 / Fable 5.1, 1024 on Sonnet 5 (shorter prefixes are
+ *   silently not cached). With the DERIVED legend the default prompt is
+ *   ~2.9k chars ≈ 700 tokens: expect cache hits on Opus 5 / Fable 5.1 and
+ *   none on Sonnet 5 unless the profile/notes push it past 1024. Verify with
+ *   `usage.cache_read_input_tokens` rather than assuming (R5-13).
  * - `fallbacks: 'default'` + the 2026-07-01 beta: if the requested model's
  *   safety classifiers decline, the API re-runs on a fallback model inside
  *   the same request instead of surfacing a bare refusal.
@@ -362,7 +405,10 @@ export async function askCoach(input: AskCoachInput): Promise<AskCoachResult> {
     if (stopReason === 'refusal') {
       return { text: REFUSAL_TEXT, refused: true, stopReason, servedBy: final.model, fallbackRan };
     }
-    return { text, refused: false, stopReason, servedBy: final.model, fallbackRan };
+    if (stopReason === 'max_tokens' || !text) {
+      return { text: TRUNCATED_TEXT, refused: false, truncated: true, partialText: text, stopReason, servedBy: final.model, fallbackRan };
+    }
+    return { text, refused: false, truncated: false, stopReason, servedBy: final.model, fallbackRan };
   } catch (err) {
     throw toCoachError(err);
   }
@@ -375,12 +421,16 @@ export async function askCoach(input: AskCoachInput): Promise<AskCoachResult> {
 /**
  * Enforce the output contract on whatever came back: doctor cue for medical
  * asks, a single trailing **bold** action, and the ≤120-word check (reported,
- * not truncated — the UI decides how to flag `over`).
+ * not truncated — the UI decides how to flag `over`). TRUNCATED_TEXT is a
+ * status line, not advice: it is returned as-is with `truncated: true` so the
+ * caller can render it as an error bubble instead of bolding a fragment (R5-4).
  */
-export function postProcessReply(text: string, question: string): { text: string; words: number; over: boolean } {
+export function postProcessReply(text: string, question: string): { text: string; words: number; over: boolean; truncated: boolean } {
+  const raw = (text ?? '').trim();
+  if (raw === TRUNCATED_TEXT) return { text: TRUNCATED_TEXT, words: wordCount(TRUNCATED_TEXT), over: false, truncated: true };
   const medical = isMedicalAsk(question);
-  const withCue = ensureDoctorCue((text ?? '').trim(), medical);
+  const withCue = ensureDoctorCue(raw, medical);
   const withBold = ensureBoldAction(withCue);
   const { words, over } = checkLength(withBold);
-  return { text: withBold, words, over };
+  return { text: withBold, words, over, truncated: false };
 }

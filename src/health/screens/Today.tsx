@@ -1,6 +1,6 @@
 /**
  * Today / Dashboard — SPEC §1, top → bottom exactly:
- *  1. header (date · day-type chip · storage warning)
+ *  1. header (date · day-type chip · banners: escalation / storage / retest)
  *  2. Readiness hero ring          3. training verdict chip
  *  4. morning weigh-in prompt      5. metric tiles (2-col)
  *  6. macro remaining bars         7. insight cards (max 3)
@@ -9,11 +9,12 @@
  *
  * Every number is read from `useTodayModel()` (store → engine context); this
  * file only wires navigation: tiles/cards → Coach pre-fills, prompts → Log
- * deep-links, quick actions → store actions.
+ * deep-links, banners → Settings sections, quick actions → store actions.
  */
 import { InsightCard, SectionHeader, toast } from '../ui';
 import { isWeight } from '../engine';
 import { useNav } from '../nav';
+import { BACKUP_SNOOZE_DAYS, type TodayBanner } from './today/banners';
 import MacroSection from './today/MacroSection';
 import MetricTiles from './today/MetricTiles';
 import { NudgeStrip, WeighInPrompt } from './today/Nudges';
@@ -29,7 +30,7 @@ const WEIGH_PROMPT_UNTIL_HOUR = 12;
 export default function Today() {
   const m = useTodayModel();
   const { ctx, settings, actions, today } = m;
-  const { openCoach, openLog, setTab } = useNav();
+  const { openCoach, openLog, openSettings } = useNav();
   const profile = settings.profile;
 
   const showWeighIn = !isWeight(m.todayRecord?.w) && m.now.getHours() < WEIGH_PROMPT_UNTIL_HOUR && settings.lastWeighPromptDate !== today;
@@ -46,17 +47,38 @@ export default function Today() {
     toast('Marked today smoke-free');
   };
 
+  /** Escalations are acknowledged per marker+value; the backup nag snoozes for a week. */
+  const dismissBanner = (b: TodayBanner) => {
+    const d = b.dismiss;
+    if (!d) return;
+    if (d.type === 'escalation') {
+      actions.setSettings((s) => ({ ...s, acknowledgedEscalations: Array.from(new Set([...(s.acknowledgedEscalations ?? []), d.key])) }));
+    } else {
+      actions.setSettings({ backupReminderSnoozedUntil: d.until });
+      toast(`Backup reminder snoozed for ${BACKUP_SNOOZE_DAYS} days`);
+    }
+  };
+
   return (
     <div className="flex flex-col">
-      <TodayHeader today={today} dayType={ctx.dayType} session={ctx.sessionType} storage={m.storage} onOpenSettings={() => setTab('settings')} />
+      <TodayHeader today={today} dayType={ctx.dayType} session={ctx.sessionType} banners={m.banners} onOpenSettings={openSettings} onDismissBanner={dismissBanner} />
 
       <ReadinessHero readiness={ctx.readiness} onAskCoach={openCoach} />
 
       {showWeighIn && <WeighInPrompt onLog={() => openLog('weight')} onDismiss={() => actions.setSettings({ lastWeighPromptDate: today })} />}
 
-      <MetricTiles ctx={ctx} prompts={m.prompts} empty={m.empty} hrv7={m.hrv7} smoothedTdee={m.smoothedTdee} bodyWeightLb={bodyWeightLb} onOpenCoach={(p) => openCoach(p)} />
+      <MetricTiles
+        ctx={ctx}
+        prompts={m.prompts}
+        empty={m.empty}
+        hrv7={m.hrv7}
+        smoothedTdee={m.smoothedTdee}
+        bodyWeightLb={bodyWeightLb}
+        baseline={m.nutritionBaseline}
+        onOpenCoach={(p) => openCoach(p)}
+      />
 
-      <MacroSection ctx={ctx} emptyText={m.empty.protein} onLogMeal={() => openLog('meal')} />
+      <MacroSection ctx={ctx} bodyWeightLb={bodyWeightLb} emptyText={m.empty.protein} onLogMeal={() => openLog('meal')} />
 
       {m.insights.length > 0 && (
         <section className="px-4 pb-5 flex flex-col gap-3" aria-label="Insights">

@@ -11,9 +11,10 @@
  * refresh once a minute and not on every store write in between.
  */
 import { useMemo } from 'react';
-import type { AppSettings, CoachContext, DailyRecord, Insight, ISODate } from '../../data/types';
+import type { AppSettings, BaselineDelta, CoachContext, DailyRecord, Insight, ISODate } from '../../data/types';
 import { useHealth, useNow, useRecords } from '../../data/store';
 import {
+  baselineDelta,
   bedtimeCountdown,
   buildCoachContext,
   buildInsights,
@@ -33,9 +34,27 @@ import {
   type TobaccoStats,
 } from '../../engine';
 import { parseISODate, toISODate } from '../../lib/dates';
+import { selectTodayBanners, type TodayBanner } from './banners';
 
 /** Sparkline window for the HRV tile (§1 "7-day sparkline"). */
 export const HRV_SPARK_DAYS = 7;
+/** §0 baseline window for the intake tiles ("30-day avg 176 g/day"). */
+export const NUTRITION_BASELINE_DAYS = 30;
+/**
+ * From this hour the day's intake is essentially complete, so a ▲/▼ delta vs
+ * the 30-day mean is fair; earlier it would read as "▼ 120 g" at breakfast
+ * (review R1-4), so the tiles show the average as a caption instead.
+ */
+export const DAY_COMPLETE_HOUR = 21;
+
+export interface NutritionBaseline {
+  /** Protein eaten today vs the previous 30 days' daily mean (g). */
+  protein: BaselineDelta;
+  /** Calories eaten today vs the previous 30 days' daily mean (kcal). */
+  kcal: BaselineDelta;
+  /** True from DAY_COMPLETE_HOUR — the intraday delta is meaningful. */
+  dayComplete: boolean;
+}
 /** Weight trend card window (§1 #6 — "last 30 days"). */
 export const WEIGHT_CARD_DAYS = 30;
 /** Weigh-ins needed in the window before the trend card draws (task: "< 2 weigh-ins" → empty state). */
@@ -71,9 +90,16 @@ export interface TodayModel {
   smoothedTdee: number | null;
   countdown: BedtimeCountdown | null;
   late: LateEatingCheck;
+  /** §0 "vs your 30-day average" for the Protein / Calories tiles (R1-4). */
+  nutritionBaseline: NutritionBaseline;
 }
 
-export function useTodayModel(): TodayModel & { actions: ReturnType<typeof useHealth>['actions']; storage: ReturnType<typeof useHealth>['state']['storage'] } {
+export function useTodayModel(): TodayModel & {
+  actions: ReturnType<typeof useHealth>['actions'];
+  storage: ReturnType<typeof useHealth>['state']['storage'];
+  /** Header banners (escalation → storage/backup → retest, max 2) — screens/today/banners.ts. */
+  banners: TodayBanner[];
+} {
   const { state, actions } = useHealth();
   const records = useRecords();
   const wall = useNow();
@@ -124,8 +150,31 @@ export function useTodayModel(): TodayModel & { actions: ReturnType<typeof useHe
       smoothedTdee: exp.smoothedTdee,
       countdown: bedtimeCountdown(now, profile.bedTarget, profile.wakeTarget),
       late: lateEatingCheck(todayRecord?.meals, profile.bedTarget, ctx.nowHHMM),
+      nutritionBaseline: {
+        protein: baselineDelta(records, 'p', today, NUTRITION_BASELINE_DAYS),
+        kcal: baselineDelta(records, 'kc', today, NUTRITION_BASELINE_DAYS),
+        dayComplete: now.getHours() >= DAY_COMPLETE_HOUR,
+      },
     };
   }, [records, settings, today, now]);
 
-  return { ...model, actions, storage: state.storage };
+  // Banners depend on the storage status, which changes on every save — kept
+  // out of the per-minute model memo so a write never rebuilds the engine context.
+  const storage = state.storage;
+  const banners = useMemo(
+    () =>
+      selectTodayBanners({
+        bloodwork: settings.profile.bloodwork,
+        today,
+        acknowledgedEscalations: settings.acknowledgedEscalations,
+        storage,
+        lastExportAt: settings.lastExportAt,
+        backupReminderSnoozedUntil: settings.backupReminderSnoozedUntil,
+        recordCount: records.length,
+        nowMs: now.getTime(),
+      }),
+    [settings.profile.bloodwork, settings.acknowledgedEscalations, settings.lastExportAt, settings.backupReminderSnoozedUntil, storage, records.length, today, now],
+  );
+
+  return { ...model, actions, storage, banners };
 }

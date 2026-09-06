@@ -1,25 +1,30 @@
 /**
- * Secondary metric tiles — SPEC §1 #3, in the mandated order:
+ * Secondary metric tiles — SPEC §1 #3, in the spec's order:
  * Sleep · HRV · RHR · Steps · Protein remaining (lg, full width) · Calories.
  *
  * Every tile shows "vs your 30-day average" (RHR: 28-day, §1) with a ▲/▼
  * coloured by the metric's good direction — the engine's BaselineDelta
- * already carries `good`, so the tile never decides direction itself.
+ * already carries `good`, so the tile never decides direction itself. The
+ * intake tiles (Protein / Calories) are the exception during the day: a
+ * remaining-vs-average arrow at breakfast would read as a deficit, so they
+ * caption the 30-day mean ("30-day avg 176 g/day") and only switch to the
+ * ▲/▼ delta once the day is essentially complete (R1-4, DAY_COMPLETE_HOUR).
  * Tapping a tile opens the Coach pre-filled with a contextual prompt from
  * `suggestedPrompts(ctx)` (WHOOP pattern: chips carry most coach traffic).
  */
 import type { ReactNode } from 'react';
-import type { Band, CoachContext, HrvBand } from '../../data/types';
-import { COACH_CHIPS, PROTEIN_PER_MEAL_GKG, type EmptyStates, type SuggestedPrompts } from '../../engine';
+import type { Band, BaselineDelta, CoachContext, HrvBand } from '../../data/types';
+import { BASELINE_READINGS, COACH_CHIPS, PROTEIN_PER_MEAL_GKG, type EmptyStates, type SuggestedPrompts } from '../../engine';
 import { fmt, fmtMinutes, lbToKg, round } from '../../lib/format';
-import { ProgressRing, Sparkline, Tile, bandBg } from '../../ui';
+import { ProgressRing, Sparkline, Tile, bandBg, type TileDelta } from '../../ui';
+import type { NutritionBaseline } from './useTodayModel';
 
 const HRV_LABEL: Record<HrvBand, { text: string; band: Band }> = {
   balanced: { text: 'Balanced', band: 'green' },
   unbalanced: { text: 'Unbalanced', band: 'yellow' },
   low: { text: 'Low', band: 'red' },
   poor: { text: 'Poor', band: 'red' },
-  insufficient: { text: 'Baseline forming', band: 'neutral' },
+  insufficient: { text: 'Calibrating', band: 'neutral' },
 };
 
 /** Hours short of need that still reads as on-track / caution (§6.4 hours-vs-need). */
@@ -50,6 +55,31 @@ export function tilePrompt(tile: 'sleep' | 'hrv' | 'rhr' | 'steps' | 'protein' |
     case 'calories':
       return prompts.nutrition.find((p) => p === COACH_CHIPS[3]) ?? prompts.nutrition[0] ?? COACH_CHIPS[3];
   }
+}
+
+/**
+ * HRV tile label (R1-9): a neutral "Calibrating" until the engine's one
+ * baseline gate (≥ 21 readings in 30 days) passes — a coloured Balanced /
+ * Unbalanced / Low label from a provisional range would contradict the hero.
+ */
+export function hrvTileLabel(hrv: CoachContext['hrv']): { text: string; band: Band } {
+  const days = hrv.daysOfData ?? hrv.delta.n ?? 0;
+  const established = hrv.baselineEstablished ?? days >= BASELINE_READINGS;
+  if (!established || hrv.band === 'insufficient') {
+    return { text: `Calibrating · ${fmt(Math.min(days, BASELINE_READINGS))}/${BASELINE_READINGS} days`, band: 'neutral' };
+  }
+  return HRV_LABEL[hrv.band] ?? HRV_LABEL.insufficient;
+}
+
+/** "30-day avg 176 g/day" — null when there is no history to average. */
+export function baselineCaption(bd: BaselineDelta, unit: string): string | null {
+  return isNum(bd.baseline) && bd.n > 0 ? `30-day avg ${fmt(bd.baseline)} ${unit}/day` : null;
+}
+
+/** ▲/▼ vs the 30-day mean, only once the day is essentially complete (R1-4). */
+function intakeDelta(bd: BaselineDelta, dayComplete: boolean, unit: string): TileDelta | undefined {
+  if (!dayComplete || !isNum(bd.delta)) return undefined;
+  return { value: bd.delta, good: bd.good, unit };
 }
 
 function sleepBand(deltaMin: number | null): Band | undefined {
@@ -87,10 +117,12 @@ export interface MetricTilesProps {
   smoothedTdee: number | null;
   /** Reference body weight (lb) for the per-meal protein ceiling. */
   bodyWeightLb: number;
+  /** 30-day intake baselines for the Protein / Calories tiles. */
+  baseline: NutritionBaseline;
   onOpenCoach: (prompt: string) => void;
 }
 
-export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, bodyWeightLb, onOpenCoach }: MetricTilesProps) {
+export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, bodyWeightLb, baseline, onOpenCoach }: MetricTilesProps) {
   const open = (tile: Parameters<typeof tilePrompt>[0]) => () => onOpenCoach(tilePrompt(tile, ctx, prompts));
 
   // --- Sleep ---------------------------------------------------------------
@@ -98,7 +130,7 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
   const sleepSub: ReactNode = isNum(sleepHours) ? <SleepSub hours={sleepHours} need={ctx.sleep.need} debtMin={ctx.sleep.debtMin} /> : null;
 
   // --- HRV -----------------------------------------------------------------
-  const hrvMeta = HRV_LABEL[ctx.hrv.band] ?? HRV_LABEL.insufficient;
+  const hrvMeta = hrvTileLabel(ctx.hrv);
   const swc: [number, number] | null = isNum(ctx.hrv.swcLower) && isNum(ctx.hrv.swcUpper) ? [ctx.hrv.swcLower, ctx.hrv.swcUpper] : null;
   const hasHrvSpark = hrv7.some((v) => v !== null);
 
@@ -127,14 +159,18 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
     proteinBand = 'red';
     pacing = 'No meal slots left before bed';
   } else if (isNum(n.proteinPerMealNeeded)) {
-    proteinBand = n.proteinPerMealNeeded > maxPerMeal || lowSlot ? 'yellow' : undefined;
-    const perMeal = `~${fmt(n.proteinPerMealNeeded)} g × ${mealsLeftText}`;
+    const aboveMax = n.proteinPerMealNeeded > maxPerMeal;
+    proteinBand = aboveMax || lowSlot ? 'yellow' : undefined;
+    // Colour is never the only carrier (R6-12): say the ceiling breach in words.
+    const perMeal = `~${fmt(n.proteinPerMealNeeded)} g × ${mealsLeftText}${aboveMax ? ` — above your ${fmt(maxPerMeal)} g/meal max — spread across an extra meal` : ''}`;
     pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor · ${perMeal}` : perMeal;
   } else {
     proteinBand = lowSlot ? 'yellow' : undefined;
     pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor · ${mealsLeftText}` : mealsLeftText;
   }
   const proteinPct = proteinTarget > 0 ? Math.round((soFar / proteinTarget) * 100) : 0;
+  const proteinDelta = intakeDelta(baseline.protein, baseline.dayComplete, 'g');
+  const proteinAvg = proteinDelta ? null : baselineCaption(baseline.protein, 'g');
 
   // --- Calories ------------------------------------------------------------
   const kcalLeft = n.remaining.kc;
@@ -145,6 +181,8 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
   else if (tdee !== null) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(tdee)}`;
   else if (isNum(smoothedTdee)) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(smoothedTdee)} (last calibrated)`;
   else kcalSub = `of ${fmt(n.targets.kc)} kcal`;
+  const kcalDelta = intakeDelta(baseline.kcal, baseline.dayComplete, 'kcal');
+  const kcalAvg = kcalDelta ? null : baselineCaption(baseline.kcal, 'kcal');
 
   return (
     <section className="px-4 pb-5" aria-label="Today's metrics">
@@ -197,6 +235,7 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
           value={proteinLeft}
           unit="g"
           band={proteinBand}
+          delta={proteinDelta}
           sub={
             <span className="flex flex-col gap-0.5">
               <span>{pacing}</span>
@@ -204,6 +243,7 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
                 {fmt(soFar)} g of {fmt(proteinTarget)} g eaten
                 {n.mealsLogged > 0 ? ` · ${n.mealsLogged} ${n.mealsLogged === 1 ? 'meal' : 'meals'} logged` : ' · nothing logged yet'}
               </span>
+              {proteinAvg && <span className="text-hx-muted font-normal">{proteinAvg}</span>}
             </span>
           }
           chart={
@@ -214,12 +254,18 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
           onClick={open('protein')}
         />
         <Tile
-          label="Calories remaining"
+          label={kcalOver ? 'Calories over' : 'Calories remaining'}
           className="col-span-2"
           value={Math.abs(kcalLeft)}
-          unit="kcal"
+          unit={kcalOver ? 'kcal over' : 'kcal'}
           band={kcalOver ? 'red' : undefined}
-          sub={kcalSub}
+          delta={kcalDelta}
+          sub={
+            <span className="flex flex-col gap-0.5">
+              <span>{kcalSub}</span>
+              {kcalAvg && <span className="text-hx-muted font-normal">{kcalAvg}</span>}
+            </span>
+          }
           onClick={open('calories')}
         />
       </div>

@@ -1,16 +1,16 @@
 /**
  * Today header — SPEC §1 hierarchy #1: the date, a day-type chip from the
- * training split ("Lift · Upper" / "Rest"), and a storage warning when the
- * durability layer (§10) has something to say: quota above the 70 % warn
- * ratio, a failed write, or integrity problems found on load. The warning
- * links to Settings, where the integrity panel and export live.
+ * training split ("Lift · Upper" / "Rest"), and the header banners chosen by
+ * screens/today/banners.ts (physician escalation → storage/backup → retest,
+ * at most two). Banner actions deep-link into a Settings section; dismissals
+ * are persisted by the screen (per marker+value, or a 7-day backup snooze).
  */
 import { Dumbbell, Moon } from 'lucide-react';
-import type { SessionType, StorageStatus } from '../../data/types';
-import { QUOTA_BYTES } from '../../data/storage';
+import type { SessionType } from '../../data/types';
+import type { SettingsSection } from '../../nav';
 import { formatDateLong } from '../../lib/dates';
-import { fmt } from '../../lib/format';
 import { Banner } from '../../ui';
+import type { TodayBanner } from './banners';
 
 const SESSION_LABEL: Record<SessionType, string> = {
   upper: 'Upper',
@@ -32,25 +32,13 @@ export interface TodayHeaderProps {
   today: string;
   dayType: 'lift' | 'rest';
   session: SessionType;
-  storage: StorageStatus;
-  onOpenSettings: () => void;
+  banners: TodayBanner[];
+  onOpenSettings: (section: SettingsSection) => void;
+  onDismissBanner: (banner: TodayBanner) => void;
 }
 
-export default function TodayHeader({ today, dayType, session, storage, onOpenSettings }: TodayHeaderProps) {
-  const integrityProblems = storage.integrity?.problems.length ?? 0;
-  const warn = storage.quotaWarning || Boolean(storage.lastError) || integrityProblems > 0;
+export default function TodayHeader({ today, dayType, session, banners, onOpenSettings, onDismissBanner }: TodayHeaderProps) {
   const lift = dayType === 'lift';
-
-  let message = '';
-  let kind: 'warn' | 'error' = 'warn';
-  if (storage.lastError) {
-    kind = 'error';
-    message = storage.lastError;
-  } else if (storage.quotaWarning) {
-    message = `Storage is ${fmt((storage.bytesUsed / QUOTA_BYTES) * 100)}% full — export a backup before it fills.`;
-  } else if (integrityProblems > 0) {
-    message = `${integrityProblems} data integrity ${integrityProblems === 1 ? 'problem' : 'problems'} found on load — review in Settings.`;
-  }
 
   return (
     <>
@@ -65,11 +53,19 @@ export default function TodayHeader({ today, dayType, session, storage, onOpenSe
           {dayTypeLabel(dayType, session)}
         </span>
       </header>
-      {warn && (
-        <div className="px-4 pb-2">
-          <Banner kind={kind} action={{ label: 'Open Settings', onClick: onOpenSettings }}>
-            {message}
-          </Banner>
+      {banners.length > 0 && (
+        <div className="px-4 pb-2 flex flex-col gap-2" aria-label="Notices">
+          {banners.map((b) => (
+            <Banner
+              key={b.id}
+              kind={b.tone}
+              action={{ label: b.action.label, onClick: () => onOpenSettings(b.action.target) }}
+              onDismiss={b.dismiss ? () => onDismissBanner(b) : undefined}
+            >
+              {b.kind === 'escalation' && <span className="font-semibold">Physician follow-up · </span>}
+              {b.message}
+            </Banner>
+          ))}
         </div>
       )}
     </>

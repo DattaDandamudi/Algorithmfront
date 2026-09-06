@@ -106,6 +106,7 @@ export const FOOD_DB: FoodItem[] = [
   item('shish-tawook', 'Shish tawook', [170, 24, 7, 2, 0.3], 200, { unit: ['skewer', 100], aliases: ['shish taouk', 'tawook', 'chicken shish', 'taouk'], cuisine: ME, tags: ['poultry', 'restaurant'] }),
   item('kebab-plate', 'Mixed kebab plate', [220, 16, 12, 14, 1.5], 450, { unit: ['plate', 450], aliases: ['kebab plate', 'mixed grill', 'kebab platter', 'mixed grill plate', 'grill plate'], cuisine: ME, tags: ['red-meat', 'poultry', 'restaurant'] }),
   item('grilled-chicken-thigh', 'Grilled chicken thigh', [210, 24, 12, 0, 0], 150, { unit: ['piece', 75], aliases: ['grilled chicken', 'chicken thigh', 'farrouj', 'charcoal chicken'], cuisine: ME, tags: ['poultry', 'restaurant'] }),
+  item('roast-chicken', 'Roast chicken', [190, 25, 10, 0, 0], 300, { aliases: ['roasted chicken', 'rotisserie chicken', 'whole roast chicken', 'bbq chicken', 'chicken quarter', 'roast chicken quarter'], cuisine: ME, tags: ['poultry', 'restaurant'] }),
   item('mandi', 'Chicken mandi', [190, 11, 7, 22, 1], 400, { unit: ['plate', 400], aliases: ['mandi', 'lamb mandi', 'mandi rice', 'mandi plate'], cuisine: ME, tags: ['poultry', 'grain', 'restaurant'] }),
   item('kabsa', 'Kabsa', [190, 10, 7, 23, 1], 400, { unit: ['plate', 400], aliases: ['kabsah', 'chicken kabsa', 'machboos', 'majboos'], cuisine: ME, tags: ['poultry', 'grain', 'restaurant'] }),
   item('pita', 'Pita', [275, 9, 1.2, 55, 2], 60, { unit: ['pita', 60], aliases: ['pita bread', 'khubz', 'arabic bread', 'kuboos'], cuisine: ME, tags: ['grain'] }),
@@ -120,7 +121,7 @@ export const FOOD_DB: FoodItem[] = [
   item('greek-yogurt', 'Greek yogurt', [60, 10, 0.4, 4, 0], 170, { unit: ['cup', 170], aliases: ['greek yoghurt', 'skyr', 'yogurt', 'yoghurt', 'curd'], cuisine: W, tags: ['dairy', 'home'] }),
   item('chicken-breast', 'Chicken breast', [165, 31, 3.6, 0, 0], 200, { unit: ['piece', 150], aliases: ['grilled chicken breast', 'chicken breast cooked', 'breast', 'boiled chicken'], cuisine: W, tags: ['poultry', 'home'] }),
   item('salmon', 'Salmon', [208, 20, 13, 0, 0], 150, { unit: ['fillet', 150], aliases: ['salmon fillet', 'grilled salmon', 'baked salmon'], cuisine: W, tags: ['fish', 'home'] }),
-  item('tuna', 'Tuna (canned)', [116, 26, 1, 0, 0], 120, { unit: ['can', 120], aliases: ['tuna', 'canned tuna', 'tuna can', 'tuna in water'], cuisine: W, tags: ['fish', 'home'] }),
+  item('tuna', 'Tuna (canned)', [116, 26, 1, 0, 0], 120, { unit: ['can', 120], aliases: ['tuna', 'canned tuna', 'tuna can', 'tinned tuna'], cuisine: W, tags: ['fish', 'home'] }),
   item('beef-mince', 'Beef mince (cooked)', [250, 26, 17, 0, 0], 150, { aliases: ['ground beef', 'minced beef', 'mince', 'beef mince', 'lean mince'], cuisine: W, tags: ['red-meat', 'home'] }),
   item('paneer', 'Paneer', [290, 18, 22, 4, 0], 100, { unit: ['cube', 15], aliases: ['paneer cubes', 'raw paneer'], cuisine: IN, tags: ['dairy', 'home'] }),
   item('protein-bar', 'Protein bar', [380, 32, 12, 38, 6], 60, { unit: ['bar', 60], aliases: ['quest bar', 'protein bars'], cuisine: W, tags: ['sweet', 'dairy'] }),
@@ -142,6 +143,9 @@ export const FOOD_DB: FoodItem[] = [
   item('black-coffee', 'Black coffee', [0, 0, 0, 0, 0], 250, { unit: ['cup', 250], aliases: ['coffee', 'americano', 'espresso', 'filter coffee', 'long black'], cuisine: W, tags: ['caffeine', 'home'] }),
   item('latte', 'Latte', [55, 3, 2.8, 4.5, 0], 300, { unit: ['cup', 300], aliases: ['cafe latte', 'flat white', 'cappuccino', 'milk coffee', 'coffee with milk'], cuisine: W, tags: ['caffeine', 'dairy'] }),
   item('cola', 'Cola', [42, 0, 0, 10.6, 0], 330, { unit: ['can', 330], aliases: ['coke', 'pepsi', 'soda', 'soft drink', 'coca cola'], cuisine: W, tags: ['sweet', 'caffeine'] }),
+  // Water is a real entry (R5-2): 0 kcal, a glass as the natural unit; litres/ml go through the mass units.
+  item('water', 'Water', [0, 0, 0, 0, 0], 250, { unit: ['glass', 250], aliases: ['plain water', 'tap water', 'still water', 'bottled water', 'h2o'], cuisine: W, tags: ['home'] }),
+  item('sparkling-water', 'Sparkling water', [0, 0, 0, 0, 0], 330, { unit: ['can', 330], aliases: ['soda water', 'fizzy water', 'seltzer', 'mineral water', 'carbonated water', 'club soda', 'perrier'], cuisine: W, tags: ['home'] }),
   item('diet-cola', 'Diet cola', [0, 0, 0, 0, 0], 330, { unit: ['can', 330], aliases: ['diet coke', 'coke zero', 'zero sugar cola', 'pepsi max', 'diet soda'], cuisine: W, tags: ['caffeine'] }),
 ];
 
@@ -213,11 +217,17 @@ function fuzzyToken(q: string, k: string): boolean {
   return minLen >= 8 && editDistance(q, k, 2) <= 2;
 }
 
+/** Ceiling for a query ⊆ key match that lacks the key's head token, and for ambiguous subset matches (below STRONG). */
+const WEAK_SUBSET = 0.75;
+
 /**
  * Score a query token list against one indexed key (name or alias):
- * 1.0 same token set; ~0.9 query ⊆ key ("biryani" → "chicken biryani");
- * ~0.8 key ⊆ query ("chicken tikka masala" → "chicken tikka");
- * otherwise a 0.35–0.8 overlap score where prefix/typo hits count 0.8 of an exact hit.
+ * 1.0 same token set; ~0.9 query ⊆ key ("chicken" → "chicken breast") — but
+ * only when the query carries the key's head (first) token, otherwise capped
+ * at 0.75 so a trailing word like "water" cannot pull in "tuna in water" at
+ * High confidence (R5-2); ~0.8 key ⊆ query ("chicken tikka masala" → "chicken
+ * tikka"); otherwise a 0.35–0.8 overlap score where prefix/typo hits count
+ * 0.8 of an exact hit.
  */
 export function scoreTokens(q: string[], k: string[]): number {
   if (!q.length || !k.length) return 0;
@@ -232,7 +242,10 @@ export function scoreTokens(q: string[], k: string[]): number {
   }
   const hits = exact + 0.8 * fuzzy;
   if (hits === 0) return 0;
-  if (exact >= qs.size) return 0.85 + 0.1 * (qs.size / ks.size);
+  if (exact >= qs.size) {
+    const s = 0.85 + 0.1 * (qs.size / ks.size);
+    return qs.has(k[0]) ? s : Math.min(s, WEAK_SUBSET);
+  }
   if (exact >= ks.size) return 0.7 + 0.15 * (ks.size / qs.size);
   return 0.35 + 0.45 * (hits / Math.max(qs.size, ks.size));
 }
@@ -243,28 +256,64 @@ function keysOf(it: FoodItem): string[][] {
   return [it.name, ...(it.aliases ?? [])].map(tokens).filter((k) => k.length > 0);
 }
 
+interface Candidate {
+  item: FoodItem;
+  /** Unboosted best key score. */
+  score: number;
+  boost: number;
+  /** The best key strictly contains the query ("chicken" ⊂ "chicken tikka"). */
+  subset: boolean;
+  order: number;
+}
+
+/** Plain basics ('home') rank ahead of restaurant dishes when scores tie — "chicken" → chicken breast, not tikka. */
+const plainness = (it: FoodItem) => (it.tags?.includes('home') ? 0 : 1);
+
 /**
  * Rank foods for a free-text query. `extra` (favorites/recents) is searched
  * first and wins ties, so the user's own staples beat generic DB entries.
  * Results are de-duplicated by normalised name and sorted by score desc.
+ *
+ * Ambiguity rule (R5-14): when the top score is a strict-subset match shared
+ * by ≥2 different items ("chicken" fits tikka, curry, biryani, breast, …),
+ * every subset match is scaled so the best sits at 0.75 (< STRONG) and the
+ * plainest item wins the tie — the parser then reports ≤0.45 confidence with
+ * a "low confidence" note instead of picking a restaurant dish at Med.
  */
 export function findFood(query: string, extra: FoodItem[] = []): FoodMatch[] {
   const q = tokens(query);
   if (!q.length) return [];
-  const seen = new Map<string, FoodMatch>();
+  const seen = new Map<string, Candidate>();
   const consider = (it: FoodItem, boost: number) => {
     let best = 0;
-    for (const k of keysOf(it)) best = Math.max(best, scoreTokens(q, k));
+    let subset = false;
+    for (const k of keysOf(it)) {
+      const s = scoreTokens(q, k);
+      if (s > best) {
+        best = s;
+        subset = s < 1 && k.length > q.length && q.every((t) => k.includes(t));
+      }
+    }
     if (best < MIN_SCORE) return;
-    const score = Math.min(1, best + boost);
     const key = normalise(it.name);
     const prev = seen.get(key);
-    if (!prev || score > prev.score) seen.set(key, { item: it, score });
+    if (!prev || best + boost > prev.score + prev.boost) seen.set(key, { item: it, score: best, boost, subset, order: seen.size });
   };
   // Favorites/recents get a hair of a boost so they outrank a same-score DB twin.
   for (const it of extra) consider(it, 0.02);
   for (const it of FOOD_DB) consider(it, 0);
-  return [...seen.values()].sort((a, b) => b.score - a.score);
+
+  const rows = [...seen.values()];
+  const top = rows.reduce((m, r) => Math.max(m, r.score), 0);
+  const leaders = rows.filter((r) => r.score === top);
+  if (top < 1 && top > WEAK_SUBSET && leaders.length >= 2 && leaders.every((r) => r.subset)) {
+    const k = WEAK_SUBSET / top;
+    for (const r of rows) if (r.subset) r.score *= k;
+  }
+  return rows
+    .map((r) => ({ item: r.item, score: Math.min(1, r.score + r.boost), plain: plainness(r.item), order: r.order }))
+    .sort((a, b) => b.score - a.score || a.plain - b.plain || a.order - b.order)
+    .map(({ item, score }) => ({ item, score }));
 }
 
 /** Exact id lookup across the DB and any extra list. */

@@ -10,6 +10,7 @@ import {
   CoachError,
   MEDICAL_SUFFIX,
   REFUSAL_TEXT,
+  TRUNCATED_TEXT,
   askCoach,
   buildMessages,
   buildSystemPrompt,
@@ -311,7 +312,7 @@ describe('askCoach', () => {
     await askCoach({ client, model: 'claude-opus-5', system: 'SYS', messages });
     const p = calls[0] as Record<string, unknown>;
     expect(p.model).toBe('claude-opus-5');
-    expect(p.max_tokens).toBe(1024);
+    expect(p.max_tokens).toBe(4096);
     expect(p.system).toEqual([{ type: 'text', text: 'SYS', cache_control: { type: 'ephemeral' } }]);
     expect(p.messages).toBe(messages);
     expect(p.betas).toEqual(['server-side-fallback-2026-07-01']);
@@ -329,6 +330,7 @@ describe('askCoach', () => {
     expect(r).toEqual({
       text: 'Readiness 71%. **Progress your loads today.**',
       refused: false,
+      truncated: false,
       stopReason: 'end_turn',
       servedBy: 'claude-opus-5',
       fallbackRan: false,
@@ -377,5 +379,73 @@ describe('toCoachError', () => {
     expect(toCoachError(new Anthropic.APIUserAbortError())).toMatchObject({ kind: 'abort' });
     expect(toCoachError(new Error('boom'))).toMatchObject({ kind: 'unknown', message: 'boom' });
     expect(toCoachError('weird')).toBeInstanceOf(CoachError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 5 reproductions
+// ---------------------------------------------------------------------------
+
+describe('R5-4 askCoach — truncated or empty replies are flagged, not bolded', () => {
+  const messages = buildMessages([], 'Should I train today?', fullContext());
+
+  it('stop_reason max_tokens → truncated with the cut-off text kept aside', async () => {
+    const { client } = stubClient(baseFinal({ content: [{ type: 'text', text: 'Readiness 71%. Your HRV' }], stop_reason: 'max_tokens' }));
+    const r = await askCoach({ client, model: 'claude-opus-5', system: 'SYS', messages });
+    expect(r.truncated).toBe(true);
+    expect(r.refused).toBe(false);
+    expect(r.text).toBe(TRUNCATED_TEXT);
+    expect(r.partialText).toBe('Readiness 71%. Your HRV');
+    expect(r.stopReason).toBe('max_tokens');
+  });
+
+  it('an empty final text (thinking consumed the budget) is also truncated', async () => {
+    const { client } = stubClient(baseFinal({ content: [{ type: 'thinking' }], stop_reason: 'end_turn' }));
+    const r = await askCoach({ client, model: 'claude-opus-5', system: 'SYS', messages });
+    expect(r.truncated).toBe(true);
+    expect(r.text).toBe(TRUNCATED_TEXT);
+  });
+
+  it('postProcessReply passes TRUNCATED_TEXT through untouched — no bold fragment, no doctor cue', () => {
+    const r = postProcessReply(TRUNCATED_TEXT, 'is my ferritin ok?');
+    expect(r.text).toBe(TRUNCATED_TEXT);
+    expect(r.text).not.toContain('**');
+    expect(r.truncated).toBe(true);
+    expect(postProcessReply('Readiness 71%. Hold loads.', 'hi').truncated).toBe(false);
+  });
+
+  it('TRUNCATED_TEXT tells the user to ask again', () => {
+    expect(TRUNCATED_TEXT).toMatch(/cut off/i);
+    expect(TRUNCATED_TEXT).toMatch(/ask again/i);
+  });
+});
+
+describe('R5-10 buildMessages — guardrail bubbles are not replayed as model turns', () => {
+  it('skips emergency / refusal bubbles', () => {
+    const h = [
+      msg(0, 'user', 'q1'),
+      msg(1, 'assistant', 'This sounds like it needs urgent care', { source: 'guardrail' }),
+      msg(2, 'user', 'q2'),
+      msg(3, 'assistant', REFUSAL_TEXT, { source: 'guardrail' }),
+      msg(4, 'user', 'q3'),
+      msg(5, 'assistant', 'real answer', { source: 'claude' }),
+    ];
+    const out = buildMessages(h, 'next', fullContext());
+    expect(out.map((m) => m.content)).toEqual(['q1', 'q2', 'q3', 'real answer', expect.stringContaining('QUESTION: next')]);
+  });
+});
+
+describe('R5-13 system prompt — stable DERIVED legend pushes the prefix past the 512-token minimum', () => {
+  const prompt = buildSystemPrompt(DEFAULT_PROFILE, DEFAULT_TARGETS, DEFAULT_AI);
+
+  it('carries the legend and is long enough to cache on Opus 5 / Fable 5.1 (chars/4 ≈ tokens)', () => {
+    expect(prompt).toContain('DERIVED legend');
+    expect(prompt).toContain('swcLower');
+    expect(prompt.length).toBeGreaterThanOrEqual(2600);
+  });
+
+  it('stays identical across turns (no dates, no per-turn numbers)', () => {
+    expect(buildSystemPrompt(DEFAULT_PROFILE, DEFAULT_TARGETS, DEFAULT_AI)).toBe(prompt);
+    expect(buildTurnContext(fullContext())).not.toContain('DERIVED legend');
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CoachTone } from '../data/types';
 import { DEFAULT_PROFILE, DEFAULT_TARGETS } from '../data/defaults';
 import { CHIPS, emptyContext, fullContext } from './coachContext.fixture';
-import { MAX_WORDS, ensureBoldAction, wordCount } from './guardrails';
+import { EMERGENCY_MESSAGE, MAX_WORDS, ensureBoldAction, wordCount } from './guardrails';
 import { answerOffline, nextSession, routeQuestion, type OfflineRoute } from './offlineCoach';
 
 const EXPECTED_ROUTES: OfflineRoute[] = ['train', 'eat', 'recovery', 'weight', 'carbs', 'sleep', 'tobacco', 'labs'];
@@ -248,5 +248,85 @@ describe('nextSession', () => {
     expect(nextSession(DEFAULT_PROFILE.split, '2026-09-04')).toBe('upper'); // Fri → Mon
     expect(nextSession(DEFAULT_PROFILE.split, '2026-08-31')).toBe('lower'); // Mon → Tue
     expect(nextSession({ 0: 'rest', 1: 'rest', 2: 'rest', 3: 'rest', 4: 'rest', 5: 'rest', 6: 'rest' }, '2026-09-04')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 5 reproductions
+// ---------------------------------------------------------------------------
+
+describe('R5-6 answerOffline — symptom asks never get a progression action', () => {
+  const symptomAsks = [
+    'I feel dizzy after training',
+    'my knee hurts, should I squat today?',
+    'palpitations after coffee, should I still do cardio?',
+    'headache all day — eat more carbs?',
+    'I feel nauseous, is my weight trend ok?',
+    'is my iron low? I feel light-headed on the stairs',
+  ];
+  for (const [name, ctx] of Object.entries({ full: fullContext(), empty: emptyContext() })) {
+    for (const tone of TONES) {
+      it.each(symptomAsks)(`[${name}/${tone}] "%s" → hold or skip training + clinician cue`, (q) => {
+        const out = ask(q, ctx, tone);
+        expect(out).toMatch(/\*\*Hold or skip training today[^*]*clinician[^*]*\.\*\*$/);
+        expect(out).not.toMatch(/\*\*[^*]*progress/i);
+        expect(out).not.toMatch(/verdict: Progress/);
+        expect(out).toMatch(/doctor|clinician/);
+        expect(out.split('**').length - 1).toBe(2);
+        expect(wordCount(out)).toBeLessThanOrEqual(MAX_WORDS);
+      });
+    }
+  }
+
+  it('still cites the numbers behind the hold', () => {
+    const out = ask('I feel dizzy after training');
+    expect(out).toContain('HRV 54 ms');
+  });
+
+  it('a non-symptom training ask keeps the normal progression action', () => {
+    expect(ask(CHIPS[0])).toMatch(/\*\*Progress your lower loads today/);
+  });
+
+  it('backstop: an emergency phrase returns the emergency message, never coaching', () => {
+    expect(ask("I think I'm having a heart attack, should I still train?")).toBe(EMERGENCY_MESSAGE);
+  });
+});
+
+describe('R5-9 routeQuestion — supplement dosing goes to the lifestyle-only labs handler', () => {
+  it.each(['take 5 g creatine daily?', 'should I take creatine', 'how much melatonin for sleep', 'ZMA before bed?'])('"%s" → labs', (q) => {
+    expect(routeQuestion(q)).toBe('labs');
+    expect(ask(q)).toMatch(/doctor\.\*\*$/);
+  });
+});
+
+describe('R5-15 weight handler — rates the loss band only in a fat-loss phase', () => {
+  it('muscle-gain: no loss-target framing; a falling trend asks for more food', () => {
+    const out = answerOffline(CHIPS[3], fullContext(), { ...DEFAULT_PROFILE, goalPhase: 'muscle-gain' }, DEFAULT_TARGETS, 'conversational');
+    expect(out).toContain('Trend 171.9 lb, −1.10 lb/wk (−0.64%/wk)');
+    expect(out).toContain("you're in a muscle-gain phase");
+    expect(out).not.toContain('loss target');
+    expect(out).not.toContain('on target');
+    expect(out).toMatch(/\*\*Add 100–150 kcal of carbs on lift days/);
+  });
+
+  it('muscle-gain: a rising trend is held', () => {
+    const ctx = fullContext();
+    ctx.weight = { ...ctx.weight, weeklyRateLb: 0.4, weeklyRatePct: 0.23, inBand: 'below' };
+    const out = answerOffline(CHIPS[3], ctx, { ...DEFAULT_PROFILE, goalPhase: 'muscle-gain' }, DEFAULT_TARGETS, 'conversational');
+    expect(out).toContain('+0.40 lb/wk');
+    expect(out).not.toContain('slower than target');
+    expect(out).toMatch(/\*\*Hold 1950 kcal and weigh in daily — the trend is drifting up as planned/);
+  });
+
+  it('maintenance: flat-trend framing, no band rating', () => {
+    const out = answerOffline(CHIPS[3], fullContext(), { ...DEFAULT_PROFILE, goalPhase: 'maintenance' }, DEFAULT_TARGETS, 'direct');
+    expect(out).toContain("you're in maintenance");
+    expect(out).not.toContain('loss target');
+    expect(out).not.toContain('on target');
+    expect(out).toMatch(/\*\*Hold 1950 kcal and weigh in daily; if the trend keeps moving one way for two weeks, adjust by 100–200 kcal\.\*\*$/);
+  });
+
+  it('fat-loss keeps the band rating', () => {
+    expect(ask(CHIPS[3])).toContain('against your 0.86–1.72 lb/wk loss target — on target.');
   });
 });

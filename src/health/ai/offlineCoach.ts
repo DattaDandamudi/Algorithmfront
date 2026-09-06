@@ -13,13 +13,14 @@
 import type { CoachContext, CoachTone, ISODate, Profile, SessionType, Targets, TrainingSplit, Weekday } from '../data/types';
 import { weekdayOf } from '../lib/dates';
 import { fmtSigned, round } from '../lib/format';
-import { MAX_WORDS, wordCount } from './guardrails';
+import { EMERGENCY_MESSAGE, MAX_WORDS, detectEmergency, isSymptomAsk, wordCount } from './guardrails';
 
 export type OfflineRoute = 'train' | 'eat' | 'recovery' | 'weight' | 'carbs' | 'sleep' | 'tobacco' | 'labs' | 'generic';
 
 /** Order matters: earlier routes win ("carbs for a lift day" → carbs, not train). */
 const ROUTES: Array<[OfflineRoute, RegExp]> = [
-  ['labs', /vitamin|\bvit[-\s]?d\b|ferritin|omega|\biron\b|\bzinc\b|testosterone|\blead\s+(level|result|exposure)|\b(elevated|blood)\s+lead\b|\blabs?\b|blood\s*(work|test)|supplement|fish\s+oil|\bdos(e|ing|age)\b|retest/i],
+  // Supplement names ride with labs (R5-9): the handler is lifestyle-only and its action carries the doctor cue.
+  ['labs', /vitamin|\bvit[-\s]?d\b|ferritin|omega|\biron\b|\bzinc\b|testosterone|\blead\s+(level|result|exposure)|\b(elevated|blood)\s+lead\b|\blabs?\b|blood\s*(work|test)|supplement|fish\s+oil|\bdos(e|ing|age)\b|retest|creatine|melatonin|ashwagandha|\bzma\b|pre[-\s]?workout|caffeine\s+(pills?|tablets?)|beta[-\s]?alanine|multivitamin/i],
   ['tobacco', /tobacco|smok|cigarette|nicotine|\bvap(e|ing)\b|\bquit/i],
   ['carbs', /\bcarb|\brice\b|\broti\b|\bnaan\b|\bfuel|glycogen|\bbread\b/i],
   ['recovery', /recover|readiness|\bhrv\b|\brhr\b|resting\s+heart|heart\s+rate|\bstrain\b|whoop|overtrain|run[-\s]?down|burn(t|ed)?\s*out/i],
@@ -192,6 +193,7 @@ function recovery(ctx: CoachContext, profile: Profile): Parts {
 function weight(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
   const w = ctx.weight;
   const e = ctx.expenditure;
+  const phase = profile.goalPhase;
   const [lo, hi] = w.targetLbPerWk;
   const details: string[] = [];
   let lead: string;
@@ -200,8 +202,16 @@ function weight(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
   } else if (!has(w.weeklyRateLb)) {
     lead = `Trend weight is ${r1(w.trend)} lb${has(w.latest) ? ` (scale ${r1(w.latest)} lb)` : ''}, but I need 8+ days of weigh-ins for a weekly rate.`;
   } else {
-    const bandWord = w.inBand === 'in' ? 'on target' : w.inBand === 'below' ? 'slower than target' : w.inBand === 'above' ? 'faster than target' : 'not yet rated';
-    lead = `Trend ${r1(w.trend)} lb, ${fmtSigned(w.weeklyRateLb, 2)} lb/wk (${fmtSigned(w.weeklyRatePct, 2)}%/wk) against your ${lo}–${hi} lb/wk loss target — ${bandWord}.`;
+    // R5-15: the engine's band is a fat-loss band (§6.1, 0.5–1 %BW/wk); only rate it in that phase.
+    const rate = `${fmtSigned(w.weeklyRateLb, 2)} lb/wk (${fmtSigned(w.weeklyRatePct, 2)}%/wk)`;
+    if (phase === 'fat-loss') {
+      const bandWord = w.inBand === 'in' ? 'on target' : w.inBand === 'below' ? 'slower than target' : w.inBand === 'above' ? 'faster than target' : 'not yet rated';
+      lead = `Trend ${r1(w.trend)} lb, ${rate} against your ${lo}–${hi} lb/wk loss target — ${bandWord}.`;
+    } else if (phase === 'muscle-gain') {
+      lead = `Trend ${r1(w.trend)} lb, ${rate} — you're in a muscle-gain phase, so I'm not rating that against a loss band; the aim is a slow upward trend.`;
+    } else {
+      lead = `Trend ${r1(w.trend)} lb, ${rate} — you're in maintenance, so I'm not rating that against a loss band; the aim is a flat trend.`;
+    }
     if (has(w.latest)) details.push(`Today's scale ${r1(w.latest)} lb vs trend ${r1(w.trend)} lb — trust the trend, not the dot.`);
   }
   if (e.valid && has(e.tdee)) {
@@ -214,9 +224,21 @@ function weight(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
   if (w.weighInsThisWeek < 5) details.push(`Only ${plural(w.weighInsThisWeek, 'weigh-in')} this week — 5+ are needed for a valid update.`);
 
   let action: string;
-  const fatLoss = profile.goalPhase === 'fat-loss';
-  if (w.inBand === null || !fatLoss) {
+  if (w.inBand === null || !has(w.weeklyRateLb)) {
     action = `Weigh in every morning this week so your trend and expenditure can calibrate, and hold ${targets.kcal} kcal`;
+  } else if (phase === 'muscle-gain') {
+    // §6 step size (100–200 kcal) — a falling trend in a gain phase means intake is short.
+    if (w.weeklyRateLb < 0) {
+      action =
+        e.valid && has(e.suggestedKcal) && e.suggestedKcal > targets.kcal
+          ? `Add ~${r0(e.suggestedKcal - targets.kcal)} kcal (to ${r0(e.suggestedKcal)}), mostly carbs on lift days — a gain phase needs the trend drifting up, not down`
+          : `Add 100–150 kcal of carbs on lift days — a gain phase needs the trend drifting up, not down`;
+    } else {
+      action = `Hold ${targets.kcal} kcal and weigh in daily — the trend is drifting up as planned; reassess at the weekly check`;
+    }
+  } else if (phase === 'maintenance') {
+    // §6: adjust in 100–200 kcal steps and give adaptation 14+ days to show before reacting.
+    action = `Hold ${targets.kcal} kcal and weigh in daily; if the trend keeps moving one way for two weeks, adjust by 100–200 kcal`;
   } else if (w.inBand === 'in') {
     action = `Hold ${targets.kcal} kcal — the trend is in the band; ignore single-day scale swings`;
   } else if (w.inBand === 'below') {
@@ -410,7 +432,30 @@ const HANDLERS: Record<OfflineRoute, Handler> = {
   generic: (ctx, profile) => generic(ctx, profile),
 };
 
-/** Rule-based answer for the offline coach; always ≤120 words and ends with one **bold** action. */
+const SYMPTOM_LEAD =
+  "You've mentioned a symptom, and that's outside what I can coach on — confirm it with your doctor rather than training through it.";
+const SYMPTOM_ACTION = 'Hold or skip training today and check with a clinician before your next session';
+
+/**
+ * §8 GUARDRAILS (R5-6): a question that carries a symptom (pain, dizziness,
+ * palpitations, …) keeps its cited numbers but never gets a progression
+ * action — whatever the route, the action becomes "hold or skip training and
+ * check with a clinician". The readiness verdict is dropped from the lead so
+ * the reply cannot say "verdict: Progress" and "hold" in the same breath.
+ */
+function withSymptomHold(parts: Parts): Parts {
+  const lead = parts.lead.replace(/ — verdict: [^.]+\./, '.');
+  return { lead: SYMPTOM_LEAD, details: [lead, ...parts.details], action: SYMPTOM_ACTION };
+}
+
+/**
+ * Rule-based answer for the offline coach; always ≤120 words and ends with one
+ * **bold** action — except for an emergency phrase, which returns the plain
+ * EMERGENCY_MESSAGE (a stop, not an action). The Coach screen already stops
+ * such turns before calling this; the check here is a backstop (R5-1).
+ */
 export function answerOffline(question: string, ctx: CoachContext, profile: Profile, targets: Targets, tone: CoachTone): string {
-  return compose(HANDLERS[routeQuestion(question)](ctx, profile, targets, question), tone);
+  if (detectEmergency(question).emergency) return EMERGENCY_MESSAGE;
+  const parts = HANDLERS[routeQuestion(question)](ctx, profile, targets, question);
+  return compose(isSymptomAsk(question) ? withSymptomHold(parts) : parts, tone);
 }

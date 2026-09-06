@@ -393,3 +393,31 @@ describe('suggestedPrompts / COACH_CHIPS / emptyStates', () => {
     expect(emptyStates(makeCtx({ hrv: { today: null, baseline7: null } })).hrv).toMatch(/WHOOP/);
   });
 });
+
+describe('review round — R1-12 units-aware weight copy', () => {
+  const KG_PROFILE = { ...DEFAULT_PROFILE, units: 'kg' as const };
+  const ctx = makeCtx({
+    weight: { latest: 172, trend: 171.8, weeklyRateLb: -0.9, weeklyRatePct: -0.52, inBand: 'in' },
+    nutrition: { totals: { kc: 800, p: 60, f: 30, c: 60, fi: 10 }, remaining: { kc: 1150, p: 120, f: 35, c: 25, fi: 20 }, mealsLogged: 2, mealsLeft: 2, proteinPerMealNeeded: 60 },
+  });
+  const byTemplate = (profile: typeof DEFAULT_PROFILE, template: number) =>
+    generateInsights(ctx, profile, DEFAULT_TARGETS, { max: 14 }).find((i) => i.template === String(template));
+
+  it('#10 keeps lb copy for a lb user', () => {
+    const c = byTemplate(DEFAULT_PROFILE, 10);
+    expect(c?.body).toContain('Trend is 171.8 lb, down 0.9 lb/wk (0.5%/wk)');
+  });
+
+  it('#10 formats trend and rate in kg and kg/wk for a kg user, with no lb figure', () => {
+    const c = byTemplate(KG_PROFILE, 10);
+    expect(c?.body).toContain('Trend is 77.9 kg, down 0.4 kg/wk (0.5%/wk)');
+    expect(c?.body).not.toMatch(/\blb\b/);
+  });
+
+  it('#5 cites the trend rate in the user\'s unit', () => {
+    expect(byTemplate(DEFAULT_PROFILE, 5)?.body).toContain('hold your 0.9 lb/wk trend');
+    const kg = byTemplate(KG_PROFILE, 5);
+    expect(kg?.body).toContain('hold your 0.4 kg/wk trend');
+    expect(kg?.body).not.toMatch(/\blb\b/);
+  });
+});

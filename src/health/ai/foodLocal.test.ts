@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FAVORITES } from '../data/defaults';
 import type { FoodEstimateItem } from '../data/types';
-import { FOOD_DB, findFood } from './foodDb';
+import { FOOD_DB, findFood, scoreTokens } from './foodDb';
 import {
   confidenceBand,
   foodItemToEstimate,
@@ -15,9 +15,9 @@ const within = (actual: number, expected: number, pct = 0.1) =>
   Math.abs(actual - expected) <= Math.abs(expected) * pct;
 
 describe('FOOD_DB', () => {
-  it('has 70–90 items with unique slug ids, per-100 g macros and tags', () => {
+  it('has 70–100 items with unique slug ids, per-100 g macros and tags', () => {
     expect(FOOD_DB.length).toBeGreaterThanOrEqual(70);
-    expect(FOOD_DB.length).toBeLessThanOrEqual(90);
+    expect(FOOD_DB.length).toBeLessThanOrEqual(100);
     const ids = new Set(FOOD_DB.map((f) => f.id));
     expect(ids.size).toBe(FOOD_DB.length);
     for (const f of FOOD_DB) {
@@ -245,5 +245,106 @@ describe('conversions', () => {
     expect(confidenceBand(0.5)).toEqual({ band: 'med', label: 'Med', color: 'yellow' });
     expect(confidenceBand(0.45)).toEqual({ band: 'low', label: 'Low', color: 'neutral' });
     expect(confidenceBand(NaN).band).toBe('low');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 5 reproductions
+// ---------------------------------------------------------------------------
+
+describe('R5-2 water is water, not canned tuna', () => {
+  it('has zero-kcal water entries', () => {
+    expect(parseFoodText('water').items[0]).toMatchObject({ name: 'Water', kcal: 0, grams: 250 });
+    expect(parseFoodText('1 litre water').items[0]).toMatchObject({ name: 'Water', kcal: 0, grams: 1000, confidence: 0.9 });
+    expect(parseFoodText('a glass of water').items[0]).toMatchObject({ name: 'Water', kcal: 0, grams: 250, confidence: 0.75 });
+    expect(parseFoodText('sparkling water').items[0]).toMatchObject({ name: 'Sparkling water', kcal: 0 });
+    expect(parseFoodText('500 ml soda water').items[0]).toMatchObject({ name: 'Sparkling water', grams: 500 });
+  });
+
+  it('never resolves "water" to tuna at a strong score', () => {
+    expect(findFood('water')[0].item.id).toBe('water');
+    const tuna = findFood('water').find((m) => m.item.id === 'tuna');
+    expect(tuna === undefined || tuna.score < 0.8).toBe(true);
+    expect(FOOD_DB.find((f) => f.id === 'tuna')?.aliases).not.toContain('tuna in water');
+  });
+
+  it('query ⊆ key only scores strong when the query carries the key\'s head token', () => {
+    expect(scoreTokens(['water'], ['tuna', 'water'])).toBeLessThan(0.8);
+    expect(scoreTokens(['tuna'], ['tuna', 'water'])).toBeGreaterThanOrEqual(0.8);
+    expect(scoreTokens(['tuna', 'water'], ['tuna', 'water'])).toBe(1);
+  });
+});
+
+describe('R5-3 bare numbers without a unit', () => {
+  it('≥ 20 is read as grams at reduced confidence', () => {
+    for (const q of ['chicken tikka 200', '200 chicken tikka']) {
+      const [it] = parseFoodText(q).items;
+      expect(it.name).toBe('Chicken tikka');
+      expect(it.grams).toBe(200);
+      expect(it.confidence).toBeLessThanOrEqual(0.6);
+      expect(it.confidence).toBeGreaterThanOrEqual(0.5);
+      expect(it.assumptions).toContain('assumed 200 g');
+    }
+  });
+
+  it('< 20 stays a count, capped at 12', () => {
+    expect(parseFoodText('3 eggs').items[0]).toMatchObject({ name: 'Eggs', grams: 150, confidence: 0.75 });
+    const [prawns] = parseFoodText('15 prawns').items;
+    expect(prawns.grams).toBe(240); // 12 × 20 g
+    expect(prawns.assumptions).toContain('capped');
+  });
+
+  it('a bare number with no food is an unknown item with a question, not 30,000 g', () => {
+    const est = parseFoodText('200');
+    expect(est.items).toHaveLength(1);
+    expect(est.items[0].grams).toBe(200);
+    expect(est.items[0].kcal).toBe(400);
+    expect(est.items[0].confidence).toBe(0.2);
+    expect(est.clarify).not.toBeNull();
+    expect(parseFoodText('2').items[0].grams).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('R5-8 quantity-only segments merge into the food segment', () => {
+  it('splitFoodSegments merges "200 g" / "2" / "half" into the preceding food', () => {
+    expect(splitFoodSegments('chicken tikka, 200 g')).toEqual(['chicken tikka 200 g']);
+    expect(splitFoodSegments('naan, half')).toEqual(['naan half']);
+    expect(splitFoodSegments('chicken tikka, 2 and one roti')).toEqual(['chicken tikka 2', 'one roti']);
+    expect(splitFoodSegments('200 g and chicken tikka')).toEqual(['200 g chicken tikka']);
+    expect(splitFoodSegments('dal, rice + raita\nchai')).toEqual(['dal', 'rice', 'raita', 'chai']);
+  });
+
+  it('the stated weight is applied and no phantom item is offered', () => {
+    const est = parseFoodText('chicken tikka, 200 g');
+    expect(est.items).toHaveLength(1);
+    expect(est.items[0]).toMatchObject({ name: 'Chicken tikka', grams: 200, confidence: 0.9 });
+    expect(est.clarify).toBeNull();
+    expect(parseFoodText('naan, half').items[0]).toMatchObject({ name: 'Naan', grams: 45 });
+    expect(parseFoodText('chicken tikka, 2').items[0]).toMatchObject({ name: 'Chicken tikka', grams: 70 });
+    expect(parseFoodText('dal, a bowl').items[0]).toMatchObject({ name: 'Dal tadka', grams: 200, confidence: 0.75 });
+  });
+});
+
+describe('R5-14 generic "chicken" and portion idioms', () => {
+  it('bare "chicken" prefers plain chicken breast at low confidence', () => {
+    const [it] = parseFoodText('chicken').items;
+    expect(it.name).toBe('Chicken breast');
+    expect(it.confidence).toBeLessThanOrEqual(0.45);
+    expect(it.assumptions).toContain('low confidence');
+    expect(findFood('chicken')[0].score).toBeLessThan(0.8);
+    expect(findFood('kebab')[0].score).toBeLessThan(0.8);
+  });
+
+  it('unambiguous short queries still score strong', () => {
+    expect(findFood('biryani')[0].score).toBe(1);
+    expect(findFood('scrambled eggs')[0]).toMatchObject({ item: { id: 'eggs' }, score: 1 });
+  });
+
+  it('quarter / half chicken are roast-chicken portions', () => {
+    expect(parseFoodText('quarter chicken').items[0]).toMatchObject({ name: 'Roast chicken', grams: 300, confidence: 0.6 });
+    expect(parseFoodText('half chicken').items[0]).toMatchObject({ name: 'Roast chicken', grams: 600, confidence: 0.6 });
+    expect(parseFoodText('half a chicken').items[0]).toMatchObject({ name: 'Roast chicken', grams: 600 });
+    expect(parseFoodText('1/4 chicken').items[0]).toMatchObject({ name: 'Roast chicken', grams: 300 });
+    expect(parseFoodText('half chicken').items[0].assumptions).toContain('roast chicken');
   });
 });

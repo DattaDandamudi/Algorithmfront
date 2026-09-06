@@ -14,7 +14,7 @@
  */
 import type { Band, BloodMarker, CoachContext, HHMM, Insight, Profile, SessionType, Targets } from '../data/types';
 import { formatClock, hhmmToMinutes, minutesSinceNoon, minutesSinceNoonToHHMM } from '../lib/dates';
-import { fmt, round } from '../lib/format';
+import { fmt, fmtWeight, round } from '../lib/format';
 import { BASELINE_READINGS } from './hrv';
 
 /** The 8 coach quick-prompt chips (§4), verbatim and in order. */
@@ -81,6 +81,12 @@ const trim = (v: number, dp = 2): string => v.toLocaleString('en-US', { maximumF
 const clock = (t: HHMM | null | undefined): string => formatClock(t);
 const plural = (n: number, word: string): string => `${n0(n)} ${word}${n === 1 ? '' : 's'}`;
 const lcFirst = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1);
+/**
+ * Weights and rates are stored in lb; the copy follows `profile.units` (R1-12:
+ * a kg user sees "77.9 kg" and "0.4 kg/wk", never a lb figure). Always the
+ * absolute value — the templates supply the direction word.
+ */
+const weightStr = (lb: number, profile: Profile): string => fmtWeight(Math.abs(lb), profile.units === 'kg' ? 'kg' : 'lb');
 
 function card(ctx: CoachContext, template: number, title: string, band: Band, body: string, coachPrompt: string, priority: number): Insight {
   return { id: `ins-${template}-${ctx.today}`, template: String(template), band, title, body, coachPrompt, priority };
@@ -206,7 +212,7 @@ const calories: TemplateFn = (ctx, profile, targets) => {
       : rate === null
         ? 'Stay under to keep the deficit.'
         : rate < 0
-          ? `Stay under to hold your ${n1(-rate)} lb/wk trend.`
+          ? `Stay under to hold your ${weightStr(rate, profile)}/wk trend.`
           : 'Stay under to get the trend moving down again.';
   const tight = left < KCAL_TIGHT && (num(ctx.nutrition.mealsLeft) ?? 0) > 0;
   const body = `${n0(left)} kcal left today (~${examplePortion(left)}). ${hold}`;
@@ -270,12 +276,12 @@ const tobacco: TemplateFn = (ctx) => {
   return card(ctx, 9, 'Tobacco', band, `${lead}${hrvClause}. ${action}`, COACH_CHIPS[6], INSIGHT_PRIORITY.tobacco);
 };
 
-const weightTrend: TemplateFn = (ctx, _profile, targets) => {
+const weightTrend: TemplateFn = (ctx, profile, targets) => {
   const rate = num(ctx.weight.weeklyRateLb);
   const trend = num(ctx.weight.trend);
   if (rate === null || trend === null) return null;
   const pct = num(ctx.weight.weeklyRatePct) ?? (trend > 0 ? (rate / trend) * 100 : null);
-  const rateStr = `${rate <= 0 ? 'down' : 'up'} ${n1(Math.abs(rate))} lb/wk${pct === null ? '' : ` (${n1(Math.abs(pct))}%/wk)`}`;
+  const rateStr = `${rate <= 0 ? 'down' : 'up'} ${weightStr(rate, profile)}/wk${pct === null ? '' : ` (${n1(Math.abs(pct))}%/wk)`}`;
   const [lo, hi] = targets.weeklyRatePct;
   const bandStr = `${trim(lo)}–${trim(hi)}%`;
   const latest = num(ctx.weight.latest);
@@ -317,7 +323,7 @@ const weightTrend: TemplateFn = (ctx, _profile, targets) => {
   }
   // The water clause is dropped in the stall case — the sleep message is the one that must land.
   const second = bump && !stallWithShortSleep(ctx) ? `Ignore today's scale bump; it's water — ${lcFirst(action)}` : action;
-  return card(ctx, 10, 'Weight trend', band, `Trend is ${n1(trend)} lb, ${rateStr} — ${verdict}. ${second}`, COACH_CHIPS[3], INSIGHT_PRIORITY.weight);
+  return card(ctx, 10, 'Weight trend', band, `Trend is ${weightStr(trend, profile)}, ${rateStr} — ${verdict}. ${second}`, COACH_CHIPS[3], INSIGHT_PRIORITY.weight);
 };
 
 const bedtimeConsistency: TemplateFn = (ctx, profile) => {
