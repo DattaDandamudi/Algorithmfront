@@ -1,5 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AISettings, FoodEstimate, FoodEstimateItem, FoodItem, FoodTag, Profile } from '../data/types';
+import { resolveModel } from './client';
+import { toCoachError, type CoachErrorKind } from './coach';
 import { parseFoodText } from './foodLocal';
 
 /**
@@ -160,7 +162,8 @@ export async function estimateFoodWithClaude(
   client: Anthropic,
 ): Promise<FoodEstimate> {
   const res = await client.messages.create({
-    model: ai.model,
+    // resolveModel, not ai.model: a blank stored model must fall back to the default, not send model: '' (R5-11).
+    model: resolveModel(ai),
     max_tokens: 2048,
     system: buildFoodSystemPrompt(profile),
     messages: [{ role: 'user', content: text }],
@@ -184,12 +187,23 @@ export async function estimateFoodWithClaude(
   return { ...normaliseFoodJSON(parsed), source: 'claude' };
 }
 
+/** Prefix of the first item's assumptions when Claude failed and the local parser answered (logUtils keys off it). */
 export const AI_UNAVAILABLE_NOTE = 'AI unavailable — local estimate';
+
+/** FoodEstimate plus, when Claude failed, the readable reason (additive — screens typed as FoodEstimate still work). */
+export interface FoodEstimateResult extends FoodEstimate {
+  /** User-readable failure ("Check your API key — Anthropic rejected it (401).") — same mapping as the coach (R5-12). */
+  fallbackReason?: string;
+  fallbackKind?: CoachErrorKind;
+}
 
 /**
  * Estimate food from free text. Uses Claude when a client is supplied and the
- * provider is not 'none'; on any error (network, refusal, bad JSON) falls back
- * to the deterministic local parser and flags it in the first item's assumptions.
+ * provider is not 'none'; on any error (auth, unknown model, network, refusal,
+ * bad JSON) falls back to the deterministic local parser and flags it in the
+ * first item's assumptions as "AI unavailable — local estimate (<reason>)",
+ * with the reason also on `fallbackReason` so the Log screen can surface a
+ * misconfigured key or model instead of a silent local answer (R5-12).
  */
 export async function estimateFood(
   text: string,
@@ -197,16 +211,18 @@ export async function estimateFood(
   profile: Profile,
   extra: FoodItem[],
   deps: { client?: Anthropic | null } = {},
-): Promise<FoodEstimate> {
+): Promise<FoodEstimateResult> {
   const client = deps.client ?? null;
   if (client && ai.provider !== 'none') {
     try {
       return await estimateFoodWithClaude(text, ai, profile, client);
-    } catch {
-      const local = parseFoodText(text, { extra });
+    } catch (err) {
+      const why = toCoachError(err);
+      const note = `${AI_UNAVAILABLE_NOTE} (${why.message})`;
+      const local: FoodEstimateResult = { ...parseFoodText(text, { extra }), fallbackReason: why.message, fallbackKind: why.kind };
       if (local.items.length) {
         const first = local.items[0];
-        local.items[0] = { ...first, assumptions: first.assumptions ? `${AI_UNAVAILABLE_NOTE}; ${first.assumptions}` : AI_UNAVAILABLE_NOTE };
+        local.items[0] = { ...first, assumptions: first.assumptions ? `${note}; ${first.assumptions}` : note };
       }
       return local;
     }

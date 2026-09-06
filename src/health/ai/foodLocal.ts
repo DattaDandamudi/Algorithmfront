@@ -1,6 +1,6 @@
 import type { FoodEstimate, FoodEstimateItem, FoodItem, HHMM, Macros, Meal, MealSource } from '../data/types';
 import { round } from '../lib/format';
-import { findFood, normalise, singularize, type FoodMatch } from './foodDb';
+import { findFood, getFood, normalise, singularize, type FoodMatch } from './foodDb';
 
 /**
  * Deterministic natural-language food parser (§2 "200 g chicken tikka and one
@@ -10,7 +10,7 @@ import { findFood, normalise, singularize, type FoodMatch } from './foodDb';
  * Confidence ladder (mirrors the §9 UI chips: High ≥0.8 / Med 0.5–0.79 / Low <0.5):
  *   0.9  explicit grams + strong DB match         "200 g chicken tikka"
  *   0.75 count × a known natural unit             "2 rotis", "a plate of biryani"
- *   0.6  default / generic portion assumed        "chicken shawarma wrap", "a bowl of X"
+ *   0.6  default / generic portion assumed        "chicken shawarma wrap", "a bowl of X", bare "200" read as grams
  *   0.45 weak fuzzy match (prefix / typo / partial overlap)
  *   0.2  unknown food → generic mixed-dish prior (200 kcal/100 g) + one clarifying question
  *
@@ -32,6 +32,21 @@ const UNKNOWN_COUNT_GRAMS = 150;
 
 // Match-quality thresholds on findFood()'s 0–1 score.
 const STRONG = 0.8;
+
+/**
+ * A bare digit number with no unit (R5-3): the persona weighs food, so "chicken
+ * tikka 200" means 200 g, not 200 pieces. ≥ BARE_GRAMS_MIN is read as grams at
+ * 0.6 confidence with an "assumed … g" note; below it the number stays a
+ * piece count, capped at MAX_BARE_COUNT. Number words ("two", "half") are
+ * always counts.
+ */
+const BARE_GRAMS_MIN = 20;
+const MAX_BARE_COUNT = 12;
+const BARE_GRAMS_CONF = 0.6;
+
+/** "quarter/half chicken" is a restaurant portion of a whole roast bird (~1.2 kg), not ¼ of a tikka piece (R5-14). */
+const WHOLE_ROAST_CHICKEN_GRAMS = 1200;
+const ROAST_CHICKEN_WORDS = new Set(['chicken', 'roast', 'roasted', 'rotisserie', 'grilled', 'charcoal', 'bbq', 'whole']);
 
 const NUMBER_WORDS: Record<string, number> = {
   a: 1, an: 1, one: 1, single: 1, two: 2, double: 2, three: 3, triple: 3, four: 4, five: 5,
@@ -86,6 +101,37 @@ export function splitFoodSegments(text: string, extra: FoodItem[] = []): string[
       out.push(p);
     }
   }
+  return mergeQuantitySegments(out);
+}
+
+/** True when a segment carries only quantity words — "200 g", "2", "half", "a bowl", "large" — and no food. */
+function isQuantityOnly(segment: string): boolean {
+  const toks = normalise(segment).split(' ').filter(Boolean);
+  return (
+    toks.length > 0 &&
+    toks.every((t) => parseNum(t) !== null || FRACTION_WORDS.has(t) || isMassUnit(t) || isPortionUnit(t) || t in SIZE_WORDS || STOP.has(t))
+  );
+}
+
+/**
+ * "chicken tikka, 200 g" splits into a food and a quantity; the quantity
+ * belongs to the food, not to a phantom "200 g" item (R5-8). A quantity-only
+ * segment is appended to the preceding food segment, or prepended to the
+ * following one when it comes first ("200 g and chicken tikka").
+ */
+function mergeQuantitySegments(segments: string[]): string[] {
+  const out: string[] = [];
+  let pendingPrefix = '';
+  for (const seg of segments) {
+    if (isQuantityOnly(seg)) {
+      if (out.length) out[out.length - 1] = `${out[out.length - 1]} ${seg}`;
+      else pendingPrefix = pendingPrefix ? `${pendingPrefix} ${seg}` : seg;
+      continue;
+    }
+    out.push(pendingPrefix ? `${pendingPrefix} ${seg}` : seg);
+    pendingPrefix = '';
+  }
+  if (pendingPrefix) out.push(pendingPrefix);
   return out;
 }
 
@@ -101,6 +147,8 @@ const isPortionUnit = (t: string) => singularize(t) in PORTION_UNITS;
 
 interface Quantity {
   count: number | null;
+  /** The count was typed as digits ("200"), not a number word ("two", "half") — only digits can mean grams (R5-3). */
+  countNumeric: boolean;
   /** Singularised unit token, or null. */
   unit: string | null;
   unitKind: 'mass' | 'portion' | null;
@@ -117,11 +165,13 @@ function parseQuantity(segment: string): Quantity {
   const toks = normalise(segment).split(' ').filter(Boolean);
   const used = new Set<number>();
   let count: number | null = null;
+  let countNumeric = false;
   let j = -1;
   for (let i = 0; i < toks.length; i++) {
     const n = parseNum(toks[i]);
     if (n === null) continue;
     count = n;
+    countNumeric = /^\d/.test(toks[i]);
     used.add(i);
     j = i + 1;
     // Mixed numbers: "1 ½", "2 1/2".
@@ -170,7 +220,7 @@ function parseQuantity(segment: string): Quantity {
   }
   const foodWithUnit = toks.filter((t, i) => !used.has(i) && !STOP.has(t));
   const food = toks.filter((t, i) => !used.has(i) && i !== unitIdx && !STOP.has(t));
-  return { count, unit, unitKind, sizeFactor, sizeWord, food, foodWithUnit };
+  return { count, countNumeric, unit, unitKind, sizeFactor, sizeWord, food, foodWithUnit };
 }
 
 const fmtCount = (n: number): string => {
@@ -203,9 +253,34 @@ interface Parsed {
   segment: string;
 }
 
+/** Bare digits with no unit: grams when ≥ BARE_GRAMS_MIN, else a count capped at MAX_BARE_COUNT (R5-3). */
+function bareNumberRead(q: Quantity): 'grams' | 'count' | null {
+  if (q.unit !== null || q.count === null || !q.countNumeric) return null;
+  return q.count >= BARE_GRAMS_MIN ? 'grams' : 'count';
+}
+
+function isRoastChickenIdiom(q: Quantity): boolean {
+  return (
+    q.count !== null &&
+    q.count > 0 &&
+    q.count < 1 &&
+    q.unit === null &&
+    q.food.includes('chicken') &&
+    q.food.every((t) => ROAST_CHICKEN_WORDS.has(t))
+  );
+}
+
 function parseSegment(segment: string, extra: FoodItem[]): Parsed {
   const q = parseQuantity(segment);
   const pick = (toks: string[]): FoodMatch | null => (toks.length ? findFood(toks.join(' '), extra)[0] ?? null : null);
+  if (isRoastChickenIdiom(q)) {
+    const roast = getFood('roast-chicken');
+    if (roast) {
+      const grams = Math.max(1, round((q.count as number) * WHOLE_ROAST_CHICKEN_GRAMS * q.sizeFactor));
+      const asm = `assumed ${fmtCount(q.count as number)} of a whole roast chicken (~${WHOLE_ROAST_CHICKEN_GRAMS} g), ${grams} g; restaurant-style, moderate oil`;
+      return { segment, item: { name: roast.name, grams, ...macrosFor(roast.per100, grams), confidence: 0.6, assumptions: asm, tags: [...(roast.tags ?? [])] } };
+    }
+  }
   let match = pick(q.food);
   let unit = q.unit;
   let unitKind = q.unitKind;
@@ -226,17 +301,24 @@ function parseSegment(segment: string, extra: FoodItem[]): Parsed {
   let grams: number;
   let conf: number;
   let asm: string;
-  const count = q.count ?? 1;
+  const bare = bareNumberRead({ ...q, unit });
+  const capped = bare === 'count' && (q.count as number) > MAX_BARE_COUNT;
+  const count = capped ? MAX_BARE_COUNT : (q.count ?? 1);
+  const capNote = capped ? ` (${q.count} read as a count, capped at ${MAX_BARE_COUNT} — add "g" if you meant grams)` : '';
   if (unitKind === 'mass' && unit) {
     grams = count * MASS_UNITS[unit];
     conf = 0.9;
     asm = `${round(grams)} g as stated`;
+  } else if (bare === 'grams') {
+    grams = count;
+    conf = BARE_GRAMS_CONF;
+    asm = `assumed ${round(grams)} g (no unit given)`;
   } else if (itemUnitMatches(it, unit) || (unit === null && q.count !== null && it.unitGrams)) {
     const ug = it.unitGrams as number;
     const uname = it.unitName ?? 'piece';
     grams = count * ug * q.sizeFactor;
     conf = 0.75;
-    asm = `assumed ${fmtCount(count)} ${size} ${plural(uname, count)}, ${round(ug * q.sizeFactor)} g${count > 1 ? ' each' : ''}`;
+    asm = `assumed ${fmtCount(count)} ${size} ${plural(uname, count)}, ${round(ug * q.sizeFactor)} g${count > 1 ? ' each' : ''}${capNote}`;
   } else if (unit && PORTION_UNITS[unit] > 0) {
     grams = count * PORTION_UNITS[unit] * q.sizeFactor;
     conf = 0.6;
@@ -244,7 +326,7 @@ function parseSegment(segment: string, extra: FoodItem[]): Parsed {
   } else if (q.count !== null) {
     grams = count * it.defaultGrams * q.sizeFactor;
     conf = 0.6;
-    asm = `assumed ${fmtCount(count)} ${sizeNote}${plural('portion', count)}, ${round(it.defaultGrams * q.sizeFactor)} g${count > 1 ? ' each' : ''}`;
+    asm = `assumed ${fmtCount(count)} ${sizeNote}${plural('portion', count)}, ${round(it.defaultGrams * q.sizeFactor)} g${count > 1 ? ' each' : ''}${capNote}`;
   } else {
     grams = it.defaultGrams * q.sizeFactor;
     conf = 0.6;
@@ -264,9 +346,11 @@ function parseSegment(segment: string, extra: FoodItem[]): Parsed {
 
 function unknownItem(segment: string, q: Quantity): Parsed {
   let grams = GENERIC_GRAMS;
+  const bare = bareNumberRead(q);
   if (q.unitKind === 'mass' && q.unit) grams = (q.count ?? 1) * MASS_UNITS[q.unit];
   else if (q.unit && PORTION_UNITS[q.unit] > 0) grams = (q.count ?? 1) * PORTION_UNITS[q.unit] * q.sizeFactor;
-  else if (q.count !== null) grams = q.count * UNKNOWN_COUNT_GRAMS * q.sizeFactor;
+  else if (bare === 'grams') grams = q.count as number;
+  else if (q.count !== null) grams = Math.min(q.count, bare === 'count' ? MAX_BARE_COUNT : Infinity) * UNKNOWN_COUNT_GRAMS * q.sizeFactor;
   else grams = GENERIC_GRAMS * q.sizeFactor;
   grams = Math.max(1, round(grams));
   return {

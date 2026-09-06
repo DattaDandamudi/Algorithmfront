@@ -517,5 +517,6 @@ export interface FoodEstimate {
   items: FoodEstimateItem[];
   /** One short question, or null. */
   clarify: string | null;
-  source: 'claude' | 'local';
+  /** 'barcode' = Open Food Facts lookup; 'photo' = Claude vision estimate. */
+  source: 'claude' | 'local' | 'barcode' | 'photo';
 }
