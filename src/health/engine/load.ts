@@ -711,15 +711,44 @@ export function formBandOf(fitness: number, form: number): FormBand | null {
   return 'neutral';
 }
 
-/** Banister impulse-response series over a zero-filled daily load series. */
-export function banisterSeries(loads: LoadPoint[], tau?: BanisterTauFit | null): BanisterPoint[] {
+/**
+ * Banister impulse-response series over a zero-filled daily load series.
+ *
+ * **Both filters are seeded to the same starting value** — the mean daily load
+ * of the first `BANISTER_SEED_DAYS` — rather than to zero. Seeding at zero
+ * looks harmless and is not: fatigue (τ₂ ≈ 7 d) converges in about three weeks
+ * while fitness (τ₁ ≈ 42 d) needs four months, so `form = fitness − fatigue`
+ * starts deeply negative for arithmetic reasons alone. A constant-load user
+ * reads `form ≈ −101 %` of fitness on day 28 and stays `overreached` for
+ * months, which would step every new user's readiness verdict down a band
+ * before they had trained badly even once. Seeding both to the same level
+ * starts form at zero, so it measures the load balance from the first day it
+ * is published instead of measuring the filter's warm-up.
+ */
+export const BANISTER_SEED_DAYS = 7;
+
+export interface BanisterOpts {
+  /**
+   * Starting value for both filters. Defaults to the mean daily load of the
+   * first `BANISTER_SEED_DAYS`. Pass 0 for the textbook impulse response.
+   */
+  seed?: number;
+}
+
+export function banisterSeries(loads: LoadPoint[], tau?: BanisterTauFit | null, opts: BanisterOpts = {}): BanisterPoint[] {
   const pts = byDate(loads);
   const tau1 = tau && isNum(tau.tau1) && tau.tau1 > 0 ? tau.tau1 : TAU_PRIOR.tau1;
   const tau2 = tau && isNum(tau.tau2) && tau.tau2 > 0 ? tau.tau2 : TAU_PRIOR.tau2;
   const k1 = 1 - Math.exp(-1 / tau1);
   const k2 = 1 - Math.exp(-1 / tau2);
-  let fitness = 0;
-  let fatigue = 0;
+  const seedWindow = pts.slice(0, BANISTER_SEED_DAYS);
+  const seed = isNum(opts.seed)
+    ? Math.max(0, opts.seed)
+    : seedWindow.length
+      ? seedWindow.reduce((s, p) => s + (isNum(p.load) && p.load > 0 ? p.load : 0), 0) / seedWindow.length
+      : 0;
+  let fitness = seed;
+  let fatigue = seed;
   return pts.map((p, i) => {
     const l = isNum(p.load) && p.load > 0 ? p.load : 0;
     fitness += (l - fitness) * k1;

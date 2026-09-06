@@ -392,7 +392,9 @@ const flat = (n: number, load: number, end = END): LoadPoint[] =>
 
 describe('banisterSeries', () => {
   it('applies one impulse with the 42/7 priors', () => {
-    const s = banisterSeries([{ d: END, load: 100, source: 'logged', workouts: 1 }]);
+    // seed 0 is the textbook impulse response; the shipped default seeds both
+    // filters so a new user's form is not an artefact of the warm-up.
+    const s = banisterSeries([{ d: END, load: 100, source: 'logged', workouts: 1 }], null, { seed: 0 });
     expect(s[0].fitness).toBeCloseTo(100 * (1 - Math.exp(-1 / TAU_PRIOR.tau1)), 1);
     expect(s[0].fatigue).toBeCloseTo(100 * (1 - Math.exp(-1 / TAU_PRIOR.tau2)), 1);
     expect(s[0].form).toBeCloseTo(2.35 - 13.31, 1);
@@ -417,9 +419,27 @@ describe('banisterSeries', () => {
 
   it('honours a fitted tau', () => {
     const fitted = { tau1: 50, tau2: 5, fitted: true, n: 120 };
-    const a = banisterSeries(flat(30, 400));
-    const b = banisterSeries(flat(30, 400), fitted);
+    // A varying series: on a perfectly flat load the seeded filters sit at the
+    // seed whatever the time constants are, so tau could only show up as noise.
+    const varying = flat(30, 400).map((p, i) => ({ ...p, load: i >= 20 ? 900 : p.load }));
+    const a = banisterSeries(varying);
+    const b = banisterSeries(varying, fitted);
     expect(b[29].fitness).not.toBeCloseTo(a[29].fitness, 1);
+  });
+
+  it('a steady new lifter is not "overreached" just because the filters are warming up', () => {
+    // The bug this seeding fixes: with both filters starting at zero, fatigue
+    // (tau 7) converges in three weeks while fitness (tau 42) needs four
+    // months, so form reads about -101% of fitness on day 28 and every new
+    // user's readiness verdict was stepped down a band before they had trained
+    // badly even once.
+    const steady = flat(28, 400);
+    expect(banisterSeries(steady, null, { seed: 0 })[27].formBand).toBe('overreached');
+    expect(banisterSeries(steady)[27].formBand).toBe('neutral');
+    // And it stays sane through the whole warm-up.
+    for (const day of banisterSeries(flat(120, 400)).slice(27)) {
+      expect(day.formBand).toBe('neutral');
+    }
   });
 
   it('is empty for an empty series', () => {
