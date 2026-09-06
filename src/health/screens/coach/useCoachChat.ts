@@ -24,7 +24,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { AppSettings, ChatMessage, CoachContext, CoachTone, DailyRecord, ISODate } from '../../data/types';
 import { useHealth, useNow, useRecords } from '../../data/store';
 import { buildCoachContext } from '../../engine';
-import { createClient, isAIConfigured, resolveModel } from '../../ai/client';
+import { createClient } from '../../ai/client';
+import { isAIConfigured, resolveModel } from '../../ai/config';
 import { askCoach, buildMessages, buildSystemPrompt, postProcessReply, toCoachError } from '../../ai/coach';
 import { answerOffline } from '../../ai/offlineCoach';
 import { parseISODate, toISODate } from '../../lib/dates';
@@ -112,30 +113,46 @@ export function useCoachChat(): CoachChat {
       };
       actions.appendChat(placeholder);
 
-      const client = createClient(ai);
-      if (!client) {
+      const runOffline = () => {
         const timer = setTimeout(() => finish({ text: offline(), source: 'offline', streaming: false }), OFFLINE_DELAY_MS);
         controller.signal.addEventListener('abort', () => {
           clearTimeout(timer);
           finish(abortPatch(''));
         });
+      };
+      if (!isAIConfigured(ai)) {
+        runOffline();
         return true;
       }
 
       const buffer = new DeltaBuffer((text) => actions.updateChat(placeholder.id, { text }));
-      void askCoach({
-        client,
-        model: resolveModel(ai),
-        system: buildSystemPrompt(profile, targets, ai),
-        messages: buildMessages(before, plan.text, ctxNow),
-        signal: controller.signal,
-        onDelta: (d) => buffer.push(d),
-      })
+      // The SDK chunk loads on first use, so offline users never download it.
+      void createClient(ai)
+        .then((client) => {
+          if (!client) {
+            runOffline();
+            return undefined;
+          }
+          return askCoach({
+            client,
+            model: resolveModel(ai),
+            system: buildSystemPrompt(profile, targets, ai),
+            messages: buildMessages(before, plan.text, ctxNow),
+            signal: controller.signal,
+            onDelta: (d) => buffer.push(d),
+          });
+        })
         .then((res) => {
+          if (!res) return;
           buffer.cancel();
           // A safety refusal is already a complete sentence; bolding its tail would misread as advice.
           if (res.refused) {
             finish({ text: res.text, source: 'guardrail', streaming: false });
+            return;
+          }
+          // Cut off by max_tokens (or empty): show the "ask again" line as an error, never a bolded fragment.
+          if (res.truncated) {
+            finish({ text: res.text, source: 'error', streaming: false });
             return;
           }
           finish({ text: postProcessReply(res.text, plan.text).text, source: 'claude', streaming: false });

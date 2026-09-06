@@ -12,7 +12,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, KeyRound, Wifi } from 'lucide-react';
-import { createClient, isAIConfigured, MODEL_OPTIONS, resolveModel } from '../../ai/client';
+import { createClient } from '../../ai/client';
+import { isAIConfigured, MODEL_OPTIONS, resolveModel } from '../../ai/config';
 import { askCoach, toCoachError } from '../../ai/coach';
 import { maskKey } from '../../ai/guardrails';
 import { useHealth } from '../../data/store';
@@ -54,7 +55,7 @@ export default function CoachSection() {
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const test = async () => {
-    const client = createClient(ai);
+    const client = await createClient(ai);
     if (!client) {
       setResult({ ok: false, message: ai.provider === 'proxy' ? 'Add a proxy URL first.' : ai.provider === 'anthropic-direct' ? 'Save an API key first.' : 'Pick a provider and add a key or proxy URL first.' });
       return;

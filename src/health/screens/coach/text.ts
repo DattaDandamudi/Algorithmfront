@@ -12,7 +12,7 @@
  *   (blue = AI per §0 "Blue: informational/AI"; error red; guardrail yellow).
  */
 import type { AISettings, ChatMessage } from '../../data/types';
-import { MODEL_OPTIONS, resolveModel } from '../../ai/client';
+import { MODEL_OPTIONS, resolveModel } from '../../ai/config';
 
 export interface TextSegment {
   text: string;

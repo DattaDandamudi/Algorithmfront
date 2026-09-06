@@ -3,7 +3,7 @@
  * collapsed list still tells the user what is set). Pure functions of state;
  * every number is read from settings / storage, never invented.
  */
-import { isAIConfigured, MODEL_OPTIONS } from '../../ai/client';
+import { isAIConfigured, MODEL_OPTIONS } from '../../ai/config';
 import type { AppSettings, DailyRecord, ISODate, StorageStatus } from '../../data/types';
 import { QUOTA_BYTES } from '../../data/storage';
 import { fmt, fmtWeight } from '../../lib/format';

@@ -209,6 +209,7 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       debtMin: sleep.debtMin,
       bedtimeSdMin: sleep.consistency.bedtimeSdMin,
       midpointSdMin: sleep.consistency.midpointSdMin,
+      bedtimeNights: sleep.consistency.n,
       lastBedtime: sleep.lastBedtime,
       delta: baselineDelta(records, 'slh', today, BASELINE_DAYS),
     },

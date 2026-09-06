@@ -64,7 +64,7 @@ describe('productToEstimate', () => {
     expect(it.assumptions).toContain('Quaker Rolled Oats');
     expect(it.assumptions).toContain('40 g');
     expect(est!.clarify).toBeNull();
-    expect(est!.source).toBe('local');
+    expect(est!.source).toBe('barcode');
   });
 
   it('assumes 100 g when no serving is listed and says so', () => {

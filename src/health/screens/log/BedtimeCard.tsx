@@ -15,6 +15,7 @@
  * 7-night consistency SD with the spec's empty-state copy.
  */
 import { Moon } from 'lucide-react';
+import { BEDTIME_SD_MIN_NIGHTS } from '../trends/series';
 import type { CoachContext, DailyRecord, Profile } from '../../data/types';
 import { bedtimeCountdown } from '../../engine/sleep';
 import { addDays, formatClock, formatDateShort, nowHHMM } from '../../lib/dates';
@@ -41,7 +42,8 @@ export default function BedtimeCard({ ctx, now, profile, targetDate, targetRecor
   const lastNight = targetDate === ctx.today ? null : todayRecord?.bt ?? null;
   const lastKnown = lastNight ?? (tonight ? null : ctx.sleep.lastBedtime);
   const countdown = bedtimeCountdown(now, profile.bedTarget, profile.wakeTarget);
-  const sd = ctx.sleep.bedtimeSdMin;
+  // Same gate as the Trends consistency card: an SD from fewer than 3 nights is noise.
+  const sd = (ctx.sleep.bedtimeNights ?? 0) >= BEDTIME_SD_MIN_NIGHTS ? ctx.sleep.bedtimeSdMin : null;
   // The record is dated the morning after; show the night it belongs to.
   const nightOf = addDays(targetDate, -1);
 

@@ -18,7 +18,7 @@
  *
  * Nothing here touches React or storage; the Coach screen wires it up.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import type {
   AISettings,
   BloodMarker,
@@ -287,35 +287,32 @@ export class CoachError extends Error {
 /** The SDK prefixes messages with the HTTP status ("400 …"); we already show it. */
 const stripStatus = (m: string) => m.replace(/^\d{3}\s+/, '');
 
-/** Map SDK errors (most specific first) to something the chat can display. */
+/**
+ * Map SDK errors to something the chat can display.
+ *
+ * Duck-typed on `status` / message rather than `instanceof`, so this module
+ * never has to import the SDK at runtime (it is loaded lazily by client.ts)
+ * and the mapping survives minification. SDK APIError subclasses carry the
+ * HTTP status; APIUserAbortError has no status and the message "Request was
+ * aborted."; APIConnectionError has no status either.
+ */
 export function toCoachError(err: unknown): CoachError {
   if (err instanceof CoachError) return err;
-  if (err instanceof Anthropic.APIUserAbortError) return new CoachError('abort', 'Stopped.');
-  if (err instanceof Anthropic.AuthenticationError) {
-    return new CoachError('auth', 'Check your API key — Anthropic rejected it (401).', err.status);
-  }
-  if (err instanceof Anthropic.PermissionDeniedError) {
-    return new CoachError('permission', 'Your key does not have access to this model (403). Try another model in Settings.', err.status);
-  }
-  if (err instanceof Anthropic.NotFoundError) {
-    return new CoachError('not_found', 'Model not found (404). Pick another model in Settings.', err.status);
-  }
-  if (err instanceof Anthropic.RateLimitError) {
-    return new CoachError('rate_limit', 'Rate limited (429) — wait a moment and try again.', err.status);
-  }
-  if (err instanceof Anthropic.BadRequestError) {
-    return new CoachError('bad_request', `Request rejected (400): ${stripStatus(err.message)}`, err.status);
-  }
-  if (err instanceof Anthropic.InternalServerError) {
-    return new CoachError('server', `Anthropic is having trouble (${err.status ?? '5xx'}) — try again shortly.`, err.status);
-  }
-  if (err instanceof Anthropic.APIConnectionError) {
-    return new CoachError('network', 'Network/proxy issue — check your connection or proxy URL.');
-  }
-  if (err instanceof Anthropic.APIError) {
-    return new CoachError('unknown', `API error${err.status ? ` ${err.status}` : ''}: ${err.message}`, err.status);
-  }
-  if (err instanceof Error && err.name === 'AbortError') return new CoachError('abort', 'Stopped.');
+  const e = (err && typeof err === 'object' ? err : {}) as { status?: unknown; message?: unknown; name?: unknown };
+  const status = typeof e.status === 'number' ? e.status : undefined;
+  const message = typeof e.message === 'string' ? e.message : '';
+  const isSdkError = err instanceof Error && ('status' in e || 'requestID' in (e as object) || 'headers' in (e as object));
+
+  if (e.name === 'AbortError' || /\brequest was aborted\b/i.test(message)) return new CoachError('abort', 'Stopped.');
+  if (status === 401) return new CoachError('auth', 'Check your API key — Anthropic rejected it (401).', status);
+  if (status === 403) return new CoachError('permission', 'Your key does not have access to this model (403). Try another model in Settings.', status);
+  if (status === 404) return new CoachError('not_found', 'Model not found (404). Pick another model in Settings.', status);
+  if (status === 429) return new CoachError('rate_limit', 'Rate limited (429) — wait a moment and try again.', status);
+  if (status === 400) return new CoachError('bad_request', `Request rejected (400): ${stripStatus(message)}`, status);
+  if (status !== undefined && status >= 500) return new CoachError('server', `Anthropic is having trouble (${status}) — try again shortly.`, status);
+  if (isSdkError && status === undefined) return new CoachError('network', 'Network/proxy issue — check your connection or proxy URL.');
+  if (status !== undefined) return new CoachError('unknown', `API error ${status}: ${message}`, status);
+  if (err instanceof TypeError && /fetch|network/i.test(message)) return new CoachError('network', 'Network/proxy issue — check your connection or proxy URL.');
   return new CoachError('unknown', err instanceof Error ? err.message : 'Something went wrong.');
 }
 

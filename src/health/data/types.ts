@@ -416,6 +416,8 @@ export interface CoachContext {
     debtMin: number | null;
     bedtimeSdMin: number | null;
     midpointSdMin: number | null;
+    /** Nights contributing to the bedtime SD (cards gate the readout at 3). */
+    bedtimeNights?: number;
     lastBedtime: HHMM | null;
     delta: BaselineDelta;
   };

@@ -193,6 +193,8 @@ const SYMPTOM_PATTERNS: RegExp[] = [
   /\bdizz(y|iness)\b/i,
   /\blight[-\s]?headed/i,
   /\bfaint(ed|ing|ness)?\b/i,
+  // Fainting reported with a place/time ("passed out at the gym") is not routed as an emergency, but it is a symptom: hold training + doctor cue.
+  /\b(passed|blacked)\s+out\b/i,
   /\bnause(a|ous|ated)\b/i,
   /\bvomit|\bthrow(ing)?\s+up\b/i,
   /\bpalpitation/i,

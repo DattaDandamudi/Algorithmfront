@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AISettings, FoodEstimate, FoodEstimateItem, FoodItem, FoodTag, Profile } from '../data/types';
-import { resolveModel } from './client';
+import { resolveModel } from './config';
 import { toCoachError, type CoachErrorKind } from './coach';
 import { parseFoodText } from './foodLocal';
 

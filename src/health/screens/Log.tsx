@@ -25,11 +25,12 @@
  * focuses its field ('meal' → the AI bar, 'weight' → the weight input) and
  * flashes a ring, then is consumed so the next visit starts at the top.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FoodEstimate, FoodEstimateItem, FoodItem, HHMM, Meal, MealSource } from '../data/types';
 import { useHealth, useNow, useRecords } from '../data/store';
 import { buildCoachContext, mealOccasions } from '../engine';
-import { createClient, isAIConfigured } from '../ai/client';
+import { createClient, type AnthropicClient } from '../ai/client';
+import { isAIConfigured } from '../ai/config';
 import { estimateFood } from '../ai/food';
 import { estimateFoodFromImage } from '../ai/foodImage';
 import { foodItemToEstimate, itemToMeal } from '../ai/foodLocal';
@@ -136,7 +137,17 @@ export default function Log() {
   const bedTargetRecord = state.days[bedTarget];
 
   const library = useMemo(() => [...settings.favorites, ...settings.recents], [settings.favorites, settings.recents]);
-  const client = useMemo(() => createClient(settings.ai), [settings.ai]);
+  // The SDK is loaded lazily the first time a key/proxy is configured (null while loading or offline).
+  const [client, setClient] = useState<AnthropicClient | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void createClient(settings.ai).then((c) => {
+      if (alive) setClient(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [settings.ai]);
   const aiConfigured = isAIConfigured(settings.ai);
 
   // --- AI bar + sheet ---------------------------------------------------------
@@ -171,6 +182,7 @@ export default function Log() {
       setQuestion(null);
       try {
         const est = await estimateFood(description, settings.ai, profile, library, { client });
+        if (est.fallbackReason && alive.current) toast(`AI unavailable — ${est.fallbackReason}. Showing the local estimate.`, 'warn');
         if (!alive.current) return;
         if (est.items.length === 0) {
           const q = est.clarify ?? NO_FOOD_QUESTION;

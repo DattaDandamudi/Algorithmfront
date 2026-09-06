@@ -92,7 +92,7 @@ describe('estimateFoodFromEncodedImage', () => {
     expect(content[0]).toEqual({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } });
     expect(content[1]).toMatchObject({ type: 'text', text: expect.stringContaining('biryani') });
 
-    expect(est.source).toBe('claude');
+    expect(est.source).toBe('photo');
     expect(est.items).toHaveLength(2);
     expect(est.items[0].name).toBe('chicken biryani');
     expect(est.items[0].confidence).toBe(PHOTO_CONFIDENCE_CAP);

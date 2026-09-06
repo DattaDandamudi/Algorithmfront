@@ -20,7 +20,7 @@
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AISettings, FoodEstimate, Profile } from '../data/types';
-import { resolveModel } from './client';
+import { resolveModel } from './config';
 import { FOOD_SCHEMA, buildFoodSystemPrompt, normaliseFoodJSON } from './food';
 
 /** Longest side after resize — plenty for dish recognition, keeps the request well under a megabyte. */
@@ -99,7 +99,7 @@ export async function estimateFoodFromEncodedImage(image: EncodedImage, ai: AISe
   } catch {
     throw new Error('Claude returned invalid JSON for the photo estimate.');
   }
-  return { ...capPhotoConfidence(normaliseFoodJSON(parsed)), source: 'claude' };
+  return { ...capPhotoConfidence(normaliseFoodJSON(parsed)), source: 'photo' };
 }
 
 /**

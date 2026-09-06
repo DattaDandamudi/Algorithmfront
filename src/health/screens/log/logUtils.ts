@@ -185,11 +185,13 @@ export function foodItemFromEstimate(item: FoodEstimateItem, extra: FoodItem[] =
  */
 export const ESTIMATE_MEAL_SRC: MealSource = 'ai';
 
-export type EstimateOrigin = 'claude' | 'local' | 'ai-fallback';
+export type EstimateOrigin = 'claude' | 'local' | 'ai-fallback' | 'barcode' | 'photo';
 
 /** Where the numbers came from — drives the note under the estimate card. */
 export function estimateOrigin(est: FoodEstimate): EstimateOrigin {
   if (est.source === 'claude') return 'claude';
+  if (est.source === 'barcode') return 'barcode';
+  if (est.source === 'photo') return 'photo';
   const first = est.items[0];
   if (first && first.assumptions.startsWith(AI_UNAVAILABLE_NOTE)) return 'ai-fallback';
   return 'local';
@@ -203,9 +205,14 @@ export const BARCODE_NOTE = 'Label values via Open Food Facts — check the serv
 /** Note under a photo result (§2 depth/portion caveat). */
 export const PHOTO_NOTE = 'Photo estimate — the portion is a guess (no depth, hidden oil): confirm the grams before saving';
 
+export const BARCODE_ESTIMATE_NOTE = 'Label data from Open Food Facts — check the serving size you actually ate';
+export const PHOTO_ESTIMATE_NOTE = "Estimated from a photo — photos can't judge depth or hidden oil, so confirm the grams";
+
 export function estimateNote(origin: EstimateOrigin): string | null {
   if (origin === 'local') return LOCAL_ESTIMATE_NOTE;
   if (origin === 'ai-fallback') return AI_FALLBACK_NOTE;
+  if (origin === 'barcode') return BARCODE_ESTIMATE_NOTE;
+  if (origin === 'photo') return PHOTO_ESTIMATE_NOTE;
   return null;
 }
 

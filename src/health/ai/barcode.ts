@@ -20,8 +20,8 @@
  * carbs) are all present — fiber is missing on a large share of OFF entries
  * and is only noted — else 0.5 (§9 Med band → the sheet asks for a check).
  *
- * `FoodEstimate.source` has no barcode value in the fixed contract; we use
- * 'local' (meaning "not from Claude") and the Log screen sets its own note.
+ * `FoodEstimate.source` is 'barcode' so the Log screen can caption the sheet
+ * ("label data from Open Food Facts — check the serving").
  */
 import type { FoodEstimate, FoodEstimateItem } from '../data/types';
 import { round } from '../lib/format';
@@ -136,7 +136,7 @@ export function productToEstimate(product: OffProduct, code: string): FoodEstima
     assumptions,
     tags: [],
   };
-  return { items: [item], clarify: null, source: 'local' };
+  return { items: [item], clarify: null, source: 'barcode' };
 }
 
 // ---------------------------------------------------------------------------
