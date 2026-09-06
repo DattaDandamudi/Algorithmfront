@@ -9,6 +9,8 @@ import {
   CIRCADIAN_PENALTY_LABEL,
   SLEEP_DEBT_HALFLIFE_DAYS,
   SLEEP_DEBT_REPAY_CAP_MIN,
+  STRAIN_ADD_IS_HEURISTIC,
+  STRAIN_ADD_LABEL,
   bedtimeConsistency,
   bedtimeCountdown,
   caffeineCheck,
@@ -278,6 +280,27 @@ describe('circadianDelay (Depner 2019)', () => {
     expect(summary.circadian.penaltyMin).toBe(15);
     expect(summary.tonightNeedReason).toContain('+15 min because');
     expect(summary.tonightNeedReason).toContain(CIRCADIAN_PENALTY_LABEL);
+  });
+
+  it('labels the strain add the same way — a string, not only a boolean', () => {
+    // STRAIN_MIDPOINT / STRAIN_SCALE / STRAIN_MAX_ADD_MIN have no published
+    // source and add most of an hour to the night's need at high strain, but
+    // the module carried only `STRAIN_ADD_IS_HEURISTIC = true`, which nothing
+    // can render.
+    expect(STRAIN_ADD_IS_HEURISTIC).toBe(true);
+    expect(STRAIN_ADD_LABEL).toMatch(/logarithmic/);
+    expect(STRAIN_ADD_LABEL).toMatch(/13\.5.*(3|scale).*60/);
+    expect(STRAIN_ADD_LABEL).toContain('our own calibration, not published quantities');
+
+    expect(Math.round(strainSleepAddMin(18))).toBe(49);
+    const s = sleepSummary([{ d: day(1), slh: 8, bt: '23:00', wk: '07:00' }, { d: day(0), strn: 18 }], ASOF, profile);
+    expect(s.tonightNeedReason).toContain("+49 min for today's strain");
+    expect(s.tonightNeedReason).toContain(STRAIN_ADD_LABEL);
+  });
+
+  it('does not hedge a strain add it never made', () => {
+    const s = sleepSummary(nights(3), ASOF, profile);
+    expect(s.tonightNeedReason).not.toContain(STRAIN_ADD_LABEL);
   });
 
   it('does not hedge a penalty it never charged', () => {

@@ -18,6 +18,7 @@ import {
   RESILIENCE_BALANCE_CENTRE,
   RESILIENCE_HEURISTIC_COPY,
   RESILIENCE_SCORE_GAIN,
+  SIGNAL_STRAIN_SIGN,
   SIGNAL_THRESHOLDS,
   checkInSummary,
   illnessDoctorCue,
@@ -183,6 +184,44 @@ describe('overnightStrainIndex', () => {
     expect(s.signalsDeviating).toBe(1);
     expect(s.band).toBe('none');
     expect(s.nRef).toBe(30);
+  });
+
+  // The published `z` is on the strain axis, so the sign of each signal is the
+  // only thing that can turn it back into a statement about the reading. If
+  // this map and the `SIGNALS` table ever drift apart, the UI silently inverts
+  // the direction word on the two signals that fall under strain.
+  it('publishes the strain sign of every signal, matching the z it ships', () => {
+    expect(SIGNAL_STRAIN_SIGN).toEqual({ hrv: -1, rhr: 1, rr: 1, skt: 1, spo: -1, debt: 1 });
+
+    // 30 alternating reference nights, then one night every reading moves the
+    // way strain moves it: HRV and SpO₂ down, the rest up.
+    const recs = build(31, END, (i) =>
+      i < 30
+        ? { hrv: i % 2 === 0 ? 55 : 65, rhr: i % 2 === 0 ? 54 : 56, rr: i % 2 === 0 ? 14.3 : 14.7, skt: i % 2 === 0 ? 33.4 : 33.6, spo: i % 2 === 0 ? 96.5 : 97.5 }
+        : { hrv: 40, rhr: 62, rr: 16, skt: 34.2, spo: 93 },
+    );
+    for (const s of overnightStrainIndex(recs, END).signals) {
+      if (s.z === null) continue;
+      expect(s.z).toBeGreaterThan(0);
+      // …and the reading itself moved the way this sign says it does.
+      const fell = s.key === 'hrv' || s.key === 'spo';
+      expect(SIGNAL_STRAIN_SIGN[s.key]).toBe(fell ? -1 : 1);
+    }
+  });
+
+  // `isDeviating` is `zStrain >= threshold`, with no lower arm at all.
+  it('never flags a signal for moving the way that means LESS strain', () => {
+    const recs = build(31, END, (i) =>
+      i < 30 ? { hrv: i % 2 === 0 ? 55 : 65, spo: i % 2 === 0 ? 96.5 : 97.5 } : { hrv: 95, spo: 99.9 },
+    );
+    const s = overnightStrainIndex(recs, END);
+    const hrv = s.signals.find((x) => x.key === 'hrv');
+    const spo = s.signals.find((x) => x.key === 'spo');
+    expect(hrv?.z).toBeLessThan(-1.5);
+    expect(spo?.z).toBeLessThan(-1.5);
+    expect(hrv?.deviating).toBe(false);
+    expect(spo?.deviating).toBe(false);
+    expect(s.signalsDeviating).toBe(0);
   });
 
   it('orients every signal so that positive means more strain', () => {

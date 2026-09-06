@@ -4,9 +4,15 @@
  * Everything here is presentational: band → *word* mappings (SPEC §0 — a
  * colour never carries state on its own, so every tone ships with a label),
  * number formatters, and the curve/bar geometry the hand-rolled SVGs need.
- * No engine imports and no clock reads — the components are driven entirely
- * by the props the engine fills, so they render from `undefined` and from
- * all-null fields alike.
+ * No clock reads — the components are driven entirely by the props the engine
+ * fills, so they render from `undefined` and from all-null fields alike.
+ *
+ * It does import two things from the engine, and both are load-bearing rather
+ * than convenient: `SIGNAL_STRAIN_SIGN`, without which the direction of an
+ * overnight signal cannot be stated (`StressSignal.z` is on the strain axis,
+ * so HRV's sign is flipped relative to the reading), and the impact module's
+ * own evidence predicates, so the badge on an effect row is decided by the
+ * same code that produced the estimate rather than by a second opinion here.
  *
  * Copy rules that live here on purpose (they are reviewed as copy, not as
  * code): the overnight index is a *strain* index and never a diagnosis; the
@@ -14,6 +20,8 @@
  * described as measured; behaviour effects are *associations* with intervals.
  */
 import type { Band, BehaviourEffect, CheckInItem, EnergyPoint, HHMM, ResilienceBand, StressBand, StressSignal } from '../../data/types';
+import { isConsistentEffect, rawDifference } from '../../engine/impact';
+import { SIGNAL_STRAIN_SIGN } from '../../engine/stress';
 import { formatClock, hhmmToMinutes, minutesToHHMM } from '../../lib/dates';
 import { clamp, fmt } from '../../lib/format';
 import type { Tone } from '../../ui';
@@ -108,16 +116,32 @@ export function signalsLine(deviating: number, available: number): string {
   return `${n} of ${Math.round(available)} overnight signals outside your range`;
 }
 
-/** "+1.8" / "−0.4" / "—" — the z-score, signed so the direction is in the text. */
+/** "+1.8" / "−0.4" / "—" — a signed z, for anywhere an axis is already named. */
 export function formatZ(z: number | null | undefined): string {
   if (z === null || z === undefined || !Number.isFinite(z)) return '—';
   const s = fmt(Math.abs(z), 1);
   return z > 0 ? `+${s}` : z < 0 ? `−${s}` : '0.0';
 }
 
-/** The word beside the dot: direction relative to the personal baseline. */
-export function signalDirection(z: number | null | undefined): 'above' | 'below' | 'at' | 'unknown' {
-  if (z === null || z === undefined || !Number.isFinite(z)) return 'unknown';
+/**
+ * `StressSignal.z` is on the **strain axis** — positive is always *more strain*,
+ * so HRV and blood oxygen (which fall under strain) arrive with their sign
+ * flipped relative to the reading. Every line of copy below is about the
+ * READING, so it starts here: `SIGNAL_STRAIN_SIGN` turns the strain z back into
+ * the metric's own z, where positive means the number was above the user's
+ * normal. (For HRV that z is on ln rMSSD — the axis the engine standardises on
+ * — so the direction is exact and the magnitude is in log SDs.)
+ */
+export function signalMetricZ(signal: StressSignal): number | null {
+  const z = signal.z;
+  if (z === null || z === undefined || !Number.isFinite(z)) return null;
+  return (SIGNAL_STRAIN_SIGN[signal.key] ?? 1) * z;
+}
+
+/** The reading's direction against the personal baseline — never the strain axis. */
+export function signalDirection(signal: StressSignal): 'above' | 'below' | 'at' | 'unknown' {
+  const z = signalMetricZ(signal);
+  if (z === null) return 'unknown';
   if (z > 0.05) return 'above';
   if (z < -0.05) return 'below';
   return 'at';
@@ -125,10 +149,33 @@ export function signalDirection(z: number | null | undefined): 'above' | 'below'
 
 /** Screen-reader / chip text for one signal — never colour-only. */
 export function signalStateText(signal: StressSignal): string {
-  if (signal.z === null || signal.z === undefined || !Number.isFinite(signal.z)) return 'No reading';
-  const dir = signalDirection(signal.z);
-  const where = dir === 'above' ? 'above' : dir === 'below' ? 'below' : 'at';
-  return signal.deviating ? `Outside your range (${where} normal)` : `Inside your range (${where} normal)`;
+  if (signalMetricZ(signal) === null) return 'No reading';
+  return signal.deviating ? 'Outside your range' : 'Inside your range';
+}
+
+/**
+ * "2.2 SD below your normal" — how far the READING sat from the user's own
+ * normal, and which way. Said in words rather than as a bare signed z, because
+ * a signed number is only readable if you already know which axis it is on.
+ */
+export function signalZText(signal: StressSignal): string {
+  const z = signalMetricZ(signal);
+  if (z === null) return '—';
+  const dir = signalDirection(signal);
+  if (dir === 'at') return 'at your normal';
+  return `${fmt(Math.abs(z), 1)} SD ${dir} your normal`;
+}
+
+/**
+ * "flags from 1.3 SD below" — the outlier rule spelled out **one-sidedly**, in
+ * the direction that actually flags. The engine's test is `z_strain ≥
+ * threshold`, so for HRV and blood oxygen only a fall can flag and only a rise
+ * can flag for the others; "±1.3" would claim an interval that does not exist.
+ */
+export function signalThresholdText(signal: StressSignal): string {
+  if (!isNum(signal.threshold)) return '';
+  const dir = (SIGNAL_STRAIN_SIGN[signal.key] ?? 1) === -1 ? 'below' : 'above';
+  return `flags from ${fmt(signal.threshold, 1)} SD ${dir}`;
 }
 
 export function signalTone(signal: StressSignal): Tone {
@@ -487,10 +534,47 @@ export function shrinkageLine(shrunkToPrior: number | null | undefined): string 
   return `${pct}% of this estimate comes from published averages, not your data.`;
 }
 
-/** Word for the adjusted p-value — "confirmed" is deliberately not used. */
-export function strengthWord(qValue: number | null | undefined): ToneWord {
-  if (!isNum(qValue)) return { label: 'Not yet testable', tone: 'neutral' };
-  if (qValue <= 0.05) return { label: 'Consistent signal', tone: 'green' };
-  if (qValue <= 0.2) return { label: 'Suggestive only', tone: 'yellow' };
+/**
+ * The badge on an effect row — "confirmed" is deliberately not used, and
+ * neither is "consistent" unless the row's own three numbers agree.
+ *
+ * The q-value is computed on the **unshrunk** difference (a prior must not
+ * manufacture significance) while the number, the direction word and the
+ * interval on the row are the **shrunk posterior**. Reading the badge off the q
+ * alone therefore lets a green "Consistent signal" land on an interval that
+ * spans zero, or on an estimate pointing the opposite way to the days that
+ * produced the q. `isConsistentEffect` requires all three to line up; when only
+ * the q clears, the row says the evidence is mixed and `strengthCaveat` says
+ * which way.
+ */
+export function strengthWord(effect: BehaviourEffect | null | undefined): ToneWord {
+  if (!effect || !isNum(effect.qValue)) return { label: 'Not yet testable', tone: 'neutral' };
+  if (effect.qValue <= 0.05) {
+    return isConsistentEffect(effect)
+      ? { label: 'Consistent signal', tone: 'green' }
+      : { label: 'Mixed evidence', tone: 'yellow' };
+  }
+  if (effect.qValue <= 0.2) return { label: 'Suggestive only', tone: 'yellow' };
   return { label: 'No clear signal', tone: 'neutral' };
+}
+
+/**
+ * What the badge is holding back, in words: the interval that still contains
+ * "no difference", and — the case a zero-crossing interval does not cover — an
+ * estimate that shrinkage pulled to the other side of zero from the user's own
+ * days. Empty when the row's numbers agree with each other.
+ */
+export function strengthCaveat(effect: BehaviourEffect | null | undefined): string {
+  if (!effect) return '';
+  const parts: string[] = [];
+  if (isNum(effect.lo95) && isNum(effect.hi95) && effect.lo95 <= 0 && effect.hi95 >= 0) {
+    parts.push('the interval includes zero, so "no difference" is still on the table');
+  }
+  const raw = rawDifference(effect);
+  if (isNum(raw) && isNum(effect.deltaMean) && raw * effect.deltaMean < 0) {
+    parts.push(
+      `your own days went the other way (${effect.deltaMean > 0 ? 'lower' : 'higher'} on those days) before the published average pulled the estimate across zero`,
+    );
+  }
+  return parts.join(' · ');
 }

@@ -2,19 +2,24 @@
  * SignalDots — the overnight signals as labelled dots (SPEC §0: no state is
  * carried by colour alone).
  *
- * Each signal gets a dot, its name, the reading, the z-score against the
- * user's own baseline, the threshold that would flag it, and the state in
- * words ("Outside your range (above normal)"). A deviating signal is a FILLED
- * dot, an in-range one is a hollow ring — so the list still parses in
- * greyscale, and every dot is announced by its row text.
+ * Each signal gets a dot, its name, the reading, how far that reading sat from
+ * the user's own normal and which way, the threshold that would flag it, and
+ * the state in words ("Outside your range · 2.2 SD below your normal · flags
+ * from 1.3 SD below"). A deviating signal is a FILLED dot, an in-range one is a
+ * hollow ring — so the list still parses in greyscale, and every dot is
+ * announced by its row text.
+ *
+ * Two things this row must not get wrong, both handled in `format.ts`: the
+ * engine's `z` is on the STRAIN axis (HRV and blood oxygen arrive sign-flipped
+ * relative to the reading), and the outlier rule is ONE-SIDED, so the threshold
+ * is spelled out in the single direction that can actually flag.
  *
  * Purely presentational: it renders whatever `signals` it is handed, and says
  * so plainly when it is handed none.
  */
 import type { StressSignal } from '../../data/types';
-import { fmt } from '../../lib/format';
 import { bandBg, bandBorder, bandText } from '../../ui';
-import { signalLabel, signalStateText, signalTone, signalValueText, formatZ } from './format';
+import { signalLabel, signalStateText, signalThresholdText, signalTone, signalValueText, signalZText } from './format';
 
 export interface SignalDotsProps {
   /** The overnight signals to list (e.g. `stress.outliers`). */
@@ -47,8 +52,9 @@ export default function SignalDots({ signals, emptyText = 'No overnight signals 
               </div>
               <p className="text-[12px] leading-4 text-hx-muted">
                 <span className={`font-medium ${bandText(tone)}`}>{signalStateText(s)}</span>
-                {' · '}z {formatZ(s.z)}
-                {Number.isFinite(s.threshold) ? ` · flags past ±${fmt(s.threshold, 1)}` : ''}
+                {' · '}
+                {signalZText(s)}
+                {signalThresholdText(s) ? ` · ${signalThresholdText(s)}` : ''}
               </p>
             </div>
           </li>

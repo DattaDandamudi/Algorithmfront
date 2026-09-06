@@ -9,8 +9,12 @@
  *   → ≈2.4 min at strain 4, ≈22.6 at 12, ≈55.5 at 21. **HEURISTIC — no published
  *   source.** WHOOP publishes only that strain is a logarithmic 0–21 scale and
  *   that need rises with it; the midpoint (13.5, a hard-but-normal training day)
- *   and scale (3) are product calibration, not a finding. `STRAIN_ADD_IS_HEURISTIC`
- *   is exported so the UI can say so.
+ *   and scale (3) are product calibration, not a finding. A boolean is not a
+ *   label, so `STRAIN_ADD_LABEL` says it in the user's own words (the same form
+ *   as `CIRCADIAN_PENALTY_LABEL`) and rides inside
+ *   `sleepSummary().tonightNeedReason` whenever the add is actually charged —
+ *   at strain 18 that is +49 min on the night's need. `STRAIN_ADD_IS_HEURISTIC`
+ *   stays for callers that want the flag.
  * - **f(debt)** pays debt back gradually (never all in one night): `debt/3`,
  *   capped at 45 min. It is a pay-back *ask* that only appears in the displayed
  *   need — debt itself accrues against `baseline + f(strain) − naps`, and sleep
@@ -41,6 +45,13 @@
  *   in the user's own words and rides inside `circadianDelay().reason` — the only
  *   user-facing string about the penalty, and the one `tonightNeedReason` quotes
  *   — whenever the penalty is actually charged.
+ *
+ * **`tonightNeedReason` is the one string that explains tonight's need**, and it
+ * carries both hedges above. It is not yet on `CoachContext`, so nothing renders
+ * it: wiring it needs `sleep.tonightNeedReason` copied through `engine/context`
+ * into `CoachContext['sleep']` (`data/types`), after which the Today sleep tile
+ * or the coach's `sleep` route can show why the need moved and whose numbers the
+ * penalty and the strain add are.
  * - **SRI — Sleep Regularity Index** (`sleepRegularityIndex`). **Phillips 2017**
  *   (Sci Rep 7:3216): the probability of being in the same sleep/wake state at
  *   two times 24 h apart, scaled `200·P − 100`, on a **1-minute grid**. 100 =
@@ -99,11 +110,22 @@ import { logistic, median, quantile } from './stats';
  * Logistic midpoint / scale for the strain → sleep-need curve.
  * **Heuristic** — WHOOP publishes no formula (see header).
  */
-const STRAIN_MIDPOINT = 13.5;
-const STRAIN_SCALE = 3;
-const STRAIN_MAX_ADD_MIN = 60;
+export const STRAIN_MIDPOINT = 13.5;
+export const STRAIN_SCALE = 3;
+export const STRAIN_MAX_ADD_MIN = 60;
 /** True so UI copy can label the strain add as a calibration, not a finding. */
 export const STRAIN_ADD_IS_HEURISTIC = true;
+/**
+ * The user-showable half of `STRAIN_ADD_IS_HEURISTIC`, written in the same
+ * voice as `CIRCADIAN_PENALTY_LABEL`: a boolean no screen can render is not a
+ * label. At strain 18 this curve adds 49 minutes to tonight's need — a number
+ * large enough that the user is owed the fact that its shape is ours.
+ * `sleepSummary().tonightNeedReason` carries it whenever the add is charged.
+ */
+export const STRAIN_ADD_LABEL =
+  'WHOOP publishes only that strain is a logarithmic 0–21 scale and that sleep need rises with it — ' +
+  `the ${STRAIN_MIDPOINT} midpoint, the scale of ${STRAIN_SCALE} and the ${STRAIN_MAX_ADD_MIN}-minute ceiling ` +
+  'are our own calibration, not published quantities.';
 /** Debt is repaid at 1/3 per night, at most 45 min/night (the displayed ask). */
 const DEBT_PAYBACK_DIVISOR = 3;
 const DEBT_ADD_CAP_MIN = 45;
@@ -1193,9 +1215,13 @@ export function sleepSummary(
   if (tonight.strainAddMin > 0) parts.push(`+${Math.round(tonight.strainAddMin)} min for today's strain`);
   if (tonight.debtAddMin > 0) parts.push(`+${Math.round(tonight.debtAddMin)} min to start paying down ${debtMin} min of debt`);
   if (tonight.napCreditMin > 0) parts.push(`−${Math.round(tonight.napCreditMin)} min for today's nap`);
-  const tonightNeedReason = tonight.circadianAddMin > 0
+  // The hedges ride with the numbers they qualify, and only when those numbers
+  // were actually charged: a surface that renders this one string cannot show
+  // "+49 min for today's strain" without also showing whose calibration that is.
+  const sum = tonight.circadianAddMin > 0
     ? `${parts.join(', ')}, +${Math.round(tonight.circadianAddMin)} min because ${circadian.reason.charAt(0).toLowerCase()}${circadian.reason.slice(1)}`
     : `${parts.join(', ')}.`;
+  const tonightNeedReason = tonight.strainAddMin > 0 ? `${sum} ${STRAIN_ADD_LABEL}` : sum;
 
   return {
     hours,

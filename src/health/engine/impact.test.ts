@@ -4,11 +4,18 @@ import { addDays } from '../lib/dates';
 import {
   BEHAVIOUR_PRIORS,
   BEHAVIOURS,
+  HEURISTIC_BEHAVIOURS,
+  IMPACT_HEURISTIC_NOTE,
   IMPACT_METRICS,
+  IMPACT_WINDOW_DAYS,
+  MARGIN_MIN,
   MIN_NO_DAYS,
   MIN_YES_DAYS,
   behaviourImpact,
   isConfirmedEffect,
+  isConsistentEffect,
+  rawDifference,
+  usesHeuristicThreshold,
 } from './impact';
 
 const ASOF = '2026-09-06';
@@ -388,5 +395,98 @@ describe('behaviourImpact — behaviour definitions', () => {
       'lateBedtime',
     ]);
     expect([...IMPACT_METRICS]).toEqual(['readiness', 'hrv', 'rhr', 'sleepHrs', 'osi']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// When the q-value and the shrunk posterior disagree
+// ---------------------------------------------------------------------------
+
+/** Values with an exact mean and an exact sample SD — no RNG, no drift. */
+function group(n: number, mean: number, sd: number): number[] {
+  const xs = Array.from({ length: n }, (_, i) => i);
+  const mu = xs.reduce((a, b) => a + b, 0) / n;
+  const v = xs.reduce((a, b) => a + (b - mu) ** 2, 0) / (n - 1);
+  return xs.map((x) => mean + (sd * (x - mu)) / Math.sqrt(v));
+}
+
+/**
+ * The measured null user: 90 days, 13 of them drinking days, next-day HRV with
+ * **no true effect**. The split is pinned to the one an adversarial review hit
+ * — alcohol days +12.34 ms HIGHER, Welch se 5.54, p = 0.0424 — because that is
+ * the corner where the q-value (computed on the raw difference, deliberately)
+ * and the reported estimate (shrunk against a −7 ms prior) point opposite ways.
+ */
+function nullAlcoholUser(): DailyRecord[] {
+  const DAYS = 90;
+  const yes = group(13, 62 + 12.335, Math.sqrt(28 * 13));
+  const no = group(76, 62, Math.sqrt((5.54 ** 2 - 28) * 76));
+  const drank = new Set(Array.from({ length: 13 }, (_, k) => Math.floor((k * 89) / 13)));
+  const hrv: number[] = [62];
+  let yi = 0;
+  let ni = 0;
+  for (let i = 0; i < DAYS - 1; i++) hrv.push(drank.has(i) ? yes[yi++] : no[ni++]);
+  return Array.from({ length: DAYS }, (_, i) => ({
+    d: day(i, DAYS),
+    hrv: hrv[i],
+    alc: i < DAYS - 1 && drank.has(i) ? 1 : 0,
+  }));
+}
+
+describe('behaviourImpact — a q-value the posterior does not back', () => {
+  const e = behaviourImpact(nullAlcoholUser(), [], ASOF).effects.find(
+    (x) => x.behaviour === 'alcohol' && x.metric === 'hrv',
+  )!;
+
+  it('reproduces the split: a raw +12 ms difference reported as −0.4 ms', () => {
+    expect(e.nYes).toBe(13);
+    expect(e.qValue).toBe(0.0424);
+    expect(e.shrunkToPrior).toBe(0.66);
+    expect(e.deltaMean).toBe(-0.37);
+    expect(e.label).toBe(
+      'on the 13 days you drank, next-day HRV averaged 0.4 ms lower (95% CI 7.3 lower to 6.6 higher)',
+    );
+  });
+
+  it('recovers the unshrunk difference the q was computed on, sign included', () => {
+    const raw = rawDifference(e)!;
+    expect(raw).toBeGreaterThan(11);
+    expect(raw).toBeLessThan(14);
+    // The point of the whole exercise: the two disagree about the direction.
+    expect(raw * e.deltaMean).toBeLessThan(0);
+    // No prior, or nothing shrunk → the estimate *is* the raw difference.
+    expect(rawDifference({ ...e, shrunkToPrior: 0 })).toBe(e.deltaMean);
+    expect(rawDifference({ ...e, metric: 'sleepHrs' })).toBe(e.deltaMean);
+  });
+
+  it('clears the q bar and still is not a consistent signal', () => {
+    expect(isConfirmedEffect(e)).toBe(true);
+    // The reported interval spans zero…
+    expect(e.lo95).toBeLessThan(0);
+    expect(e.hi95).toBeGreaterThan(0);
+    expect(isConsistentEffect(e)).toBe(false);
+    // …and neither does an interval clear of zero rescue it while the sign of
+    // the estimate disagrees with the days that produced the q.
+    expect(isConsistentEffect({ ...e, lo95: -8.4, hi95: -4.4, deltaMean: -6.4, shrunkToPrior: 0.97 })).toBe(false);
+    // A clean row still passes all three tests.
+    expect(isConsistentEffect({ ...e, lo95: -7.1, hi95: -1.3, deltaMean: -4.2, shrunkToPrior: 0 })).toBe(true);
+  });
+
+  it('keeps the q itself on the unshrunk p — the prior must not create evidence', () => {
+    // Unchanged behaviour, restated as a guard: shrinkage moved the estimate
+    // 12.7 ms and the q not at all.
+    expect(e.qValue).toBe(0.0424);
+    expect(e.shrunkToPrior).toBeGreaterThan(0.5);
+  });
+});
+
+describe('the relative thresholds carry their heuristic label', () => {
+  it('names the three behaviours it applies to, and the numbers behind them', () => {
+    expect([...HEURISTIC_BEHAVIOURS]).toEqual(['highLoad', 'shortSleep', 'lateBedtime']);
+    expect(usesHeuristicThreshold('shortSleep')).toBe(true);
+    expect(usesHeuristicThreshold('alcohol')).toBe(false);
+    expect(IMPACT_HEURISTIC_NOTE).toContain('no published cut-off');
+    expect(IMPACT_HEURISTIC_NOTE).toContain(`${MARGIN_MIN} minutes`);
+    expect(IMPACT_HEURISTIC_NOTE).toContain(`${IMPACT_WINDOW_DAYS} days`);
   });
 });

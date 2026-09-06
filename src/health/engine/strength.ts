@@ -58,9 +58,16 @@
  *
  * ## Constants that are ours, not the literature's
  *
- * `RED_STREAK_DAYS` (3), `PLATEAU_RPE_RISE` (0.5) and the `LOAD_INCREMENT_*`
- * tables are **heuristics** — plausible gym numbers with no trial behind them.
- * They are exported so the copy can say so.
+ * `REDUCE_PCT_HARD` (5), `REDUCE_PCT_RED` (7.5), `MUSCLE_READY_MIN_PCT` (60),
+ * `RPE_BACKOFF` (9.5), `MISSED_SETS_BACKOFF` (2), `DELOAD_SET_CUT_PCT` (40),
+ * `DELOAD_LOAD_CUT_PCT` (10), `RED_STREAK_DAYS` (3), `PLATEAU_RPE_RISE` (0.5)
+ * and the `LOAD_INCREMENT_*` tables are **heuristics** — plausible gym numbers
+ * with no trial behind them. Seven of them can change a prescription, so
+ * exporting them is not enough: `PROGRESSION_NOTES` states every one of them,
+ * interpolated from the constants themselves, and **Train ▸ Today renders it
+ * beside the plan it decided** (`screens/train/TodayView`). `LOAD_INCREMENT_*`
+ * additionally drives the logger's weight stepper (`trainUtils.loadStepDisplay`)
+ * so a suggested load is always one the stepper can land on.
  */
 import { addDays, weekdayOf } from '../lib/dates';
 import { kgToLb, lbToKg } from '../lib/format';
@@ -758,6 +765,30 @@ export const LOAD_INCREMENT_LB: Record<Equipment, number> = {
   bodyweight: 2.5,
   other: 2.5,
 };
+
+/**
+ * The user-showable half of "constants that are ours" — the two sentences
+ * Train ▸ Today renders under the plan they decided.
+ *
+ * Every number is interpolated from the constant it names, so the copy cannot
+ * drift from the rule, and it is rendered **on a training day, beside the
+ * prescription**: `REDUCE_PCT_RED` turning "progress 82.5 kg × 4" into "reduce
+ * 75 kg × 3" is exactly the moment the user is owed the fact that 7.5 % is a
+ * gym number we chose, not a finding. A doc comment or a boolean flag is not a
+ * label — only a string a screen actually paints is.
+ */
+export const PROGRESSION_NOTES = {
+  steps:
+    `Heuristics, not findings — no trial sets these: −${REDUCE_PCT_RED}% and one set fewer on a red day, ` +
+    `−${REDUCE_PCT_HARD}% after RPE ${RPE_BACKOFF} or ${MISSED_SETS_BACKOFF} missed sets, hold below ` +
+    `${MUSCLE_READY_MIN_PCT}% muscle recovery, and a deload of −${DELOAD_SET_CUT_PCT}% sets / −${DELOAD_LOAD_CUT_PCT}% load ` +
+    `once two signals line up (${RED_STREAK_DAYS} red days running, a plateau with RPE up ${PLATEAU_RPE_RISE}, ` +
+    `overreached form, ${DELOAD_ACCUMULATION_WEEKS} accumulation weeks). They are plausible gym numbers, calibrated by us.`,
+  increments:
+    `Loads are rounded to the smallest increment your equipment really has (${LOAD_INCREMENT_KG.barbell} kg / ` +
+    `${LOAD_INCREMENT_LB.barbell} lb on a bar, ${LOAD_INCREMENT_KG.dumbbell} kg dumbbells, ` +
+    `${LOAD_INCREMENT_KG.machine} kg stacks) — what gyms stock, not a measured constant.`,
+} as const;
 
 /** The smallest step for this equipment, expressed in kg. */
 export function loadIncrementKg(equipment: Equipment, units: 'lb' | 'kg'): number {

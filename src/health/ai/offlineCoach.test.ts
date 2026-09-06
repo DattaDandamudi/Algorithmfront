@@ -635,21 +635,59 @@ describe('2d stress & impact copy — associations with intervals, never causes 
     expect(out).toContain('(95% CI 0.2–1.0) — an association, not a cause (those days were also harder training days).');
   });
 
-  it('the illness flag stays a data pattern and routes to a doctor', () => {
+  it('the illness flag stays a possibility with overload beside it, and routes to a doctor', () => {
     const ctx = fullContext();
     ctx.stress = {
       ...ctx.stress!,
       illness: { flag: true, since: '2026-09-02', reasons: ['skin temp +1.4 SD for 2 nights', 'breathing rate +1.6 SD'] },
     };
     const out = ask(STRESS_CHIP, ctx);
+    // Same hedge as ILLNESS_COPY (engine/stress), the insight card and the
+    // readiness modifier: possible, with heavy overload as the co-equal
+    // alternative — never a match asserted against one condition class.
     expect(out).toContain(
-      'Your overnight signals have matched an illness pattern since 2026-09-02 (skin temp +1.4 SD for 2 nights, breathing rate +1.6 SD) — a pattern in the data, not a diagnosis.',
+      'Possible illness or heavy overload since 2026-09-02 (skin temp +1.4 SD for 2 nights, breathing rate +1.6 SD) — a pattern in your own numbers, not a diagnosis.',
     );
+    expect(out).not.toMatch(/have\s+matched\s+an\s+illness\s+pattern/i);
     expect(out).toMatch(/\*\*Keep today easy, sleep long and hydrate; if it lasts more than a few days or you feel unwell, see your doctor\.\*\*$/);
     // Never a condition, never a verdict on what it is.
     expect(out).not.toMatch(/\b(infection|virus|viral|flu|covid|fever|you\s+are\s+sick|you're\s+sick)\b/i);
     // The only time "diagnos" may appear is in the denial.
     expect(out.match(/diagnos\w*/gi)).toEqual(['diagnosis']);
+  });
+
+  it('the training and recovery answers escalate too, not just the stress one', () => {
+    // Day 5 of a flagged run with a red verdict — the state in which someone
+    // most plausibly asks "should I train today?".
+    const flagged = () => {
+      const ctx = fullContext();
+      ctx.readiness = { ...ctx.readiness, score: 34, band: 'red', verdict: 'Run down — keep today light', training: 'Light day' };
+      ctx.stress = {
+        ...ctx.stress!,
+        band: 'major',
+        osi: 99,
+        signalsDeviating: 5,
+        illness: { flag: true, since: '2026-09-02', reasons: ['skin temp +1.4 SD for 2 nights', 'breathing rate +1.6 SD'] },
+      };
+      return ctx;
+    };
+
+    for (const q of ['should I train today?', 'why is my recovery low?']) {
+      const out = ask(q, flagged());
+      expect(out).toContain('Possible illness or heavy overload since 2026-09-02');
+      expect(out).toContain('not a diagnosis');
+      expect(out).toMatch(/\*\*Keep today easy, sleep long and hydrate; if it lasts more than a few days or you feel unwell, see your doctor\.\*\*$/);
+      expect(out).not.toMatch(/\b(infection|virus|viral|flu|covid|fever)\b/i);
+      expect(out.match(/diagnos\w*/gi)).toEqual(['diagnosis']);
+    }
+    expect(routeQuestion('should I train today?')).toBe('train');
+    expect(routeQuestion('why is my recovery low?')).toBe('recovery');
+
+    // With the flag down neither answer invents one.
+    for (const q of ['should I train today?', 'why is my recovery low?']) {
+      const out = ask(q);
+      expect(out).not.toMatch(/illness|overload|doctor/i);
+    }
   });
 
   it('"am I getting sick?" is a symptom ask: it holds training and sends the user to a clinician', () => {

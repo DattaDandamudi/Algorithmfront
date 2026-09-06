@@ -209,6 +209,34 @@ export const BEHAVIOUR_LABELS: Record<BehaviourKey, string> = {
   lateBedtime: 'late bedtime',
 };
 
+/**
+ * Margin against the user's own median, minutes: a night has to be both in the
+ * bottom quartile *and* half an hour short of their usual before it counts as
+ * "short sleep" (same for a late bedtime). Heuristic — see
+ * `IMPACT_HEURISTIC_NOTE`, which is the sentence the card shows for it.
+ */
+export const MARGIN_MIN = 30;
+
+/**
+ * The three behaviours whose yes/no split is drawn from the user's OWN
+ * distribution rather than from a published cut-off.
+ */
+export const HEURISTIC_BEHAVIOURS: readonly BehaviourKey[] = ['highLoad', 'shortSleep', 'lateBedtime'];
+
+/**
+ * The label the four relative thresholds ship with. The constants that define
+ * them (`loadP75`, `sleepP25`, `bedP75`, `MARGIN_MIN`) have no published
+ * support, so the card says so in words wherever one of
+ * `HEURISTIC_BEHAVIOURS` is on screen — a comment in this file is not a label,
+ * and the user is the one who needs to know.
+ */
+export const IMPACT_HEURISTIC_NOTE = `"Hard training days", "short sleep" and "late bedtime" are heuristics with no published cut-off behind them: they mean the top or bottom quarter of your own last ${IMPACT_WINDOW_DAYS} days, and at least ${MARGIN_MIN} minutes off your own median.`;
+
+/** True when this row's yes/no split came from the user's own quartiles. */
+export function usesHeuristicThreshold(behaviour: string): boolean {
+  return (HEURISTIC_BEHAVIOURS as readonly string[]).includes(behaviour);
+}
+
 /** `on the N days …` — the second clause of every sentence this module writes. */
 const BEHAVIOUR_COPY: Record<BehaviourKey, (detail: string) => string> = {
   alcohol: () => 'you drank',
@@ -346,14 +374,14 @@ function buildBehaviours(
   });
 
   // Relative thresholds come from the user's own window. **These four numbers
-  // are heuristics with no published support** and are labelled as such for
-  // the UI copy: the top quartile of *training* days is "high load" (rest days
-  // are excluded so a 3-on/4-off week does not make every session "hard"), the
-  // bottom quartile of nights is "short sleep" and the top quartile of
-  // bedtimes is "late" — each with a margin (30 min) against the user's own
-  // median, so a metronomic sleeper has no short nights and no late nights
-  // however tight their quartiles are.
-  const MARGIN_MIN = 30;
+  // are heuristics with no published support**, which is what
+  // `IMPACT_HEURISTIC_NOTE` says on the card whenever one of the three
+  // behaviours they define is on screen: the top quartile of *training* days is
+  // "high load" (rest days are excluded so a 3-on/4-off week does not make every
+  // session "hard"), the bottom quartile of nights is "short sleep" and the top
+  // quartile of bedtimes is "late" — each with a margin (`MARGIN_MIN`) against
+  // the user's own median, so a metronomic sleeper has no short nights and no
+  // late nights however tight their quartiles are.
   const loadValues = logged.map((d) => loadByDate.get(d)).filter(isNum).filter((v) => v > 0);
   const loadP75 = quantile(loadValues, 0.75);
   const sleepValues = logged.map((d) => byDate.get(d)?.slh).filter(isNum);
@@ -599,6 +627,60 @@ export function behaviourImpact(
 /** `q ≤ 0.05` after Benjamini–Hochberg — the one bar for "we'd say this out loud". */
 export function isConfirmedEffect(e: BehaviourEffect): boolean {
   return Number.isFinite(e.qValue) && e.qValue <= IMPACT_Q_THRESHOLD;
+}
+
+/**
+ * The **unshrunk** difference in means — the one the q-value was computed on —
+ * recovered from a reported effect.
+ *
+ * The q is deliberately computed on the raw Welch p (a prior must never
+ * manufacture significance), while `deltaMean` and the interval are the shrunk
+ * posterior. Those two can point opposite ways: a +12 ms raw difference shrunk
+ * against a −7 ms prior is reported as −0.4 ms. Anything that puts the q's
+ * verdict next to the posterior's number therefore has to be able to see both,
+ * and `BehaviourEffect` carries only the posterior — so this inverts the
+ * shrinkage that produced it: `estimate = w·diff + (1 − w)·prior` with
+ * `w = 1 − shrunkToPrior`, hence `diff = (estimate − (1 − w)·prior) / w`.
+ *
+ * `null` when there is nothing to undo (no prior, or `w` rounded to 0 — an
+ * estimate that *is* the prior tells us nothing about the days behind it).
+ * The recovery runs on the rounded, published numbers, so it is worth ±0.3 ms
+ * or so at heavy shrinkage; that is immaterial to the only question asked of
+ * it, because a difference whose sign is in doubt at that scale cannot have
+ * produced a q anywhere near 0.05 in the first place.
+ */
+export function rawDifference(e: BehaviourEffect): number | null {
+  if (!isNum(e.deltaMean)) return null;
+  const prior = BEHAVIOUR_PRIORS[`${e.behaviour}:${e.metric}`];
+  const shrunk = isNum(e.shrunkToPrior) ? Math.min(1, Math.max(0, e.shrunkToPrior)) : 0;
+  if (!prior || !isNum(prior.deltaMean) || shrunk <= 0) return e.deltaMean;
+  const w = 1 - shrunk;
+  if (w <= 0) return null;
+  return (e.deltaMean - shrunk * prior.deltaMean) / w;
+}
+
+/**
+ * The bar for the green badge, and it is three things, not one:
+ *
+ * 1. `q ≤ 0.05` after BH — the evidence in the user's own days;
+ * 2. the **reported** 95 % interval excludes zero — a badge saying "consistent"
+ *    over an interval that contains "no difference" is a contradiction the
+ *    reader has to resolve, and they resolve it in favour of the badge;
+ * 3. the shrunk estimate still points the way the raw difference pointed —
+ *    otherwise the number on the row and the evidence behind the badge are
+ *    literally about opposite directions.
+ *
+ * (2) and (3) are what shrinkage can break: it moves the estimate and the
+ * interval without touching the p, so a cell can clear the q bar with a
+ * posterior that spans zero or has crossed it. Those rows are still worth
+ * showing — they just are not "consistent".
+ */
+export function isConsistentEffect(e: BehaviourEffect): boolean {
+  if (!isConfirmedEffect(e)) return false;
+  if (!isNum(e.lo95) || !isNum(e.hi95) || e.lo95 * e.hi95 <= 0) return false;
+  const raw = rawDifference(e);
+  if (raw === null) return false;
+  return raw * e.deltaMean > 0;
 }
 
 /**

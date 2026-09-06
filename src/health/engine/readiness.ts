@@ -57,7 +57,11 @@
  * - Training and stress **modifiers** — `formBand`, `acwr`, `stressBand`,
  *   `illness` — arrive as **plain optional arguments**. This module never
  *   imports `engine/load` or `engine/stress`; the caller passes values. They
- *   downgrade the verdict **one step** in total and never override a red.
+ *   downgrade the verdict **one step** in total and never override a red. On a
+ *   day the HRV rule already forced red they are still **listed**, as `note`s
+ *   rather than downgrades: the band cannot move again, but the sentences must
+ *   not disappear — the illness one is where the user is told this is not a
+ *   diagnosis and to see a doctor if it persists.
  *
  * ## Uncertainty
  * `contributors[]` is always filled (one row per input, with the points it
@@ -561,6 +565,15 @@ export function readiness(
           : 'Your 7-day HRV average is above your normal range without a matching drop in resting HR — hold loads rather than progressing them.',
       });
     }
+  }
+
+  // Training / stress / illness modifiers. These are evaluated on a forced day
+  // too: forcing already produces red, so they cannot downgrade anything, but
+  // suppressing them made the illness note — the only "not a diagnosis, see
+  // your doctor" sentence on the Today hero — vanish on days 1–2 of a flagged
+  // run, when the same physiology usually trips the forcing rule as well, and
+  // reappear on day 3. Listed on a forced day, applied on an unforced one.
+  if (forced || band !== 'neutral') {
     const pending: ReadinessModifier[] = [];
     if (opts.formBand === 'overreached') {
       pending.push({
@@ -609,7 +622,13 @@ export function readiness(
           'Your last week of load is well above your last month. ACWR is descriptive, not a causal injury predictor (Impellizzeri 2020), so it only ever contributes alongside another signal — as it is doing here.',
       });
     }
-    if (pending.length > 0) {
+    if (pending.length > 0 && forced) {
+      // The band is already red from the forcing rule. Each of these is still
+      // worth reading — and the illness one carries the doctor cue — but a
+      // second downgrade on the same morning would be the same fatigue counted
+      // twice, so they ride along as notes.
+      for (const m of pending) modifiers.push({ ...m, effect: 'note' });
+    } else if (pending.length > 0) {
       modifiers.push(...pending);
       band = downgrade(band); // one step in total, however many fired
     } else if (acwrHigh) {

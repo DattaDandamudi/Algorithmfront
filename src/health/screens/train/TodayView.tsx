@@ -12,9 +12,18 @@
  * on this view — a landmark never decides what to lift, only fatigue does
  * (`strength.suggestProgression` does not even take the landmarks as an
  * argument).
+ *
+ * A third one is the evidence footnote under the plan. The constants that can
+ * turn "progress 82.5 kg × 4" into "hold 80 kg × 4" or "reduce 75 kg × 3" —
+ * `MUSCLE_READY_MIN_PCT` over the 60-hour recovery half-life, `REDUCE_PCT_RED`,
+ * the back-off and deload steps — have no published source, so their labels
+ * (`PROGRESSION_NOTES`, `LOAD_NOTES.muscleRecovery`) are rendered **here, on a
+ * training day, with the prescription they changed**, not only on the rest-day
+ * card where nothing is being prescribed.
  */
 import { Bike, Dumbbell, HeartPulse, PersonStanding, Play, Trophy } from 'lucide-react';
 import type { PlannedExercise, TrainingContext, WorkoutKind } from '../../data/types';
+import { LOAD_NOTES, PROGRESSION_NOTES } from '../../engine';
 import { formatDateLong } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { Button, EmptyState, bandSoftBg, bandText } from '../../ui';
@@ -70,11 +79,20 @@ export default function TodayView({ model, onStart, onLogKind, onOpenSession }: 
         {isRest ? (
           <RestDayCard training={training} />
         ) : (
-          <ul className="flex flex-col divide-y divide-hx-border -my-1">
-            {planned.map((pe) => (
-              <PlannedRow key={pe.exerciseId} pe={pe} units={units} />
-            ))}
-          </ul>
+          <>
+            <ul className="flex flex-col divide-y divide-hx-border -my-1">
+              {planned.map((pe) => (
+                <PlannedRow key={pe.exerciseId} pe={pe} units={units} />
+              ))}
+            </ul>
+            {planned.length > 0 && (
+              <div className="flex flex-col gap-1.5 border-t border-hx-border pt-3">
+                <Note>{PROGRESSION_NOTES.steps}</Note>
+                <Note>{PROGRESSION_NOTES.increments}</Note>
+                <Note>{LOAD_NOTES.muscleRecovery}</Note>
+              </div>
+            )}
+          </>
         )}
       </TrainCard>
 
@@ -204,10 +222,7 @@ function RestDayCard({ training }: { training: TrainingContext }) {
               </span>
             </div>
           ))}
-          <Note>
-            Recovery is modelled from a 60-hour half-life over the 48–72 h protein-synthesis window — a heuristic curve
-            fitted to nobody, not a measurement of your muscle.
-          </Note>
+          <Note>{LOAD_NOTES.muscleRecovery}</Note>
         </div>
       )}
 

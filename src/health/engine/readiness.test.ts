@@ -351,6 +351,29 @@ describe('verdict — forcing, unbalanced and modifiers', () => {
     expect(readiness(recs, ASOF, P, { formBand: 'productive', acwr: 1.1 }).band).toBe('green');
   });
 
+  it('still lists the illness note when the HRV rule has already forced red', () => {
+    // Days 1–2 of a flagged run: the forcing rule fires on the same physiology,
+    // so the whole pending block used to be skipped and the hero rendered no
+    // "not a diagnosis — check with your doctor" line until day 3.
+    const recs = build((i) => ({ ...shiftWeek(-0.05)(i), rec: 80 }));
+    const plain = readiness(recs, ASOF, P);
+    const flagged = readiness(recs, ASOF, P, { illness: true, stressBand: 'major' });
+    expect(plain.forced).toBe(true);
+    expect(flagged.band).toBe('red');
+
+    const ill = (flagged.modifiers ?? []).find((m) => m.key === 'illness');
+    expect(ill?.label).toBe('Possible illness or heavy overload');
+    expect(ill?.reason).toContain('This is not a diagnosis — if you feel unwell or it persists, check with your doctor.');
+    // Listed, not applied twice: forcing already produced the red band, so the
+    // pending modifiers ride along as notes and downgrade nothing.
+    expect(ill?.effect).toBe('note');
+    expect((flagged.modifiers ?? []).find((m) => m.key === 'stressMajor')?.effect).toBe('note');
+    expect(flagged.band).toBe(plain.band);
+    expect(flagged.score).toBe(plain.score);
+    // The forcing modifier is still first — the hero pulls it out by key.
+    expect(flagged.modifiers?.[0]).toMatchObject({ key: 'hrvForcing', effect: 'downgrade' });
+  });
+
   it('notes vagal saturation and a big single-day drop without moving the band on its own', () => {
     const sat = build((i) => ({
       hrv: Math.exp(MU + CYCLE[i % 7]),

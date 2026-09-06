@@ -7,6 +7,7 @@ import ResilienceCard from './ResilienceCard';
 import SignalDots from './SignalDots';
 import StressCard from './StressCard';
 import StressStrip from './StressStrip';
+import { IMPACT_HEURISTIC_NOTE } from '../../engine/impact';
 import { ENERGY_CAPTION, IMPACT_CAVEAT } from './format';
 
 const noop = () => {};
@@ -49,8 +50,11 @@ const fullStress = (): StressContext => ({
   signalsDeviating: 2,
   signalsAvailable: 5,
   band: 'minor',
+  // `z` is the engine's: STRAIN axis, positive = more strain. HRV falls under
+  // strain, so a 41 ms night (below this user's normal) ships as z +2.2 — the
+  // opposite sign to the reading, which is exactly what the row has to undo.
   outliers: [
-    { key: 'hrv', label: 'HRV', value: 41, z: -2.2, threshold: 1.5, deviating: true },
+    { key: 'hrv', label: 'HRV', value: 41, z: 2.2, threshold: 1.5, deviating: true },
     { key: 'rhr', label: 'Resting HR', value: 58, z: 1.9, threshold: 1.5, deviating: true },
   ],
   checkIn: { sleepQ: 4, fatigue: 5, stress: 3, soreness: 4, total: 16, band: 'yellow', nDays: 21, worseRun: 3, missingToday: false },
@@ -100,12 +104,16 @@ describe('SignalDots', () => {
     expect(renderToStaticMarkup(<SignalDots signals={[]} />)).toContain('No overnight signals yet');
   });
 
-  it('gives every dot a word, a z and its threshold', () => {
+  it('gives every dot a word, a distance from normal and a one-sided threshold', () => {
     const html = renderToStaticMarkup(<SignalDots signals={fullStress().outliers} />);
-    expect(html).toContain('Outside your range (below normal)');
-    expect(html).toContain('Outside your range (above normal)');
-    expect(html).toContain('−2.2');
-    expect(html).toContain('flags past ±1.5');
+    expect(html).toContain('Outside your range');
+    // HRV fell (41 ms), resting HR rose (58 bpm) — each described as the
+    // READING moved, not as the strain axis moved.
+    expect(html).toContain('2.2 SD below your normal');
+    expect(html).toContain('1.9 SD above your normal');
+    expect(html).toContain('flags from 1.5 SD below');
+    expect(html).toContain('flags from 1.5 SD above');
+    expect(html).not.toContain('±');
     expect(html).toContain('41 ms');
   });
 });
@@ -125,7 +133,8 @@ describe('StressCard', () => {
     expect(html).toContain('credible interval 48–74');
     expect(html).toContain('Hooper 28-point total, lower is better');
     expect(html).toContain('Credible interval');
-    expect(html).toContain('Outside your range (below normal)');
+    expect(html).toContain('Outside your range');
+    expect(html).toContain('2.2 SD below your normal');
   });
 });
 
@@ -255,5 +264,52 @@ describe('ImpactCard', () => {
     const html = renderToStaticMarkup(<ImpactCard impact={impact()} />);
     expect(html).toContain('the interval includes zero');
     expect(html).toContain('No clear signal');
+  });
+
+  // The measured null user: q 0.0424 on a +12 ms raw difference, reported as
+  // −0.4 ms with an interval straddling zero. The badge used to be green.
+  it('does not put a green "Consistent signal" on an interval that includes zero', () => {
+    const html = renderToStaticMarkup(
+      <ImpactCard
+        impact={{
+          effects: [
+            {
+              behaviour: 'alcohol',
+              metric: 'hrv',
+              label: 'on the 13 days you drank, next-day HRV averaged 0.4 ms lower (95% CI 7.3 lower to 6.6 higher)',
+              deltaMean: -0.37,
+              lo95: -7.31,
+              hi95: 6.56,
+              nYes: 13,
+              nNo: 76,
+              shrunkToPrior: 0.66,
+              qValue: 0.0424,
+            },
+          ],
+          pending: [],
+        }}
+      />,
+    );
+    expect(html).not.toContain('Consistent signal');
+    expect(html).toContain('Mixed evidence');
+    expect(html).toContain('the interval includes zero');
+    expect(html).toContain('your own days went the other way (higher on those days)');
+  });
+
+  it('labels the relative thresholds as heuristics, but only when one is on screen', () => {
+    const heuristic = renderToStaticMarkup(
+      <ImpactCard
+        impact={{
+          effects: [{ ...impact().effects[0], behaviour: 'shortSleep', metric: 'readiness' }],
+          pending: [],
+        }}
+      />,
+    );
+    // The renderer escapes the quoted behaviour names, so match the clause.
+    const clause = 'heuristics with no published cut-off behind them';
+    expect(IMPACT_HEURISTIC_NOTE).toContain(clause);
+    expect(heuristic).toContain(clause);
+    expect(heuristic).toContain('at least 30 minutes off your own median');
+    expect(renderToStaticMarkup(<ImpactCard impact={impact()} />)).not.toContain(clause);
   });
 });

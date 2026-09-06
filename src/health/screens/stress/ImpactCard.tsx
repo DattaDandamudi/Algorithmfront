@@ -11,14 +11,22 @@
  * not behind a tap. These are observational differences between your own days;
  * nothing here establishes cause.
  *
+ * The badge is not the q-value dressed up. The q is computed on the *unshrunk*
+ * difference and the number beside it is the *shrunk* posterior, so the two can
+ * disagree — an interval that spans zero, or an estimate shrinkage pulled to the
+ * other side of zero from the user's own days. `strengthWord` only says
+ * "Consistent signal" when all three agree; otherwise the row reads "Mixed
+ * evidence" and `strengthCaveat` names the disagreement.
+ *
  * Each bar is scaled to its own interval (the metrics have different units),
  * so bar LENGTHS are not comparable between rows and the caption says so.
  */
 import { FlaskConical } from 'lucide-react';
 import type { BehaviourEffect, ImpactContext } from '../../data/types';
+import { IMPACT_HEURISTIC_NOTE, usesHeuristicThreshold } from '../../engine/impact';
 import { EmptyState, bandBg, bandText } from '../../ui';
 import { Note, TrendCard } from '../trends/TrendCard';
-import { IMPACT_CAVEAT, ciBar, ciText, daysLine, effectValueText, shrinkageLine, strengthWord } from './format';
+import { IMPACT_CAVEAT, ciBar, ciText, daysLine, effectValueText, shrinkageLine, strengthCaveat, strengthWord } from './format';
 
 export const MIN_DAYS_NOTE = 'A behaviour needs at least 5 days with it and 5 without in the last 90 before it is reported at all.';
 
@@ -31,7 +39,8 @@ export interface ImpactCardProps {
 
 function EffectRow({ effect }: { effect: BehaviourEffect }) {
   const bar = ciBar(effect.deltaMean, effect.lo95, effect.hi95);
-  const strength = strengthWord(effect.qValue);
+  const strength = strengthWord(effect);
+  const caveat = strengthCaveat(effect);
   const shrink = shrinkageLine(effect.shrunkToPrior);
   const title = effect.label || `${effect.behaviour} → ${effect.metric}`;
 
@@ -71,7 +80,7 @@ function EffectRow({ effect }: { effect: BehaviourEffect }) {
       </p>
       <p className="text-[12px] leading-4">
         <span className={`font-medium ${bandText(strength.tone)}`}>{strength.label}</span>
-        {bar?.crossesZero ? ' · the interval includes zero, so "no difference" is still on the table' : ''}
+        {caveat ? ` · ${caveat}` : ''}
       </p>
       {shrink && <p className="text-[12px] leading-4 text-hx-muted">{shrink}</p>}
       {effect.confound && <p className="text-[12px] leading-4 text-hx-yellow">Confounded: {effect.confound}</p>}
@@ -82,6 +91,11 @@ function EffectRow({ effect }: { effect: BehaviourEffect }) {
 export default function ImpactCard({ impact, max = 4 }: ImpactCardProps) {
   const effects = (impact?.effects ?? []).slice(0, Math.max(0, max));
   const pending = (impact?.pending ?? []).filter((p) => !!p);
+  // "Hard training", "short sleep" and "late bedtime" are the user's own
+  // quartiles, not a published cut-off. The engine says so in one sentence;
+  // this is where that sentence is shown, and it is shown only when one of
+  // those rows is actually on screen.
+  const heuristic = effects.some((e) => usesHeuristicThreshold(e.behaviour));
 
   if (!effects.length) {
     return (
@@ -122,6 +136,8 @@ export default function ImpactCard({ impact, max = 4 }: ImpactCardProps) {
           <EffectRow key={`${e.behaviour}|${e.metric}`} effect={e} />
         ))}
       </ul>
+
+      {heuristic && <Note tone="neutral">{IMPACT_HEURISTIC_NOTE}</Note>}
 
       {pending.length > 0 && <Note tone="neutral">Still counting days for: {pending.join(', ')}. {MIN_DAYS_NOTE}</Note>}
     </TrendCard>

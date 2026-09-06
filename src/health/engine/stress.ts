@@ -534,6 +534,23 @@ const SIGNALS: readonly SignalSpec[] = [
   { key: 'debt', label: 'Sleep debt', read: debtMin, display: debtMin, sign: 1 },
 ];
 
+/**
+ * Which way each reading moves when strain rises: `+1` = the number goes UP
+ * (resting HR, breathing rate, skin temp, sleep debt), `−1` = it goes DOWN
+ * (HRV, blood oxygen).
+ *
+ * `StressSignal.z` is published on the **strain axis**: positive always means
+ * *more strain*, whichever way the metric itself moved. So a night HRV fell two
+ * standard deviations ships as `z = +2`, not `−2`. Anything that describes the
+ * READING — a direction word ("blood oxygen below your normal"), a threshold
+ * spelled out in the metric's own terms — has to divide that sign back out
+ * first, and it cannot do that without this map. That is the whole reason it is
+ * exported: the direction is not recoverable from `z` alone.
+ */
+export const SIGNAL_STRAIN_SIGN = Object.fromEntries(
+  SIGNALS.map((s) => [s.key, s.sign]),
+) as Record<StressSignal['key'], 1 | -1>;
+
 /** One signal's standing on one day against its own trailing reference. */
 interface SignalState {
   key: StressSignal['key'];
@@ -581,7 +598,14 @@ function signalStatesOn(
   });
 }
 
-/** Deviating by the z rule OR the signal's absolute rule. */
+/**
+ * Deviating by the z rule OR the signal's absolute rule.
+ *
+ * **One-sided, on the strain axis**: only `zStrain ≥ threshold` flags, so a
+ * night HRV was *higher* than normal never counts as an outlier however far out
+ * it is. Copy that describes this rule has to be one-sided too — "flags from
+ * 1.3 SD below" for HRV, not "past ±1.3".
+ */
 function isDeviating(st: SignalState, threshold: number): boolean {
   if (st.zStrain !== null && st.zStrain >= threshold) return true;
   const abs = SIGNAL_ABS_RULE[st.key];
@@ -661,6 +685,9 @@ export function overnightStrainIndex(
   const signals: StressSignal[] = states.map((st) => {
     const threshold = opts?.thresholds?.[st.key] ?? SIGNAL_THRESHOLDS[st.key];
     const usable = !calibrating && st.n >= minRefDays;
+    // Strain axis, not the metric's own: `+2` on HRV means HRV FELL two SD.
+    // `SIGNAL_STRAIN_SIGN` is what turns it back into a statement about the
+    // reading, and `threshold` applies one-sidedly (see `isDeviating`).
     const z = usable && st.zStrain !== null ? round(st.zStrain, 3) : null;
     return {
       key: st.key,

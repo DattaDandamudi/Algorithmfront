@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { EnergyPoint, StressSignal } from '../../data/types';
+import type { BehaviourEffect, DailyRecord, EnergyPoint, StressSignal } from '../../data/types';
+import { isConsistentEffect, rawDifference } from '../../engine/impact';
+import { gaussianSeries, mergeRecords } from '../../engine/simFixtures';
+import { overnightStrainIndex } from '../../engine/stress';
+import { addDays } from '../../lib/dates';
 import {
   balanceBand,
   balanceLine,
@@ -19,6 +23,9 @@ import {
   shrinkageLine,
   signalDirection,
   signalStateText,
+  signalThresholdText,
+  signalZText,
+  strengthCaveat,
   signalTone,
   signalValueText,
   signalsLine,
@@ -29,13 +36,31 @@ import {
   worseRunLine,
 } from './format';
 
+/**
+ * `z` is the engine's, i.e. on the STRAIN axis: positive = more strain, so this
+ * default is an HRV that FELL 2.1 SD (which is why it is deviating).
+ */
 const signal = (patch: Partial<StressSignal> = {}): StressSignal => ({
   key: 'hrv',
   label: 'HRV',
   value: 48,
-  z: -2.1,
+  z: 2.1,
   threshold: 1.5,
   deviating: true,
+  ...patch,
+});
+
+const effect = (patch: Partial<BehaviourEffect> = {}): BehaviourEffect => ({
+  behaviour: 'alcohol',
+  metric: 'sleepHrs',
+  label: 'Alcohol → sleep',
+  deltaMean: -4.2,
+  lo95: -7.1,
+  hi95: -1.3,
+  nYes: 11,
+  nNo: 46,
+  shrunkToPrior: 0,
+  qValue: 0.03,
   ...patch,
 });
 
@@ -76,20 +101,58 @@ describe('signalsLine — the count leads, and reads correctly at the edges', ()
 });
 
 describe('signal formatting is readable without colour', () => {
-  it('signs the z-score and names the direction', () => {
+  it('signs a z where the axis is already named', () => {
     expect(formatZ(-2.14)).toBe('−2.1');
     expect(formatZ(1.85)).toBe('+1.9');
     expect(formatZ(0)).toBe('0.0');
     expect(formatZ(null)).toBe('—');
-    expect(signalDirection(1.2)).toBe('above');
-    expect(signalDirection(-1.2)).toBe('below');
-    expect(signalDirection(0)).toBe('at');
-    expect(signalDirection(null)).toBe('unknown');
+  });
+
+  // The engine publishes `z` on the STRAIN axis (positive = more strain), and
+  // HRV and blood oxygen FALL under strain, so their z arrives sign-flipped
+  // relative to the reading. Everything the user reads is about the reading.
+  it('names the direction of the READING, not of the strain axis', () => {
+    // A night HRV fell: strain z +4.3 → the reading is BELOW normal.
+    expect(signalDirection(signal({ key: 'hrv', value: 40, z: 4.3 }))).toBe('below');
+    // A night HRV rose: strain z −2.3 → the reading is ABOVE normal.
+    expect(signalDirection(signal({ key: 'hrv', value: 74, z: -2.3, deviating: false }))).toBe('above');
+    // Blood oxygen, the other sign = −1 signal, in both directions.
+    expect(signalDirection(signal({ key: 'spo', value: 93, z: 5.4 }))).toBe('below');
+    expect(signalDirection(signal({ key: 'spo', value: 99, z: -1.7, deviating: false }))).toBe('above');
+    // …and a signal that rises with strain is unchanged.
+    expect(signalDirection(signal({ key: 'rhr', value: 62, z: 1.9 }))).toBe('above');
+    expect(signalDirection(signal({ key: 'rhr', value: 48, z: -1.9, deviating: false }))).toBe('below');
+    expect(signalDirection(signal({ key: 'debt', value: 90, z: 2.2 }))).toBe('above');
+    expect(signalDirection(signal({ z: 0 }))).toBe('at');
+    expect(signalDirection(signal({ z: null }))).toBe('unknown');
+  });
+
+  it('says how far the reading sat from normal, in the reading’s own direction', () => {
+    expect(signalZText(signal({ key: 'hrv', value: 40, z: 4.3 }))).toBe('4.3 SD below your normal');
+    expect(signalZText(signal({ key: 'hrv', value: 74, z: -2.3 }))).toBe('2.3 SD above your normal');
+    expect(signalZText(signal({ key: 'spo', value: 93, z: 5.4 }))).toBe('5.4 SD below your normal');
+    expect(signalZText(signal({ key: 'rhr', value: 62, z: 1.9 }))).toBe('1.9 SD above your normal');
+    expect(signalZText(signal({ z: 0 }))).toBe('at your normal');
+    expect(signalZText(signal({ z: null }))).toBe('—');
+  });
+
+  // The engine's rule is `zStrain >= threshold`: one-sided. "±1.3" claims an
+  // interval that does not exist, and it claimed it hardest on the rows where
+  // the direction was already inverted.
+  it('describes the flag threshold one-sidedly, in the direction that flags', () => {
+    expect(signalThresholdText(signal({ key: 'hrv', threshold: 1.2816 }))).toBe('flags from 1.3 SD below');
+    expect(signalThresholdText(signal({ key: 'spo', threshold: 1.2816 }))).toBe('flags from 1.3 SD below');
+    expect(signalThresholdText(signal({ key: 'rhr', threshold: 1.2816 }))).toBe('flags from 1.3 SD above');
+    expect(signalThresholdText(signal({ key: 'debt', threshold: 1.5 }))).toBe('flags from 1.5 SD above');
+    for (const key of ['hrv', 'rhr', 'rr', 'skt', 'spo', 'debt'] as const) {
+      expect(signalThresholdText(signal({ key, threshold: 1.2816 }))).not.toContain('±');
+    }
+    expect(signalThresholdText(signal({ threshold: Number.NaN }))).toBe('');
   });
 
   it('puts the state in words, not only in the dot', () => {
-    expect(signalStateText(signal())).toBe('Outside your range (below normal)');
-    expect(signalStateText(signal({ deviating: false, z: 0.4 }))).toBe('Inside your range (above normal)');
+    expect(signalStateText(signal())).toBe('Outside your range');
+    expect(signalStateText(signal({ deviating: false, z: 0.4 }))).toBe('Inside your range');
     expect(signalStateText(signal({ z: null }))).toBe('No reading');
     expect(signalTone(signal())).toBe('yellow');
     expect(signalTone(signal({ deviating: false }))).toBe('green');
@@ -261,10 +324,92 @@ describe('impact CI bars', () => {
     expect(shrinkageLine(0.35)).toBe('35% of this estimate comes from published averages, not your data.');
     expect(shrinkageLine(0)).toBe('');
     expect(shrinkageLine(null)).toBe('');
-    expect(strengthWord(0.01).label).toBe('Consistent signal');
-    expect(strengthWord(0.12).label).toBe('Suggestive only');
-    expect(strengthWord(0.6).label).toBe('No clear signal');
+    expect(strengthWord(effect({ qValue: 0.01 })).label).toBe('Consistent signal');
+    expect(strengthWord(effect({ qValue: 0.12 })).label).toBe('Suggestive only');
+    expect(strengthWord(effect({ qValue: 0.6 })).label).toBe('No clear signal');
     expect(strengthWord(null)).toEqual({ label: 'Not yet testable', tone: 'neutral' });
-    expect(strengthWord(0.01).label.toLowerCase()).not.toContain('confirm');
+    expect(strengthWord(effect({ qValue: Number.NaN })).label).toBe('Not yet testable');
+    expect(strengthWord(effect({ qValue: 0.01 })).label.toLowerCase()).not.toContain('confirm');
+  });
+
+  // The q is computed on the UNSHRUNK difference (deliberately — a prior must
+  // not manufacture significance) while the number, the direction and the
+  // interval on the row are the shrunk posterior. The badge is the one place
+  // those two get put side by side, so it has to hold both.
+  it('never calls an effect "consistent" over an interval that includes zero', () => {
+    const spansZero = effect({ qValue: 0.0424, deltaMean: -0.37, lo95: -7.31, hi95: 6.56, shrunkToPrior: 0 });
+    expect(strengthWord(spansZero)).toEqual({ label: 'Mixed evidence', tone: 'yellow' });
+    expect(strengthCaveat(spansZero)).toContain('the interval includes zero');
+    // …and the clean case still gets its green badge.
+    const clean = effect({ qValue: 0.0424, deltaMean: -4.2, lo95: -7.1, hi95: -1.3, shrunkToPrior: 0 });
+    expect(strengthWord(clean)).toEqual({ label: 'Consistent signal', tone: 'green' });
+    expect(strengthCaveat(clean)).toBe('');
+  });
+
+  it('never calls it "consistent" when shrinkage flipped the sign of the estimate', () => {
+    // alcohol → HRV carries a −7 ms prior. Raw days ran +12 ms; the posterior
+    // is −6.4 with an interval clear of zero, so only the sign check catches it.
+    const flipped = effect({
+      behaviour: 'alcohol',
+      metric: 'hrv',
+      qValue: 0.0424,
+      deltaMean: -6.4,
+      lo95: -8.4,
+      hi95: -4.4,
+      shrunkToPrior: 0.97,
+    });
+    expect(rawDifference(flipped)).toBeGreaterThan(0);
+    expect(isConsistentEffect(flipped)).toBe(false);
+    expect(strengthWord(flipped)).toEqual({ label: 'Mixed evidence', tone: 'yellow' });
+    expect(strengthCaveat(flipped)).toContain('your own days went the other way (higher on those days)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two rows an adversarial review measured, end to end from the engine
+// ---------------------------------------------------------------------------
+
+/** The row SignalDots renders, as one string. */
+const signalRow = (s: StressSignal): string =>
+  `${signalStateText(s)} · ${signalZText(s)}${signalThresholdText(s) ? ` · ${signalThresholdText(s)}` : ''}`;
+
+describe('overnight signal rows, from the engine', () => {
+  const END = '2026-09-06';
+  const prev = addDays(END, -1);
+
+  /** 60 nights of HRV ~ N(60, 6) and SpO₂ ~ N(97, 0.8), then one measured night. */
+  const rowsFor = (today: Partial<DailyRecord>) => {
+    const hrv = gaussianSeries({ seed: 5, days: 60, end: prev, mean: 60, sd: 6, dp: 1 }).map((p) => ({ d: p.d, hrv: p.v }));
+    const spo = gaussianSeries({ seed: 105, days: 60, end: prev, mean: 97, sd: 0.8, dp: 1 }).map((p) => ({ d: p.d, spo: p.v }));
+    const recs = [...mergeRecords(hrv, spo), { d: END, ...today }];
+    const s = overnightStrainIndex(recs, END);
+    return Object.fromEntries(s.signals.map((x) => [x.key, x]));
+  };
+
+  it('reads a fallen HRV and a fallen blood oxygen as BELOW the personal normal', () => {
+    const rows = rowsFor({ hrv: 40, spo: 93 });
+    // HRV 40 ms against a 60 ms normal, blood oxygen 93 % against 97 %.
+    expect(signalValueText(rows.hrv)).toBe('40 ms');
+    expect(signalRow(rows.hrv)).toBe('Outside your range · 4.7 SD below your normal · flags from 1.3 SD below');
+    expect(signalValueText(rows.spo)).toBe('93 %');
+    expect(signalRow(rows.spo)).toBe('Outside your range · 5.3 SD below your normal · flags from 1.3 SD below');
+    for (const key of ['hrv', 'spo'] as const) {
+      expect(signalRow(rows[key])).not.toContain('above');
+      expect(signalRow(rows[key])).not.toContain('±');
+    }
+  });
+
+  it('reads a risen HRV as ABOVE normal, and does not claim a symmetric threshold', () => {
+    const rows = rowsFor({ hrv: 74, spo: 98.5 });
+    // A night 2.3 SD ABOVE normal is inside the range: the rule is one-sided,
+    // so a high HRV can never flag, and the copy must not imply it could.
+    expect(rows.hrv.deviating).toBe(false);
+    expect(signalRow(rows.hrv)).toBe('Inside your range · 2.3 SD above your normal · flags from 1.3 SD below');
+    expect(signalRow(rows.spo)).toBe('Inside your range · 2.2 SD above your normal · flags from 1.3 SD below');
+  });
+
+  it('says nothing about direction when there is no reading', () => {
+    const rows = rowsFor({ hrv: 40 });
+    expect(signalRow(rows.rhr)).toBe('No reading · — · flags from 1.3 SD above');
   });
 });

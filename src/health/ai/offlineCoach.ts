@@ -20,6 +20,13 @@
  * stress signals, behaviour effects and the illness flag are reported as
  * associations or patterns with their intervals — never as causes and never
  * as a diagnosis (§8 GUARDRAILS; persistence routes to the doctor cue).
+ *
+ * The illness/overload flag has exactly one wording here (`illnessNote`) and
+ * one action (`ILLNESS_ACTION`), shared by every route that can be asked about
+ * training while it is up — `stress`, `train` and `recovery`. It is the same
+ * hedge as `ILLNESS_COPY` (engine/stress), the insight card and the readiness
+ * modifier: **possible** illness *or* heavy overload, the user's own numbers as
+ * the evidence, no condition named, and the doctor on persistence.
  */
 import type { CoachContext, CoachTone, ISODate, Profile, SessionType, Targets, TrainingSplit, Weekday } from '../data/types';
 import { hhmmToMinutes, weekdayOf } from '../lib/dates';
@@ -166,6 +173,33 @@ function sleepSentence(ctx: CoachContext): string {
   return `${out}.`;
 }
 
+/**
+ * The illness/overload flag in the one form the whole stack uses — `ILLNESS_COPY`
+ * (engine/stress), the insight card (engine/insights) and the readiness modifier
+ * (engine/readiness) all say the same thing: a **possibility**, with heavy
+ * overload as the co-equal alternative, evidenced by the user's own numbers and
+ * naming no condition. Null when the flag is down, so a caller can push it
+ * without a guard of its own.
+ */
+function illnessNote(ctx: CoachContext): string | null {
+  const ill = ctx.stress?.illness;
+  if (!ill?.flag) return null;
+  const since = ill.since ? ` since ${ill.since}` : '';
+  const reasons = ill.reasons.length ? ` (${ill.reasons.slice(0, 2).join(', ')})` : '';
+  return `Possible illness or heavy overload${since}${reasons} — a pattern in your own numbers, not a diagnosis.`;
+}
+
+/**
+ * The action that goes with it. Any route that can be asked "should I train
+ * today?" while the flag is up ends here rather than in a progression: an easy
+ * day, and the doctor on persistence (§8 GUARDRAILS; `ILLNESS_DOCTOR_CUE` in
+ * engine/stress). Before this, only the `stress` route escalated — a user on
+ * day five of a flagged run who asked about training or recovery was given a
+ * light-day instruction with no mention of the flag and no doctor cue at all.
+ */
+const ILLNESS_ACTION =
+  'Keep today easy, sleep long and hydrate; if it lasts more than a few days or you feel unwell, see your doctor';
+
 function train(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
   const r = ctx.readiness;
   const session = ctx.dayType === 'lift' ? ctx.sessionType : null;
@@ -174,9 +208,15 @@ function train(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
       ? "I don't have a readiness score for today — no WHOOP recovery or HRV logged yet."
       : `Readiness ${r0(r.score)}% (${r.band}) from ${r.source === 'whoop' ? 'WHOOP recovery' : 'your HRV baseline'} — verdict: ${r.training}.`;
   const details = [hrvSentence(ctx), sleepSentence(ctx), session ? `Today is a ${session} day on your split.` : 'Today is a rest day on your split.'];
+  // First, because `compose` drops details from the end to fit the word budget
+  // and 'direct' keeps only the first two: the flag outranks every other line.
+  const illness = illnessNote(ctx);
+  if (illness) details.unshift(illness);
 
   let action: string;
-  if (!session) {
+  if (illness) {
+    action = ILLNESS_ACTION;
+  } else if (!session) {
     const next = nextSession(profile.split, ctx.today);
     action = `Keep it a rest day: walk toward ${targets.stepsMin.toLocaleString('en-US')} steps and save the progression for your next ${next ?? 'lift'} session`;
   } else if (r.band === 'green') {
@@ -221,7 +261,11 @@ function eat(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
   } else {
     action = `Lead your next meal with ~${perMeal} g protein: 200 g chicken tikka (~50 g) or 150 g tandoori prawns (~30 g) with salad — skip the naan`;
   }
-  if (n.lateEating && pLeft > 0) action += ` — and make it the last meal before your ${profile.bedTarget} bedtime`;
+  // "bed target", not "bedtime": the late-eating cutoff the engine actually
+  // applies is the last fifth of your habitual wake window (McHill 2017), which
+  // is not in the coach context — so this names the target you set rather than
+  // implying it is when you go to sleep.
+  if (n.lateEating && pLeft > 0) action += ` — and make it the last one before your ${profile.bedTarget} bed target`;
   return { lead, details, action };
 }
 
@@ -234,6 +278,8 @@ function recovery(ctx: CoachContext, profile: Profile): Parts {
         ? `Recovery isn't low today — readiness ${r0(r.score)}% (green).`
         : `Readiness is ${r0(r.score)}% (${r.band}).`;
   const details = [hrvSentence(ctx), sleepSentence(ctx)];
+  const illness = illnessNote(ctx);
+  if (illness) details.unshift(illness);
   if (has(ctx.rhr.today)) {
     details.push(`RHR ${r0(ctx.rhr.today)} bpm${has(ctx.rhr.delta) ? ` (${fmtSigned(ctx.rhr.delta, 0)} vs your ${r0(ctx.rhr.baseline ?? 0)} baseline)` : ''}.`);
   }
@@ -247,7 +293,8 @@ function recovery(ctx: CoachContext, profile: Profile): Parts {
     details.push(`Bedtime swung ${r0(ctx.sleep.bedtimeSdMin)} min this week — irregularity drags HRV down.`);
   }
   let action: string;
-  if (r.band === 'red') action = `Keep today light — mobility or a 20–30 min walk — and be in bed by ${profile.bedTarget}`;
+  if (illness) action = ILLNESS_ACTION;
+  else if (r.band === 'red') action = `Keep today light — mobility or a 20–30 min walk — and be in bed by ${profile.bedTarget}`;
   else if (r.band === 'yellow') action = `Train but hold loads today, and protect tonight: in bed by ${profile.bedTarget}, no caffeine after ${profile.caffeineCutoff}`;
   else if (r.band === 'green') action = `You're primed — progress your loads and keep the same ${profile.bedTarget} bedtime tonight`;
   else action = `Log or import today's WHOOP recovery and HRV so I can pin down the cause; until then, train moderate and hold your loads`;
@@ -388,9 +435,8 @@ function stress(ctx: CoachContext, profile: Profile): Parts {
   // Order is the drop order: `compose` trims from the end, so the flag and the
   // back-off cue outrank the scores, and the scores outrank the context.
   const details: string[] = [];
-  if (s?.illness.flag) {
-    details.push(`Your overnight signals have matched an illness pattern${s.illness.since ? ` since ${s.illness.since}` : ''}${s.illness.reasons.length ? ` (${s.illness.reasons.slice(0, 2).join(', ')})` : ''} — a pattern in the data, not a diagnosis.`);
-  }
+  const illness = illnessNote(ctx);
+  if (illness) details.push(illness);
   if (c && c.worseRun >= WORSE_RUN_CUE) details.push(`That's ${plural(c.worseRun, 'day')} running worse than your normal.`);
   if (s && has(s.osi)) {
     details.push(`Overnight strain index ${r0(s.osi)} of 100${has(s.osiLo) && has(s.osiHi) ? ` (${r0(s.osiLo)}–${r0(s.osiHi)} interval)` : ''}${s.band ? `, band ${s.band}` : ''}.`);
@@ -404,8 +450,8 @@ function stress(ctx: CoachContext, profile: Profile): Parts {
   if (s?.calibrating) details.push(`I'm still learning your normal — ${plural(s.nRef, 'night')} of reference so far.`);
 
   let action: string;
-  if (s?.illness.flag) {
-    action = `Keep today easy, sleep long and hydrate; if it lasts more than a few days or you feel unwell, see your doctor`;
+  if (illness) {
+    action = ILLNESS_ACTION;
   } else if (c && c.worseRun >= WORSE_RUN_CUE) {
     action = `Take today easy and be in bed by ${profile.bedTarget} — ${plural(c.worseRun, 'day')} of worse-than-normal check-ins is the cue to back off`;
   } else if (s && (s.band === 'major' || s.signalsDeviating >= 2)) {
