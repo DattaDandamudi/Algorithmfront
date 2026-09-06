@@ -129,16 +129,33 @@ describe('proteinPacing (78 kg persona)', () => {
   });
 
   it('treats a per-meal need above 0.55 g/kg as a note, not a failure', () => {
-    // 40 g in by 21:00 with one slot left needs 140 g in one sitting — a big
-    // bolus, but Trommelen 2023 says it is used, so this is a note only.
+    // 40 g in by 21:30 leaves one sitting before the cutoff, so the 140 g has
+    // to land in it — a big bolus, but Trommelen 2023 says it is used rather
+    // than oxidised, so `aboveOptimum` is the note and nothing warns.
     const rec: DailyRecord = { d: MON, meals: [meal({ t: '13:00', p: 40 })] };
     const p = pacing(rec, '21:30');
-    expect(p.mealsLeft).toBe(4);
-    expect(p.perMealNeeded).toBe(35);
-    expect(p.aboveOptimum).toBe(false);
+    expect(p.mealsLeft).toBe(1);
+    expect(p.perMealNeeded).toBe(140);
+    expect(p.aboveOptimum).toBe(true);
     const tight: DailyRecord = { d: MON, meals: ['08:00', '12:00', '15:00', '18:00'].map((t) => meal({ t, p: 5 })) };
     const q = pacing(tight, '19:00');
     expect(q).toMatchObject({ soFar: 20, mealsLeft: 1, perMealNeeded: 160, aboveOptimum: true, onPace: false });
+  });
+
+  it('counts the meals the evening still has room for, not the meals the plan wanted', () => {
+    // The regression this pins: `mealsLeft` used to be a pure subtraction with
+    // a single cliff 60 min before bed, so 21:59 and 08:00 gave the same
+    // answer. With a 23:00 bed target the app told a user who had eaten
+    // nothing to fit five 36 g meals into the last hour, and called it on pace.
+    const empty: DailyRecord = { d: MON };
+    expect(pacing(empty, '08:00').mealsLeft).toBe(5);
+    expect(pacing(empty, '15:00').mealsLeft).toBe(3);
+    expect(pacing(empty, '20:00').mealsLeft).toBe(1);
+    expect(pacing(empty, '21:59').mealsLeft).toBe(1);
+    expect(pacing(empty, '22:00').mealsLeft).toBe(0);
+    // The window can only ever veto the plan, never inflate it: 07:00 has room
+    // for six sittings and still returns the five the plan asked for.
+    expect(pacing(empty, '07:00').mealsLeft).toBe(5);
   });
 
   it('is on pace when the per-meal need fits under 43 g', () => {
@@ -158,7 +175,8 @@ describe('proteinPacing (78 kg persona)', () => {
     expect(pacing(rec, '22:00')).toMatchObject({ mealsLeft: 0, perMealNeeded: null, onPace: false });
     expect(pacing(rec, '22:30')).toMatchObject({ mealsLeft: 0, perMealNeeded: null });
     expect(pacing(rec, '00:10')).toMatchObject({ mealsLeft: 0, perMealNeeded: null });
-    expect(pacing(rec, '21:59').mealsLeft).toBe(4);
+    // 61 minutes before bed is one sitting, not four.
+    expect(pacing(rec, '21:59').mealsLeft).toBe(1);
   });
 
   it('reports the target as met once protein is over target', () => {
@@ -176,7 +194,7 @@ describe('proteinPacing (78 kg persona)', () => {
 
   it('works from stored totals when no meals are itemised', () => {
     const p = pacing({ d: MON, p: 100 }, '15:00');
-    expect(p).toMatchObject({ soFar: 100, remaining: 80, mealsLogged: 0, mealsLeft: 5, perMealNeeded: 16 });
+    expect(p).toMatchObject({ soFar: 100, remaining: 80, mealsLogged: 0, mealsLeft: 3, perMealNeeded: 27 });
   });
 });
 

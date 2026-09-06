@@ -333,6 +333,13 @@ export function shardMonthFromKey(key: string): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * The shape a `DailyRecord.d` must have to be loaded. Deliberately the same
+ * pattern the import path uses, so a record that would be rejected from a file
+ * is also rejected from storage.
+ */
+const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 /** Discover shard keys present in storage (in case the index is missing/stale). */
 export function discoverShardMonths(): string[] {
   const months: string[] = [];
@@ -564,7 +571,13 @@ export function loadAll(): LoadResult {
     rebuilt.shards[ym] = { count: keys.length, sum: checksum(raw) };
     for (const dd of keys) {
       const rec = shard.days[dd];
-      if (!rec || typeof rec !== 'object' || typeof rec.d !== 'string') {
+      // `typeof rec.d === 'string'` is not enough: every window in the engine
+      // compares dates lexically, so a `d` that sorts below the ISO range gets
+      // picked up as the earliest record and carried into date arithmetic. One
+      // empty string was enough to put "Next update undefined NaN undefined" on
+      // the expenditure card. The import path already gates on this shape; the
+      // storage path has to agree with it.
+      if (!rec || typeof rec !== 'object' || typeof rec.d !== 'string' || !DAY_KEY_RE.test(rec.d)) {
         problems.push(`Shard ${ym}: day ${dd} is malformed and was skipped.`);
         continue;
       }

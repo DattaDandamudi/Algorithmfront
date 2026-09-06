@@ -413,6 +413,28 @@ export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6; // Sunday = 0 (JS Date conventi
 export type SessionType = 'upper' | 'lower' | 'push' | 'pull' | 'legs' | 'full' | 'cardio' | 'rest';
 export type TrainingSplit = Record<Weekday, SessionType>;
 
+/**
+ * The same union at runtime, for the boundaries that have to validate a value
+ * the type system never saw: an imported settings blob, a hand-edited
+ * localStorage. Declared as an exhaustive `Record<SessionType, true>` so
+ * adding a session type without listing it here fails the build rather than
+ * silently narrowing what the validator accepts.
+ */
+const SESSION_TYPE_SET: Record<SessionType, true> = {
+  upper: true,
+  lower: true,
+  push: true,
+  pull: true,
+  legs: true,
+  full: true,
+  cardio: true,
+  rest: true,
+};
+export const SESSION_TYPES = Object.keys(SESSION_TYPE_SET) as SessionType[];
+export function isSessionType(x: unknown): x is SessionType {
+  return typeof x === 'string' && Object.prototype.hasOwnProperty.call(SESSION_TYPE_SET, x);
+}
+
 export type MarkerStatus = 'low' | 'low-normal' | 'normal' | 'high' | 'elevated';
 
 export interface BloodMarker {
@@ -1065,6 +1087,14 @@ export interface CoachContext {
     coverage?: { logged: number; days: number };
     /** Forbes/Hall energy density in use, kcal per lb of weight change. */
     energyDensityKcalPerLb?: number | null;
+    /**
+     * The posterior mean whether or not it is tight enough to publish. `tdee`
+     * stays null until the interval can move a calorie target; this is here so
+     * a screen can show the composition-aware estimate *labelled as still
+     * calibrating* rather than falling back to a different, worse number.
+     * Never a decision input.
+     */
+    provisionalTdee?: number | null;
     /** Which suggestion tier fired. */
     tier?: 'none' | 'fine' | 'coarse';
   };

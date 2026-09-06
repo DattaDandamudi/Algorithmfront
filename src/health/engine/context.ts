@@ -510,6 +510,7 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       frozenUntil: exp.frozenUntil,
       coverage: exp.coverage,
       energyDensityKcalPerLb: exp.density.kcalPerLb,
+      provisionalTdee: exp.tdee,
       tier: suggestion.tier === 'hold' ? 'none' : suggestion.tier,
     },
     nutrition: {

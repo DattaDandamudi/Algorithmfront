@@ -724,6 +724,16 @@ export function formBandOf(fitness: number, form: number): FormBand | null {
  * before they had trained badly even once. Seeding both to the same level
  * starts form at zero, so it measures the load balance from the first day it
  * is published instead of measuring the filter's warm-up.
+ *
+ * The seed window is the first `BANISTER_SEED_DAYS` days **that carry load**,
+ * not the first seven entries of the array. `dailyLoadSeries` always returns a
+ * fixed 180-day calendar window, so a user with three months of history hands
+ * this function ninety leading zeros; taking the array's first week seeded both
+ * filters at 0 and reinstated exactly the warm-up artefact described above —
+ * form −101 % of fitness on day 28, `overreached` for months, a red verdict,
+ * 7.5 % off the bar and a set removed every session, and a deload recommended
+ * at four weeks. The filters therefore start at the user's own first training
+ * week, and no band is published until `MIN_ACWR_DAYS` of *their* days exist.
  */
 export const BANISTER_SEED_DAYS = 7;
 
@@ -741,7 +751,11 @@ export function banisterSeries(loads: LoadPoint[], tau?: BanisterTauFit | null, 
   const tau2 = tau && isNum(tau.tau2) && tau.tau2 > 0 ? tau.tau2 : TAU_PRIOR.tau2;
   const k1 = 1 - Math.exp(-1 / tau1);
   const k2 = 1 - Math.exp(-1 / tau2);
-  const seedWindow = pts.slice(0, BANISTER_SEED_DAYS);
+  // Where the user's history actually begins, so the leading zero-fill of the
+  // fixed calendar window cannot become the seed.
+  const firstLoaded = pts.findIndex((p) => isNum(p.load) && p.load > 0);
+  const start = firstLoaded < 0 ? pts.length : firstLoaded;
+  const seedWindow = pts.slice(start, start + BANISTER_SEED_DAYS);
   const seed = isNum(opts.seed)
     ? Math.max(0, opts.seed)
     : seedWindow.length
@@ -750,16 +764,21 @@ export function banisterSeries(loads: LoadPoint[], tau?: BanisterTauFit | null, 
   let fitness = seed;
   let fatigue = seed;
   return pts.map((p, i) => {
-    const l = isNum(p.load) && p.load > 0 ? p.load : 0;
-    fitness += (l - fitness) * k1;
-    fatigue += (l - fatigue) * k2;
+    // Days before the first logged session are padding, not rest: holding both
+    // filters at the seed leaves form at 0 there rather than decaying it into
+    // a deficit the user never earned.
+    if (i >= start) {
+      const l = isNum(p.load) && p.load > 0 ? p.load : 0;
+      fitness += (l - fitness) * k1;
+      fatigue += (l - fatigue) * k2;
+    }
     const form = fitness - fatigue;
     return {
       d: p.d,
       fitness: round(fitness, 1),
       fatigue: round(fatigue, 1),
       form: round(form, 1),
-      formBand: i + 1 >= MIN_ACWR_DAYS ? formBandOf(fitness, form) : null,
+      formBand: i - start + 1 >= MIN_ACWR_DAYS ? formBandOf(fitness, form) : null,
     };
   });
 }

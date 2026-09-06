@@ -16,13 +16,15 @@ import type {
   DailyRecord,
   ISODate,
   Meal,
+  SessionType,
   SetEntry,
+  VolumeLandmark,
   Workout,
   WorkoutExercise,
   WorkoutKind,
   WorkoutSource,
 } from './types';
-import { SCHEMA_VERSION } from './types';
+import { SCHEMA_VERSION, isSessionType } from './types';
 import { mergeSettings } from './defaults';
 import { uid } from '../lib/format';
 
@@ -114,7 +116,23 @@ function sanitizeSettings(raw: Record<string, unknown>, errors: string[]): Parti
       errors.push('Settings.profile.bloodwork was not a list and was ignored.');
       delete p.bloodwork;
     }
+    // A shape check is not enough here. `mergeSettings` spreads the stored
+    // split over the default, so a value that is merely *a string* reaches
+    // `dayTypeFor`, and anything that is not 'rest' scores the day as a lift
+    // day: an imported `{"0":"banana"}` had a Sunday asking for 163 g of carbs
+    // instead of 85 while planning no exercises at all.
     if (p.split !== undefined && (typeof p.split !== 'object' || p.split === null)) delete p.split;
+    else if (p.split !== undefined) {
+      const src = p.split as Record<string, unknown>;
+      const clean: Record<string, SessionType> = {};
+      let dropped = 0;
+      for (const [day, session] of Object.entries(src)) {
+        if (/^[0-6]$/.test(day) && isSessionType(session)) clean[day] = session;
+        else dropped++;
+      }
+      if (dropped > 0) errors.push(`${dropped} training-split day(s) named an unknown session and were ignored.`);
+      p.split = clean;
+    }
     out.profile = p;
   } else if (profile !== undefined) {
     delete out.profile;
@@ -135,6 +153,27 @@ function sanitizeSettings(raw: Record<string, unknown>, errors: string[]): Parti
     }
     for (const key of ['volumeLandmarks', 'progression'] as const) {
       if (t[key] !== undefined && (typeof t[key] !== 'object' || t[key] === null || Array.isArray(t[key]))) delete t[key];
+    }
+    // Same reason as the split above: the container being an object says
+    // nothing about what is in it. A landmark entry of `"lots"` survived the
+    // shape check and reached the engine as a `MuscleVolume` with undefined
+    // mev/mav/mrv, which quietly dropped that muscle out of the volume advice.
+    if (t.volumeLandmarks && typeof t.volumeLandmarks === 'object') {
+      const src = t.volumeLandmarks as Record<string, unknown>;
+      const clean: Record<string, VolumeLandmark> = {};
+      let dropped = 0;
+      for (const [muscle, v] of Object.entries(src)) {
+        const l = v as Record<string, unknown> | null;
+        const ok =
+          l !== null &&
+          typeof l === 'object' &&
+          !Array.isArray(l) &&
+          (['mev', 'mav', 'mrv'] as const).every((k) => typeof l[k] === 'number' && Number.isFinite(l[k] as number) && (l[k] as number) >= 0);
+        if (ok) clean[muscle] = { mev: l.mev as number, mav: l.mav as number, mrv: l.mrv as number };
+        else dropped++;
+      }
+      if (dropped > 0) errors.push(`${dropped} volume landmark(s) were malformed and fell back to the defaults.`);
+      t.volumeLandmarks = clean;
     }
     out.training = t;
   }
@@ -568,6 +607,15 @@ export const WORKOUT_CSV_COLUMNS = [
   'max_hr',
   'elevation_m',
   'kcal',
+  // Heart-rate zone minutes are real imported data, not a derived view: the
+  // WHOOP importer writes them and the Edwards TRIMP is computed from them, so
+  // a workouts CSV without them cannot reproduce the session's load.
+  'hr_zone1_min',
+  'hr_zone2_min',
+  'hr_zone3_min',
+  'hr_zone4_min',
+  'hr_zone5_min',
+  'hr_zone6_min',
   'superset',
   'exercise_note',
   'session_note',
@@ -584,7 +632,18 @@ export function buildWorkoutsCSV(workouts: Workout[]): string {
   for (const w of sorted) {
     const head = [w.d, w.start, w.kind, w.session ?? '', w.title ?? '', w.durationMin, w.srpe, w.load, w.source];
     const c = w.cardio;
-    const cardioCells = [c?.sport ?? '', c?.distanceKm, c?.avgHr, c?.maxHr, c?.elevM, c?.kcal];
+    const z = c?.zoneMin;
+    const cardioCells = [
+      c?.sport ?? '',
+      c?.distanceKm,
+      c?.avgHr,
+      c?.maxHr,
+      c?.elevM,
+      c?.kcal,
+      // Always six cells so every row shape keeps the header's arity, whether
+      // or not the session carries zone data.
+      ...Array.from({ length: 6 }, (_, i) => z?.[i]),
+    ];
     const exercises = w.exercises ?? [];
     // Session and exercise notes are different things, so they get their own
     // columns. Folding them into one lost the session note entirely on any

@@ -442,6 +442,36 @@ describe('banisterSeries', () => {
     }
   });
 
+  it('seeds from the first day that carries load, not the calendar padding', () => {
+    // The test above calls `banisterSeries` on a bare 28-day array, which the
+    // app never does: `dailyLoadSeries` returns a fixed 180-day window, so a
+    // three-month-old account arrives here with ninety leading zeros. Taking
+    // the array's first week as the seed made that zero, which reinstated the
+    // whole warm-up artefact on the only path that ships.
+    // `flat` counts back from a shared end date, so the padding has to end the
+    // day before the training starts or the two halves land on the same dates.
+    const padded = [...flat(90, 0, addDays(END, -28)), ...flat(28, 400)];
+    const series = banisterSeries(padded);
+    expect(series[padded.length - 1].formBand).toBe('neutral');
+    // Padding is not rest: form stays at 0 across it rather than decaying.
+    expect(series[80].form).toBe(0);
+    expect(series[80].formBand).toBeNull();
+    // No band until MIN_ACWR_DAYS of the user's *own* days exist.
+    expect(series[90].formBand).toBeNull();
+    // The seed is the first loaded week, so a padded and an unpadded series
+    // agree day for day once the user's history starts.
+    const bare = banisterSeries(flat(28, 400));
+    for (let i = 0; i < bare.length; i++) {
+      expect(series[90 + i].form).toBeCloseTo(bare[i].form, 6);
+      expect(series[90 + i].fitness).toBeCloseTo(bare[i].fitness, 6);
+    }
+  });
+
+  it('a lifter who never logged a session gets no band rather than a deficit', () => {
+    const series = banisterSeries(flat(180, 0));
+    expect(series.every((p) => p.form === 0 && p.formBand === null)).toBe(true);
+  });
+
   it('is empty for an empty series', () => {
     expect(banisterSeries([])).toEqual([]);
   });

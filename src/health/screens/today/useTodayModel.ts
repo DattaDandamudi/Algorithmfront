@@ -37,7 +37,6 @@ import {
   tobaccoOf,
   tobaccoStats,
   trendAt,
-  weeklyExpenditure,
   type BedtimeCountdown,
   type EmptyStates,
   type LateEatingCheck,
@@ -100,7 +99,13 @@ export interface TodayModel {
   /** Today's tobacco count, or null when nothing has been logged yet (demo data leaves today undefined). */
   tobaccoToday: number | null;
   /** Last calibrated TDEE even when this week's gate failed (null until a block has ever been valid). */
-  smoothedTdee: number | null;
+  /**
+   * The composition-aware posterior even when it is too wide to publish, so
+   * the calorie tile can label it rather than reaching for the deprecated v2
+   * estimator, whose fixed 3,500 kcal/lb overstated a lean user's expenditure
+   * by about 500 kcal a day on the home screen.
+   */
+  provisionalTdee: number | null;
   countdown: BedtimeCountdown | null;
   late: LateEatingCheck;
   /** §0 "vs your 30-day average" for the Protein / Calories tiles (R1-4). */
@@ -153,8 +158,6 @@ export function useTodayModel(): TodayModel & {
       weighIns: dotsRaw.filter((p) => p.v !== null).length,
     };
 
-    const exp = weeklyExpenditure(records, today, { alpha });
-
     // Only when the context has no rate to show: the same filter, the same
     // options, so the sentence and the (absent) interval can never disagree.
     const rateReason =
@@ -181,7 +184,7 @@ export function useTodayModel(): TodayModel & {
       weight,
       tobacco: tobaccoStats(records, today),
       tobaccoToday: tobaccoOf(todayRecord),
-      smoothedTdee: exp.smoothedTdee,
+      provisionalTdee: ctx.expenditure.provisionalTdee ?? null,
       countdown: bedtimeCountdown(now, profile.bedTarget, profile.wakeTarget),
       // Anchored to the user's own habitual wake window, exactly as the engine
       // does it. Calling this without the window silently reverts to the

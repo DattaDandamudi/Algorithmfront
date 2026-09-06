@@ -138,7 +138,7 @@ export interface MetricTilesProps {
   prompts: SuggestedPrompts;
   empty: EmptyStates;
   hrv7: Array<number | null>;
-  smoothedTdee: number | null;
+  provisionalTdee: number | null;
   /** Reference body weight (lb) for the per-meal protein ceiling. */
   bodyWeightLb: number;
   /** 30-day intake baselines for the Protein / Calories tiles. */
@@ -146,7 +146,7 @@ export interface MetricTilesProps {
   onOpenCoach: (prompt: string) => void;
 }
 
-export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, bodyWeightLb, baseline, onOpenCoach }: MetricTilesProps) {
+export default function MetricTiles({ ctx, prompts, empty, hrv7, provisionalTdee, bodyWeightLb, baseline, onOpenCoach }: MetricTilesProps) {
   const open = (tile: Parameters<typeof tilePrompt>[0]) => () => onOpenCoach(tilePrompt(tile, ctx, prompts));
 
   // --- Sleep ---------------------------------------------------------------
@@ -206,7 +206,7 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
   let kcalSub: string;
   if (kcalOver) kcalSub = `over your ${fmt(n.targets.kc)} kcal target`;
   else if (tdee !== null) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(tdee)}`;
-  else if (isNum(smoothedTdee)) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(smoothedTdee)} (last calibrated)`;
+  else if (isNum(provisionalTdee)) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(provisionalTdee)} (still calibrating)`;
   else kcalSub = `of ${fmt(n.targets.kc)} kcal`;
   const kcalDelta = dayCompleteDelta(baseline.kcal, baseline.dayComplete, 'kcal');
   const kcalAvg = kcalDelta ? null : baselineCaption(baseline.kcal, 'kcal');

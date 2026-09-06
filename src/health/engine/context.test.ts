@@ -398,14 +398,21 @@ describe('buildCoachContext — 40-day synthetic dataset', () => {
     expect(ctx.hrv.today).toBe(46);
     expect(ctx.hrv.band).not.toBe('low');
     expect(ctx.readiness.forced).toBeFalsy();
-    // v3: readiness now also receives the training-form band. 40 days of WHOOP
-    // strain is short of the fitted Banister τ₁, so fitness is still warming up
-    // while fatigue is not, form reads 'overreached', and the modifier steps the
-    // verdict down one band. The score is untouched — the band is not forced.
-    expect(ctx.training?.load.formBand).toBe('overreached');
-    expect(ctx.readiness.band).toBe('yellow');
-    expect(ctx.readiness.modifiers?.map((m) => m.key)).toContain('formOverreached');
-    expect(ctx.readiness.training).toBe('Train, hold loads');
+    // v3: readiness also receives the training-form band. This block used to
+    // assert 'overreached' and a downgrade to yellow, and explained it as the
+    // Banister filters warming up over only 40 days — which is to say it
+    // documented the warm-up artefact as if it were a reading. It was not: the
+    // filters were being seeded from the leading zero-fill of the fixed
+    // 180-day window, so every user under six months of history was told to
+    // train light. Seeded from the first week that actually carries load, this
+    // fixture reads what its data says — the last days are rest, so fatigue
+    // (τ₂ ≈ 7 d) has decayed well below fitness (τ₁ ≈ 42 d) and form is
+    // positive. No modifier fires and the 71 % recovery stands on its own.
+    expect(ctx.training?.load.formBand).toBe('fresh');
+    expect(ctx.training?.load.form).toBeGreaterThan(0);
+    expect(ctx.readiness.band).toBe('green');
+    expect(ctx.readiness.modifiers?.map((m) => m.key) ?? []).not.toContain('formOverreached');
+    expect(ctx.readiness.training).toBe('Progress');
 
     // Three days 20 % under the baseline is a genuine 'low' — too short for the
     // regime detector to call a new baseline — and it forces red over WHOOP.

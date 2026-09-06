@@ -284,6 +284,14 @@ function lastMeal(meals: Meal[] | undefined): Meal | null {
 export const PROTEIN_PER_MEAL_GKG: [number, number] = [0.4, 0.55];
 /** No more meals are expected once bed is this close. */
 const LAST_MEAL_CUTOFF_MIN = 60;
+/**
+ * Minimum spacing between two distinct eating occasions when counting how many
+ * still fit before that cutoff. Areta 2013 (J Physiol) compared 20 g every 3 h
+ * against 40 g every 6 h and 10 g every 1.5 h and found the 3-hour spacing best
+ * for muscle protein synthesis, so it is the interval the day is planned around
+ * rather than an arbitrary divisor.
+ */
+const MIN_MEAL_GAP_MIN = 180;
 
 /**
  * `mealSlots = max(mealsPerDay, ceil(protein / (0.55 · kg)))` — the number of
@@ -343,7 +351,15 @@ export function proteinPacing(input: {
 
   const untilBed = minutesUntilBed(nowHHMM, bedTarget);
   const tooLate = untilBed !== null && untilBed <= LAST_MEAL_CUTOFF_MIN;
-  const mealsLeft = tooLate ? 0 : Math.max(slots - mealsLogged, remaining > 0 ? 1 : 0);
+  // How many occasions the *plan* still wants, and how many the *day* still
+  // has room for. Taking only the first is what let 21:59 read exactly like
+  // 08:00: with a 23:00 bed target the app would say "five meals left, 36 g
+  // each" an hour before bed, and call that on pace. The window has to be able
+  // to veto the plan.
+  const planned = Math.max(slots - mealsLogged, remaining > 0 ? 1 : 0);
+  const fits =
+    untilBed === null ? planned : Math.floor((untilBed - LAST_MEAL_CUTOFF_MIN) / MIN_MEAL_GAP_MIN) + 1;
+  const mealsLeft = tooLate ? 0 : Math.max(0, Math.min(planned, fits));
 
   const perMealNeeded = mealsLeft > 0 ? round(Math.max(0, remaining) / mealsLeft) : null;
   // Judge the last *occasion* (all items eaten together), not the last entry.

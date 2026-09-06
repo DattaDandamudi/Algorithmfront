@@ -21,7 +21,7 @@ function render(ctx: CoachContext, dayComplete: boolean): string {
       prompts={suggestedPrompts(ctx)}
       empty={emptyStates(ctx)}
       hrv7={[50, 51, 52, 53, 54, 55, 54]}
-      smoothedTdee={null}
+      provisionalTdee={null}
       bodyWeightLb={172}
       baseline={baseline(dayComplete)}
       onOpenCoach={() => {}}

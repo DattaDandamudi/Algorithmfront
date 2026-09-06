@@ -96,7 +96,7 @@ export default function Today() {
         prompts={m.prompts}
         empty={m.empty}
         hrv7={m.hrv7}
-        smoothedTdee={m.smoothedTdee}
+        provisionalTdee={m.provisionalTdee}
         bodyWeightLb={bodyWeightLb}
         baseline={m.nutritionBaseline}
         onOpenCoach={(p) => openCoach(p)}
