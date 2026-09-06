@@ -400,6 +400,30 @@ describe('pOutsideBand', () => {
     expect(pOutsideBand({ lbPerWk: -1.3, sdLbPerWk: 0.1 }, -1.72, -0.86).p).toBeLessThan(0.01);
   });
 
+  it('the one-sided form rises toward 0.5 with the noise for an in-band rate', () => {
+    // Not a defect in this function, but the property that makes the number
+    // unsafe to quote: for a rate sitting inside the band, `max(pAbove, pBelow)`
+    // is a measure of ignorance, not of movement. It is bounded by 0.5, which
+    // is why no amount of scale noise can reach the 0.7/0.8 decision tiers —
+    // and why `expenditure.bandComparable` gates whether it is published at all.
+    const inBand = (sd: number) => {
+      const b = pOutsideBand({ lbPerWk: -1.0, sdLbPerWk: sd }, -1.72, -0.86);
+      return Math.max(b.pAbove, b.pBelow);
+    };
+    const sds = [0.05, 0.2, 0.5, 1, 3, 10, 100];
+    const ps = sds.map(inBand);
+    for (let i = 1; i < ps.length; i++) expect(ps[i]).toBeGreaterThan(ps[i - 1]);
+    expect(ps[0]).toBeCloseTo(0.0026, 3);
+    expect(ps[ps.length - 1]).toBeLessThan(0.5);
+    expect(ps[ps.length - 1]).toBeGreaterThan(0.49);
+
+    // Out of band it behaves the way evidence should: confidence falls as the
+    // measurement worsens.
+    const outBand = (sd: number) => pOutsideBand({ lbPerWk: -2.5, sdLbPerWk: sd }, -1.72, -0.86).pBelow;
+    expect(outBand(0.1)).toBeGreaterThan(0.99);
+    expect(outBand(3)).toBeLessThan(0.65);
+  });
+
   it('tolerates a reversed band', () => {
     const a = pOutsideBand({ lbPerWk: -0.5, sdLbPerWk: 0.5 }, -0.86, -1.72);
     const b = pOutsideBand({ lbPerWk: -0.5, sdLbPerWk: 0.5 }, -1.72, -0.86);

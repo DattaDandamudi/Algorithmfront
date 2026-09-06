@@ -506,6 +506,13 @@ export function buildCoachContext(input: BuildContextInput): CoachContext {
       low: exp.lo,
       high: exp.hi,
       pOutside: exp.pOutside,
+      // Whether that probability localises the rate against the band at all.
+      // Measured on a noiseless fixture the block rate's own spread is about
+      // 1.27 lb/wk against a 0.85-wide band, so this is routinely false and the
+      // probability routinely sits near its 0.5 no-information point. Suppressing
+      // it would strip the reason strings of the number they quote, so it travels
+      // with the flag instead and the coach is told not to read it as evidence.
+      pOutsideComparable: exp.bandComparable,
       blocksOutside: exp.blocksOutside,
       frozenUntil: exp.frozenUntil,
       coverage: exp.coverage,

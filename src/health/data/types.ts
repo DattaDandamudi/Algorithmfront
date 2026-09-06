@@ -1080,6 +1080,14 @@ export interface CoachContext {
     high?: number | null;
     /** P(weekly rate outside the target band) for the latest block. */
     pOutside?: number | null;
+    /**
+     * Whether `pOutside` localises the rate against the band, or is dominated
+     * by the measurement. 0.5 is its no-information point: it converges there
+     * from below for an in-band rate and from above for an out-of-band one, so
+     * a value near 0.5 with this false says nothing about the user. False
+     * often — a block rate's own spread is usually wider than the band.
+     */
+    pOutsideComparable?: boolean;
     blocksOutside?: number;
     /** Coarse suggestions are frozen until this date after a target change. */
     frozenUntil?: ISODate | null;

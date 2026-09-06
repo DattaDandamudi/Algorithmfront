@@ -1093,10 +1093,28 @@ export interface ExpenditureV3Block {
    * — `max(pAbove, pBelow)` from `pOutsideBand`, not the two-sided sum. The sum
    * is the wrong quantity to gate a decision on: widen the uncertainty enough
    * and it approaches 1 from a rate sitting dead centre, so ignorance would
-   * earn a calorie change. The one-sided probability behaves the way evidence
-   * should — it rises only when the rate really has moved to one side.
+   * earn a calorie change.
+   *
+   * The one-sided form is bounded by 0.5 for a rate inside the band, so no
+   * amount of noise can reach the 0.7/0.8 tiers and no calorie change can be
+   * manufactured by a bad scale. It is still not a pure evidence signal: for an
+   * in-band rate it *rises* toward that 0.5 as the measurement worsens (0.0026
+   * at sd 0.05 lb/wk, 0.494 at sd 10). 0.5 is the no-information point, which
+   * the value approaches from below when the rate is inside the band and from
+   * above when it is outside: the evidence is the distance from 0.5, not the
+   * number itself. That is fine for gating and misleading to quote, so
+   * `bandComparable` below says whether it carries information at all, and the
+   * context publishes it only when it does.
    */
   pOutside: number;
+  /**
+   * Whether the rate's own uncertainty is small enough for the comparison to
+   * mean anything: false once the 90% rate interval straddles the entire band,
+   * because at that width the data cannot say which side of the band the user
+   * is on. The probability is then a statement about the scale rather than
+   * about the user.
+   */
+  bandComparable: boolean;
   pBelow: number;
   pAbove: number;
   /** Which side the mass is on, in signed lb/wk: 'above' = gaining more / losing less than the band. */
@@ -1162,6 +1180,8 @@ export interface ExpenditureV3Result {
   bodyWeightLb: number;
   /** One-sided P(outside band) on the latest completed block — see `ExpenditureV3Block.pOutside`. */
   pOutside: number;
+  /** Whether that probability is informative — see `ExpenditureV3Block.bandComparable`. */
+  bandComparable: boolean;
   miss: 'above' | 'below' | null;
   /** Consecutive recent blocks outside the band, counted only after `lastKcalChangeAt`. */
   blocksOutside: number;
@@ -1337,6 +1357,7 @@ export function weeklyExpenditureV3(
       band: [bandLo, bandHi],
       bodyWeightLb: round(bodyWeightLb, 2),
       pOutside: last?.pOutside ?? 0,
+      bandComparable: last?.bandComparable ?? false,
       miss: last?.miss ?? null,
       blocksOutside,
       frozenUntil,
@@ -1452,6 +1473,7 @@ export function weeklyExpenditureV3(
       rateLbPerWk: rateLbPerWk === null ? null : round(rateLbPerWk, 3),
       rateSdLbPerWk: filterSd === null ? null : round(filterSd, 3),
       pOutside: 0,
+      bandComparable: false,
       pBelow: 0,
       pAbove: 0,
       miss: null,
@@ -1490,6 +1512,15 @@ export function weeklyExpenditureV3(
     const insideBy = Math.min(b.rateLbPerWk - bandLo, bandHi - b.rateLbPerWk);
     b.rateSdLbPerWk = round(sd, 3);
     b.pOutside = round(directional, 4);
+    // 0.5 is the no-information point: as the posterior widens, `directional`
+    // converges on it from below for an in-band rate and from above for an
+    // out-of-band one, so the evidence is the distance from 0.5, not the value.
+    // The number stops carrying any when the 90% rate interval straddles the
+    // whole band — at that width the data cannot say which side of the band the
+    // user is on, let alone by how much.
+    const lo90 = b.rateLbPerWk - 1.645 * sd;
+    const hi90 = b.rateLbPerWk + 1.645 * sd;
+    b.bandComparable = !(lo90 < bandLo && hi90 > bandHi);
     b.pBelow = round(prob.pBelow, 4);
     b.pAbove = round(prob.pAbove, 4);
     b.miss = prob.direction === null ? null : prob.pAbove >= prob.pBelow ? 'above' : 'below';
