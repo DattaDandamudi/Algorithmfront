@@ -33,13 +33,16 @@ src/health/
     insights.ts        the 14 insight templates, priorities and promotion rules; coach chips; empty-state copy
     context.ts         buildCoachContext(): one snapshot every screen, insight and the coach share
   ai/
-    client.ts          Anthropic SDK client (BYO key in browser, or proxy base URL)
+    config.ts          dependency-free settings helpers (isAIConfigured, model list) — safe to import from screens
+    client.ts          async Anthropic SDK client factory (lazy-imports the SDK; BYO key in browser, or proxy base URL)
     coach.ts           §8 system prompt, compact 30-day context, streaming askCoach with refusal fallbacks
     guardrails.ts      emergency detection, medical-ask cue, ≤120-word check, bold-action enforcement
     offlineCoach.ts    rule-based answers for the 8 chips when no key is configured
     food.ts            §9 strict-JSON food estimator (structured outputs)
     foodLocal.ts       offline natural-language food parser ("200 g chicken tikka and one roti")
     foodDb.ts          Indian / Middle-Eastern / basics food database (per 100 g)
+    barcode.ts         Open Food Facts lookup for barcodes (the app's only non-AI third-party call, made only on a scan/lookup)
+    foodImage.ts       photo estimation through Claude vision (same strict JSON schema, confidence capped at 0.6)
   ui/                  design-system primitives (Ring, Tile, Sparkline, MacroBar, Sheet, …) and charts/
   screens/             Today, Log, Trends, Coach, Settings, Onboarding
 ```
@@ -54,7 +57,8 @@ npm run typecheck
 npm run build
 ```
 
-Static hosts need an SPA rewrite so `/health` serves `index.html` (or use `/#/health`).
+Static hosts need an SPA rewrite so `/health` serves `index.html` (or use `/#/health`; tab
+navigation keeps the `#/health/<tab>` hash so reloads land back in the app).
 
 ## AI configuration
 
@@ -66,13 +70,30 @@ Static hosts need an SPA rewrite so `/health` serves `index.html` (or use `/#/he
   lives in `supabase/functions/coach-proxy/` (set the `ANTHROPIC_API_KEY` secret).
 
 Default model is `claude-opus-5`; the coach streams with server-side refusal fallbacks enabled.
+The SDK is only downloaded when a key or proxy is configured (dynamic import in `ai/client.ts`).
+Photo logging needs an AI client; barcode lookup does not (it calls Open Food Facts directly).
+
+## Engine notes (v2)
+
+* **Readiness:** WHOOP recovery when present (67/34 bands), else an HRV-derived score. A red
+  "Light day" verdict is forced when recovery < 34 or the HRV 7-day mean sits below the SWC.
+* **HRV:** ln(rMSSD); the SWC (mean ± 0.5 SD) is centred on a 28-day reference and the 7-day
+  rolling mean is banded against it; a single day's reading only drives the "big drop" flag.
+* **Sleep debt** accrues against baseline + f(strain) − naps and is paid back by surplus sleep;
+  f(debt) only raises tonight's displayed need.
+* **Expenditure** is published weekly on blocks anchored to the first weigh-in, gated on ≥ 5
+  weigh-ins and ≥ 5 logged days per block and ≥ 14 days of trend history; intake suggestions
+  only move after a full week outside the 0.5–1 %BW/wk band, in 100–200 kcal steps, never
+  below the fat floor.
 
 ## Data & durability
 
 * Records use the compact schema from the spec (≈250–450 bytes/day). Shards are keyed by month;
   the index stores per-shard counts and checksums which are validated on load.
 * Writes are debounced (500 ms, 2 s max wait) and flushed on `visibilitychange`/`pagehide`.
-* `QuotaExceededError` is caught and surfaced as a banner; export JSON regularly (Settings → Data).
+* `QuotaExceededError` is caught, surfaced as a banner and retried with back-off; a second tab's
+  writes are picked up through the `storage` event (last writer wins per month).
+* JSON exports omit the API key; imports normalise ids and numeric fields.
 
 ## Medical boundary
 
