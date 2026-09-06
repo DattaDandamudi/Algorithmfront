@@ -3,7 +3,9 @@
  *  1. pinned natural-language AI bar (sticky header) → editable EstimateSheet
  *  2. fast paths: Repeat yesterday → Recents → Favorites → Barcode → Photo
  *  3. today's meals grouped by time + running totals vs targets
- *  4. weight   5. tobacco   6. bedtime   7. caffeine + water
+ *  4. daily check-in (the Hooper items settings asks for; always reachable
+ *     here — `settings.checkIn.enabled` only governs Today's prompt)
+ *  5. weight   6. tobacco   7. bedtime   8. caffeine + water
  *
  * This file owns state and every store write; the pieces under ./log are
  * presentational. Numbers come from the store through the engine context
@@ -35,7 +37,7 @@
  * flashes a ring, then is consumed so the next visit starts at the top.
  */
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AISettings, FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Meal, MealSource } from '../data/types';
+import type { AISettings, CheckInItem, DailyRecord, FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Meal, MealSource } from '../data/types';
 import { useHealth, useNow, useRecords } from '../data/store';
 import { buildCoachContext, mealOccasions } from '../engine';
 import { createClient, type AnthropicClient } from '../ai/client';
@@ -51,6 +53,7 @@ import AIBar from './log/AIBar';
 import { CLIENT_LOAD_FALLBACK, describeClientError, photoAINote, type AIStatus } from './log/aiStatus';
 import BarcodeSheet from './log/BarcodeSheet';
 import BedtimeCard from './log/BedtimeCard';
+import CheckInSection from './log/CheckInSection';
 import EstimateSheet from './log/EstimateSheet';
 import FastPaths from './log/FastPaths';
 import HydrationCard from './log/HydrationCard';
@@ -563,10 +566,19 @@ export default function Log() {
 
   const setWater = (cups: number) => actions.patchDay(today, { h2o: cups > 0 ? cups : undefined });
 
+  // --- Daily check-in (one write, whatever the user answered) -----------------
+  const saveCheckIn = (values: Partial<Pick<DailyRecord, CheckInItem>>) => {
+    actions.saveCheckIn(today, values);
+    const n = Object.keys(values).length;
+    const asked = settings.checkIn.items.length || 4;
+    toast(n >= asked ? 'Check-in saved' : `Check-in saved · ${n} of ${asked} items`);
+  };
+
   // --- Deep links -------------------------------------------------------------
   const weightRef = useRef<HTMLDivElement>(null);
   const tobaccoRef = useRef<HTMLDivElement>(null);
   const bedtimeRef = useRef<HTMLDivElement>(null);
+  const checkinRef = useRef<HTMLDivElement>(null);
   /** Caffeine and water share one card, so both deep links land here. */
   const hydrationRef = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState<LogSection | null>(null);
@@ -576,21 +588,22 @@ export default function Log() {
     if (!logSection) return;
     const section = logSection;
     consumeLogSection();
-    // 'checkin' has no card yet: Phase 2g adds screens/log/CheckInSection.tsx, its
-    // ref goes in this map and it drops out of the Exclude.
-    const targets: Record<Exclude<LogSection, 'meal' | 'checkin'>, RefObject<HTMLDivElement>> = {
+    // 'meal' focuses the AI bar instead of scrolling to a card; everything
+    // else scrolls its section into view ('checkin' → CheckInSection, 2g).
+    const targets: Record<Exclude<LogSection, 'meal'>, RefObject<HTMLDivElement>> = {
       weight: weightRef,
       tobacco: tobaccoRef,
       bedtime: bedtimeRef,
       caffeine: hydrationRef,
       water: hydrationRef,
+      checkin: checkinRef,
     };
     // The section elements exist after this commit; wait a frame so the
     // shell's mount animation has started before measuring.
     requestAnimationFrame(() => {
       if (section === 'meal') {
         focusBar();
-      } else if (section !== 'checkin') {
+      } else {
         const el = targets[section].current;
         if (!el) return;
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -654,6 +667,20 @@ export default function Log() {
 
       <section className="px-4 pb-5" aria-label="Today's meals">
         <MealsList meals={mealDayMeals} totals={mealCtx.nutrition.totals} targets={mealCtx.nutrition.targets} onEdit={editMeal} onDelete={deleteMeal} onLogFirst={() => focusBar()} />
+      </section>
+
+      {/* Deep-link target for `openLog('checkin')` — Today's stress strip taps straight here. */}
+      <section ref={checkinRef} className="px-4 pb-5 scroll-mt-36" aria-label="Daily check-in">
+        <div className={flashCls('checkin')}>
+          <CheckInSection
+            date={today}
+            record={todayRecord}
+            settings={settings.checkIn}
+            onSave={saveCheckIn}
+            onSkip={() => toast('Check-in skipped — nothing was saved')}
+            onOpenSettings={() => openSettings('checkin')}
+          />
+        </div>
       </section>
 
       <section ref={weightRef} className="px-4 pb-5 scroll-mt-36" aria-label="Weight">

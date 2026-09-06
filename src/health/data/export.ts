@@ -158,7 +158,7 @@ const NUMERIC_DAY_KEYS = [
   'w', 'wt', 'kc', 'p', 'f', 'c', 'fi', 'st', 'rec', 'hrv', 'rhr', 'slh', 'sln', 'dbt', 'strn', 'nap', 'tob', 'h2o',
   // engine v3: Kalman weight state, training load, and the stress stack
   'kl', 'ks', 'kv', 'ld', 'wko',
-  'qs', 'qf', 'qt', 'qo', 'rr', 'skt', 'spo', 'alc', 'osi', 'vo2',
+  'qs', 'qf', 'qt', 'qo', 'rr', 'skt', 'spo', 'alc', 'osi', 'vo2', 'srssR', 'srssS', 'pss4',
 ] as const;
 /** Meal fields that must always be numbers (the spec's compact schema may omit f/c/fi). */
 const MEAL_NUMERIC_KEYS = ['g', 'kc', 'p', 'f', 'c', 'fi'] as const;
@@ -458,6 +458,9 @@ export const CSV_COLUMNS = [
   'alcohol',
   'stress_index',
   'vo2max',
+  'srss_recovery',
+  'srss_stress',
+  'pss4',
   'meal_count',
   'meals',
   'note',
@@ -519,6 +522,9 @@ export function buildCSV(days: DailyRecord[]): string {
       r.alc,
       r.osi,
       r.vo2,
+      r.srssR,
+      r.srssS,
+      r.pss4,
       r.meals?.length ?? '',
       meals,
       r.note,

@@ -180,6 +180,20 @@ export interface DailyRecord {
   osi?: number;
   /** Estimated VO₂max, ml/kg/min — derived. */
   vo2?: number;
+  /**
+   * Short Recovery and Stress Scale, stored as its two subscale totals rather
+   * than the eight raw items: the scales are what the literature interprets,
+   * and two numbers ride the series/baseline/CSV stack that an array could not.
+   * Recovery = physical + mental performance capability, emotional balance,
+   * overall recovery. Stress = muscular stress, lack of activation, negative
+   * emotional state, overall stress. Each 0–24 (four items, 0–6).
+   */
+  srssR?: number;
+  srssS?: number;
+  /** PSS-4 total, 0–16. Asked monthly: its recall window is a month. */
+  pss4?: number;
+  /** The check-in was deliberately skipped, so the prompt stops asking. */
+  qsk?: true;
   /** Menstruating today (only when profile.tracksCycle). */
   mens?: true;
 }
@@ -188,11 +202,11 @@ export interface DailyRecord {
  * Every numeric day field — the series, baseline, heat-map and CSV stacks all
  * iterate this. Non-numeric fields MUST be listed in the Omit or they will be
  * treated as numbers: `bt`/`wk` are times, `caf` is a list, `meals`/`note` are
- * objects/strings, and `lift`/`ws`/`mens` are booleans.
+ * objects/strings, and `lift`/`ws`/`mens`/`qsk` are booleans.
  */
 export type MetricKey = keyof Omit<
   DailyRecord,
-  'd' | 'bt' | 'wk' | 'caf' | 'meals' | 'note' | 'lift' | 'ws' | 'mens'
+  'd' | 'bt' | 'wk' | 'caf' | 'meals' | 'note' | 'lift' | 'ws' | 'mens' | 'qsk'
 >;
 
 // ---------------------------------------------------------------------------
