@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowRight, LogIn } from 'lucide-react';
 import VoiceOrb3D from './VoiceOrb3D';
 import { useScrollReveal } from './scroll';
@@ -20,10 +20,6 @@ const PARTICLE_COLORS = ['#fbbf24', '#fb7185', '#22d3ee', '#fb923c', '#f5d77a'];
 export default function TryCTA({ onTryIt, onSignIn }: TryCTAProps) {
   const reveal = useScrollReveal<HTMLDivElement>();
   const orbReveal = useScrollReveal<HTMLDivElement>();
-  const isMobile = useMemo(
-    () => typeof window !== 'undefined' && window.innerWidth < 768,
-    []
-  );
   const btnRef = useRef<HTMLButtonElement>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
   const burstId = useRef(0);

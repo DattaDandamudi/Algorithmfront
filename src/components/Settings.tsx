@@ -75,7 +75,6 @@ export default function Settings() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
       const { data } = await supabase.from('settings').select('key, value');
       if (data) {
         const map: Record<string, string> = {};

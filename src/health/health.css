@@ -1,0 +1,149 @@
+/* Health app design tokens (SPEC §0). Scoped under .hx so the light Algoritm UI is untouched. */
+.hx {
+  --hx-base: #0b0d0f;
+  --hx-card: #14181c;
+  --hx-card-2: #1a2026;
+  --hx-border: #1e252b;
+  --hx-green: #16c784;
+  --hx-yellow: #f5a623;
+  --hx-red: #e5484d;
+  --hx-neutral: #7c8a97;
+  --hx-blue: #3b82f6;
+  --hx-text: #f2f5f7;
+  --hx-text-2: #a9b4be;
+  --hx-muted: #6b7883;
+
+  color-scheme: dark;
+  background: var(--hx-base);
+  color: var(--hx-text);
+  font-variant-numeric: tabular-nums lining-nums;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 100dvh;
+}
+
+.hx * {
+  font-variant-numeric: inherit;
+}
+
+.hx ::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: var(--hx-text);
+}
+
+/* Labels: 12–13px uppercase, tracked. */
+.hx-label {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hx-text-2);
+  font-weight: 500;
+}
+
+.hx-card {
+  background: var(--hx-card);
+  border: 1px solid var(--hx-border);
+  border-radius: 16px;
+}
+
+.hx-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hx-border) transparent;
+}
+.hx-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.hx-scroll::-webkit-scrollbar-thumb {
+  background: var(--hx-border);
+  border-radius: 4px;
+}
+
+.hx-no-scrollbar {
+  scrollbar-width: none;
+}
+.hx-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe-area aware bottom tab bar. */
+.hx-tabbar {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+@keyframes hx-ring-in {
+  from {
+    stroke-dashoffset: var(--hx-ring-circ);
+  }
+}
+.hx-ring-arc {
+  animation: hx-ring-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes hx-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.hx-fade-up {
+  animation: hx-fade-up 320ms ease-out both;
+}
+
+@keyframes hx-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.hx-pulse {
+  animation: hx-pulse 1.4s ease-in-out infinite;
+}
+
+/* Remove number-input spinners; we use our own steppers. */
+.hx input[type='number']::-webkit-outer-spin-button,
+.hx input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.hx input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.hx input,
+.hx textarea,
+.hx select {
+  background: var(--hx-card-2);
+  color: var(--hx-text);
+  border: 1px solid var(--hx-border);
+  border-radius: 12px;
+  outline: none;
+}
+.hx input:focus-visible,
+.hx textarea:focus-visible,
+.hx select:focus-visible,
+.hx button:focus-visible,
+.hx [role='button']:focus-visible {
+  outline: 2px solid var(--hx-blue);
+  outline-offset: 2px;
+}
+.hx input::placeholder,
+.hx textarea::placeholder {
+  color: var(--hx-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hx-ring-arc,
+  .hx-fade-up,
+  .hx-pulse {
+    animation: none;
+  }
+}
