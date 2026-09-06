@@ -158,6 +158,10 @@ export function useTodayModel(): TodayModel & {
     };
   }, [records, settings, today, now]);
 
+  // R7-13: "Going to bed" creates tomorrow's record before midnight; that
+  // future-dated stub is not a day with data for the backup reminder.
+  const recordCount = useMemo(() => records.filter((r) => r.d <= today).length, [records, today]);
+
   // Banners depend on the storage status, which changes on every save — kept
   // out of the per-minute model memo so a write never rebuilds the engine context.
   const storage = state.storage;
@@ -170,10 +174,10 @@ export function useTodayModel(): TodayModel & {
         storage,
         lastExportAt: settings.lastExportAt,
         backupReminderSnoozedUntil: settings.backupReminderSnoozedUntil,
-        recordCount: records.length,
+        recordCount,
         nowMs: now.getTime(),
       }),
-    [settings.profile.bloodwork, settings.acknowledgedEscalations, settings.lastExportAt, settings.backupReminderSnoozedUntil, storage, records.length, today, now],
+    [settings.profile.bloodwork, settings.acknowledgedEscalations, settings.lastExportAt, settings.backupReminderSnoozedUntil, storage, recordCount, today, now],
   );
 
   return { ...model, actions, storage, banners };

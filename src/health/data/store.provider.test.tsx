@@ -94,6 +94,23 @@ afterEach(() => {
   resetStorageCache();
 });
 
+describe('HealthStoreProvider — R7-13 future-dated records', () => {
+  it('"Going to bed" for tomorrow never gains an EWMA trend weight, in state or on disk', () => {
+    vi.setSystemTime(new Date(2026, 8, 6, 22, 30, 0));
+    mount();
+    act(() => {
+      ctx.actions.setWeight('2026-09-05', 172);
+      ctx.actions.setWeight('2026-09-06', 171.8);
+      ctx.actions.logBedtime('2026-09-07', '23:10');
+    });
+    expect(ctx.state.days['2026-09-06'].wt).toBe(171.98);
+    expect(ctx.state.days['2026-09-07']).toEqual({ d: '2026-09-07', bt: '23:10' });
+    tick(500);
+    expect(shard('2026-09')?.days['07']).toEqual({ d: '2026-09-07', bt: '23:10' });
+    expect(shard('2026-09')?.days['06'].wt).toBe(171.98);
+  });
+});
+
 describe('HealthStoreProvider — debounced persistence', () => {
   it('writes the dirty month shard + index 500 ms after an edit and stamps lastSavedAt', () => {
     mount();

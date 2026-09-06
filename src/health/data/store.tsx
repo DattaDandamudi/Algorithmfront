@@ -6,7 +6,8 @@
  * - Derived fields kept in sync here so every consumer agrees:
  *     • daily totals (kc/p/f/c/fi) from itemised meals
  *     • EWMA trend weight `wt` (recomputed from the first weigh-in onward
- *       whenever any scale weight or the alpha changes)
+ *       whenever any scale weight or the alpha changes; never stamped on a
+ *       record dated after today — R7-13)
  * - Records are immutable; unchanged records keep their object identity so the
  *   dirty-shard diff is a cheap reference comparison.
  * - Durability (SPEC §10):
@@ -119,10 +120,16 @@ function compact<T extends object>(obj: T): T {
   return out as T;
 }
 
-/** Apply EWMA trend to every record; preserves identity of unchanged records. */
-export function applyTrend(days: Days, alpha: number): Days {
+/**
+ * Apply EWMA trend to every record; preserves identity of unchanged records.
+ * `through` (the store passes today) caps the trend at max(last weigh-in,
+ * today): "Going to bed" writes tomorrow's bedtime before midnight, and that
+ * future-dated stub must not be persisted / exported with a trend weight
+ * (R7-13). A stale `wt` already on such a record is removed.
+ */
+export function applyTrend(days: Days, alpha: number, through?: ISODate): Days {
   const records = Object.values(days);
-  const trend = computeEwmaTrend(records, alpha);
+  const trend = computeEwmaTrend(records, alpha, through);
   let changed = false;
   const next: Days = { ...days };
   for (const r of records) {
@@ -192,7 +199,7 @@ const freshDirty = (): Dirty => ({ months: new Set(), settings: false, chat: fal
 function initialState(): { state: HealthState; index: ShardIndex; corruptMonths: string[] } {
   const loaded = loadAll();
   const settings = mergeSettings(loaded.settings);
-  const days = applyTrend(loaded.days, settings.targets.ewmaAlpha);
+  const days = applyTrend(loaded.days, settings.targets.ewmaAlpha, todayISO());
   const bytes = loaded.bytesUsed;
   const storage: StorageStatus = {
     ok: loaded.available,
@@ -335,7 +342,7 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
       if (scope.settings && !d.settings) settings = mergeSettings(readSettings());
       if (scope.chat && !d.chat) chat = readChat().slice(-CHAT_CAP);
       if (days === prev.days && settings === prev.settings && chat === prev.chat) return prev;
-      days = applyTrend(days, settings.targets.ewmaAlpha);
+      days = applyTrend(days, settings.targets.ewmaAlpha, todayISO());
       const bytes = estimateBytesUsed();
       return { ...prev, days, settings, chat, storage: { ...prev.storage, bytesUsed: bytes, quotaWarning: bytes > QUOTA_BYTES * QUOTA_WARN_RATIO } };
     });
@@ -407,7 +414,7 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
         for (const k of Object.keys(raw)) {
           if (raw[k] !== prev.days[k]) totalled[k] = compact(withTotals(raw[k]));
         }
-        const next = applyTrend(totalled, prev.settings.targets.ewmaAlpha);
+        const next = applyTrend(totalled, prev.settings.targets.ewmaAlpha, todayISO());
         const months = changedMonths(prev.days, next);
         if (!months.size) return prev;
         months.forEach((m) => dirty.current.months.add(m));
@@ -426,7 +433,7 @@ export function HealthStoreProvider({ children }: { children: ReactNode }) {
         dirty.current.settings = true;
         let days = prev.days;
         if (nextSettings.targets.ewmaAlpha !== prev.settings.targets.ewmaAlpha) {
-          days = applyTrend(prev.days, nextSettings.targets.ewmaAlpha);
+          days = applyTrend(prev.days, nextSettings.targets.ewmaAlpha, todayISO());
           changedMonths(prev.days, days).forEach((m) => dirty.current.months.add(m));
         }
         writer.schedule();

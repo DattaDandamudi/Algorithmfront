@@ -241,3 +241,26 @@ describe('weeksOutsideBand (R3-3 — a full week outside before intake changes)'
     expect(weeksOutsideBand(trendWithRates(long), last(long), 172, band, 3)).toBe(3);
   });
 });
+
+describe('R7-13 computeEwmaTrend — `through` caps the window at max(last weigh-in, through)', () => {
+  const recs = [rec(0, 170), rec(1, 172), rec(2, undefined, { kc: 1900 }), rec(3, 168)];
+
+  it('a record dated after `through` (a bedtime logged for tomorrow) gets no trend entry', () => {
+    const withTomorrow = [...recs, rec(5, undefined, { bt: '23:10' })];
+    const t = computeEwmaTrend(withTomorrow, 0.1, day(4));
+    expect(t.has(day(5))).toBe(false);
+    expect(t.get(day(4))).toBeCloseTo(169.98, 2); // today still carries the trend forward
+    expect(t.size).toBe(5);
+  });
+
+  it('a weigh-in dated after `through` still extends the window (it is real data)', () => {
+    const t = computeEwmaTrend([...recs, rec(6, 168)], 0.1, day(4));
+    expect(t.has(day(6))).toBe(true);
+    expect(t.has(day(5))).toBe(true);
+  });
+
+  it('without `through` the window still runs to the last record (legacy callers)', () => {
+    const withTail = [...recs, rec(5, undefined, { bt: '23:10' })];
+    expect(computeEwmaTrend(withTail).has(day(5))).toBe(true);
+  });
+});

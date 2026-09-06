@@ -432,3 +432,30 @@ describe('recommendIntake (§6.2 calorie adjustment)', () => {
     expect(min.minimumKcal).toBe(200 * 4 + 70 * 9 + 200);
   });
 });
+
+describe('R7-7 weeklyExpenditure — `weeks` never reaches back before the first weigh-in', () => {
+  it('on day 22 returns the 3 completed blocks only, all anchored on or after the first weigh-in', () => {
+    const recs = ramp(22); // first weigh-in day(0); asOf day(21) sits in block 3
+    const r = weeklyExpenditure(recs, day(21));
+    expect(r.firstWeighIn).toBe(day(0));
+    expect(r.weeks).toHaveLength(3);
+    expect(r.weeks[0].start).toBe(day(0));
+    for (const wk of r.weeks) expect(wk.start >= day(0)).toBe(true);
+    expect(r.weeks.map((w) => w.end)).toEqual([day(6), day(13), day(20)]);
+    // The chart/caption count follows: one calibrated of three plotted, never five.
+    expect(r.weeks.filter((w) => w.valid).length).toBe(1);
+    expect(expenditureSeries(recs, day(21))).toHaveLength(1);
+  });
+
+  it('returns no blocks at all during the first week (nothing has completed yet)', () => {
+    const r = weeklyExpenditure(ramp(3), day(2));
+    expect(r.weeks).toEqual([]);
+    expect(r.valid).toBe(false);
+    expect(r.tdee).toBeNull();
+    expect(r.weighInsThisWeek).toBe(3);
+  });
+
+  it('still returns the full `weeks` count once enough blocks have completed', () => {
+    expect(weeklyExpenditure(ramp(100), ASOF).weeks).toHaveLength(6);
+  });
+});

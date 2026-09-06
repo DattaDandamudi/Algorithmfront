@@ -5,10 +5,14 @@
  * Every tile shows "vs your 30-day average" (RHR: 28-day, §1) with a ▲/▼
  * coloured by the metric's good direction — the engine's BaselineDelta
  * already carries `good`, so the tile never decides direction itself. The
- * intake tiles (Protein / Calories) are the exception during the day: a
- * remaining-vs-average arrow at breakfast would read as a deficit, so they
- * caption the 30-day mean ("30-day avg 176 g/day") and only switch to the
- * ▲/▼ delta once the day is essentially complete (R1-4, DAY_COMPLETE_HOUR).
+ * metrics that accumulate through the day (Protein / Calories / Steps) are
+ * the exception until the evening: a partial count against full days would
+ * read as a deficit at breakfast, so they caption the 30-day mean ("30-day
+ * avg 176 g/day", "30-day avg 8,048/day") and only switch to the ▲/▼ delta
+ * once the day is essentially complete (R1-4 / R7-4, DAY_COMPLETE_HOUR).
+ * HRV is the other exception: its ▲/▼ is against the 28-day reference the
+ * SWC is centred on — the one number the hero and the coach call "baseline"
+ * (R7-8) — not the 30-day arithmetic mean.
  * Tapping a tile opens the Coach pre-filled with a contextual prompt from
  * `suggestedPrompts(ctx)` (WHOOP pattern: chips carry most coach traffic).
  */
@@ -17,6 +21,7 @@ import type { Band, BaselineDelta, CoachContext, HrvBand } from '../../data/type
 import { BASELINE_READINGS, COACH_CHIPS, PROTEIN_PER_MEAL_GKG, type EmptyStates, type SuggestedPrompts } from '../../engine';
 import { fmt, fmtMinutes, lbToKg, round } from '../../lib/format';
 import { ProgressRing, Sparkline, Tile, bandBg, type TileDelta } from '../../ui';
+import { goalBandLabel } from '../trends/series';
 import type { NutritionBaseline } from './useTodayModel';
 
 const HRV_LABEL: Record<HrvBand, { text: string; band: Band }> = {
@@ -71,15 +76,34 @@ export function hrvTileLabel(hrv: CoachContext['hrv']): { text: string; band: Ba
   return HRV_LABEL[hrv.band] ?? HRV_LABEL.insufficient;
 }
 
-/** "30-day avg 176 g/day" — null when there is no history to average. */
-export function baselineCaption(bd: BaselineDelta, unit: string): string | null {
-  return isNum(bd.baseline) && bd.n > 0 ? `30-day avg ${fmt(bd.baseline)} ${unit}/day` : null;
+/** "30-day avg 176 g/day" ("30-day avg 8,048/day" for a unit-less metric) — null when there is no history to average. */
+export function baselineCaption(bd: BaselineDelta, unit = ''): string | null {
+  return isNum(bd.baseline) && bd.n > 0 ? `30-day avg ${fmt(bd.baseline)}${unit ? ` ${unit}` : ''}/day` : null;
 }
 
-/** ▲/▼ vs the 30-day mean, only once the day is essentially complete (R1-4). */
-function intakeDelta(bd: BaselineDelta, dayComplete: boolean, unit: string): TileDelta | undefined {
+/** ▲/▼ vs the 30-day mean, only once the day is essentially complete (R1-4 intake, R7-4 steps). */
+export function dayCompleteDelta(bd: BaselineDelta, dayComplete: boolean, unit?: string): TileDelta | undefined {
   if (!dayComplete || !isNum(bd.delta)) return undefined;
   return { value: bd.delta, good: bd.good, unit };
+}
+
+/** "Goal 8–10k" only when both targets are whole thousands, else the exact numbers ("Goal 7,500–10,000") — the Trends rule (R7-11). */
+export function stepsGoalLabel(goalMin: number, goalMax: number): string {
+  return `Goal ${goalBandLabel(goalMin, goalMax)}`;
+}
+
+/**
+ * HRV ▲/▼ (R7-8): against the 28-day reference the SWC is centred on
+ * (`baseline28`, engine/hrv.ts) — the figure the hero detail and the coach
+ * also call "baseline". While it is still forming the tile falls back to the
+ * 30-day arithmetic mean and says so in the caption. Higher HRV is good.
+ */
+export function hrvTileDelta(hrv: CoachContext['hrv']): TileDelta {
+  if (isNum(hrv.today) && isNum(hrv.baseline28)) {
+    const d = round(hrv.today - hrv.baseline28, 2);
+    return { value: d, good: d > 0 ? true : d < 0 ? false : null, unit: 'ms', caption: 'vs 28-day baseline' };
+  }
+  return { value: hrv.delta.delta, good: hrv.delta.good, unit: 'ms', caption: 'vs 30-day avg' };
 }
 
 function sleepBand(deltaMin: number | null): Band | undefined {
@@ -137,6 +161,9 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
   // --- Steps ---------------------------------------------------------------
   const steps = ctx.steps.today;
   const stepsGoalHit = isNum(steps) && steps >= ctx.steps.goalMin;
+  // R7-4: a partial count vs the mean of full days is not a change — same gate as intake.
+  const stepsDelta = dayCompleteDelta(ctx.steps, baseline.dayComplete);
+  const stepsAvg = stepsDelta ? null : baselineCaption(ctx.steps);
 
   // --- Protein (protein-first, §6.5) ----------------------------------------
   const n = ctx.nutrition;
@@ -169,7 +196,7 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
     pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor · ${mealsLeftText}` : mealsLeftText;
   }
   const proteinPct = proteinTarget > 0 ? Math.round((soFar / proteinTarget) * 100) : 0;
-  const proteinDelta = intakeDelta(baseline.protein, baseline.dayComplete, 'g');
+  const proteinDelta = dayCompleteDelta(baseline.protein, baseline.dayComplete, 'g');
   const proteinAvg = proteinDelta ? null : baselineCaption(baseline.protein, 'g');
 
   // --- Calories ------------------------------------------------------------
@@ -181,7 +208,7 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
   else if (tdee !== null) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(tdee)}`;
   else if (isNum(smoothedTdee)) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(smoothedTdee)} (last calibrated)`;
   else kcalSub = `of ${fmt(n.targets.kc)} kcal`;
-  const kcalDelta = intakeDelta(baseline.kcal, baseline.dayComplete, 'kcal');
+  const kcalDelta = dayCompleteDelta(baseline.kcal, baseline.dayComplete, 'kcal');
   const kcalAvg = kcalDelta ? null : baselineCaption(baseline.kcal, 'kcal');
 
   return (
@@ -203,7 +230,7 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
           unit="ms"
           band={hrvMeta.band}
           sub={hrvMeta.text}
-          delta={{ value: ctx.hrv.delta.delta, good: ctx.hrv.delta.good, unit: 'ms' }}
+          delta={hrvTileDelta(ctx.hrv)}
           chart={hasHrvSpark ? <Sparkline values={hrv7} band={swc} highlightLast width={124} height={26} title="HRV, last 7 days" /> : undefined}
           chartLayout="stack"
           emptyHint={empty.hrv ?? 'Log HRV or connect WHOOP to start your baseline.'}
@@ -221,8 +248,13 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
         <Tile
           label="Steps"
           value={steps}
-          delta={{ value: ctx.steps.delta, good: ctx.steps.good }}
-          sub={`Goal ${fmt(ctx.steps.goalMin / 1000, 0)}–${fmt(ctx.steps.goalMax / 1000, 0)}k`}
+          delta={stepsDelta}
+          sub={
+            <span className="flex flex-col gap-0.5">
+              <span>{stepsGoalLabel(ctx.steps.goalMin, ctx.steps.goalMax)}</span>
+              {stepsAvg && <span className="text-hx-muted font-normal">{stepsAvg}</span>}
+            </span>
+          }
           band={stepsGoalHit ? 'green' : undefined}
           chart={<ProgressRing value={steps} max={ctx.steps.goalMin} color={stepsGoalHit ? 'green' : 'blue'} size={44} stroke={5} label="Steps toward goal" />}
           emptyHint="Log steps or connect WHOOP."

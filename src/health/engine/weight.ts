@@ -11,9 +11,12 @@ import { addDays } from '../lib/dates';
  *
  * Only days with a scale weight advance the trend; days without a weigh-in
  * carry the previous trend forward, so the returned map has an entry for every
- * date from the first weigh-in to the last record — or to `through` when that
- * is later (pass `asOf` so "today" has a trend even before today's weigh-in;
- * without it `weeklyRate(trend, today)` would be null on an unlogged day).
+ * date from the first weigh-in to max(last weigh-in, `through`) — pass `asOf`
+ * so "today" has a trend even before today's weigh-in; without it
+ * `weeklyRate(trend, today)` would be null on an unlogged day. A record dated
+ * AFTER `through` that carries no weigh-in (a bedtime logged for tomorrow,
+ * R7-13) gets no entry: a trend value for a day that has not happened is not
+ * data. When `through` is omitted the window runs to the last record instead.
  * The first weigh-in seeds the trend. Values are rounded to 0.01 lb for
  * display, but the running trend keeps full precision so rounding never drifts.
  */
@@ -27,8 +30,10 @@ export function computeEwmaTrend(
   const byDate = new Map(sorted.map((r) => [r.d, r]));
   const first = sorted.find((r) => isWeight(r.w));
   if (!first) return out;
-  const lastRecord = sorted[sorted.length - 1].d;
-  const last = through && through > lastRecord ? through : lastRecord;
+  let lastWeighIn = first.d;
+  for (const r of sorted) if (isWeight(r.w)) lastWeighIn = r.d;
+  const end = through || sorted[sorted.length - 1].d;
+  const last = end > lastWeighIn ? end : lastWeighIn;
   const a = clampAlpha(alpha);
 
   let trend = first.w as number;

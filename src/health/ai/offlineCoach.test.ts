@@ -57,7 +57,7 @@ describe('answerOffline — cites the actual numbers (full context)', () => {
   it('train: readiness, HRV vs baseline and range, split day', () => {
     const out = ask(CHIPS[0]);
     expect(out).toContain('Readiness 71% (green)');
-    expect(out).toContain('HRV 54 ms is 2 ms above your 52 ms baseline (normal range 48–56 ms)');
+    expect(out).toContain('HRV 54 ms is 2 ms above your 52 ms 7-day average (normal range 48–56 ms)');
     expect(out).toContain('Sleep 7.4 h vs 7.9 h need, 30 min debt');
     expect(out).toContain('lower day');
     expect(out).toMatch(/\*\*Progress your lower loads today/);
@@ -141,7 +141,7 @@ describe('answerOffline — cites the actual numbers (full context)', () => {
   it('sleep: hours vs need, debt, bedtime vs target, readiness link', () => {
     const out = ask(CHIPS[5]);
     expect(out).toContain('You slept 7.4 h against a 7.9 h need — 30 min of debt.');
-    expect(out).toContain('This morning: readiness 71% (green), HRV 54 ms (+2 vs baseline).');
+    expect(out).toContain('This morning: readiness 71% (green), HRV 54 ms (+2 vs 30-day avg).');
     expect(out).toContain('Bed at 23:10 vs your 23:00 target; bedtime has swung 38 min this week.');
     expect(out).toMatch(/\*\*Be in bed by 23:00 tonight/);
   });
@@ -328,5 +328,67 @@ describe('R5-15 weight handler — rates the loss band only in a fat-loss phase'
 
   it('fat-loss keeps the band rating', () => {
     expect(ask(CHIPS[3])).toContain('against your 0.86–1.72 lb/wk loss target — on target.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 7 reproductions
+// ---------------------------------------------------------------------------
+
+describe('R7-8 offline coach — "baseline" is the 28-day reference the SWC is centred on', () => {
+  const withRef = () => {
+    const ctx = fullContext();
+    ctx.hrv = { ...ctx.hrv, baseline28: 53, baselineEstablished: true, daysOfData: 30 };
+    return ctx;
+  };
+
+  it('train/recovery cite today vs the 28-day reference, not the 7-day or 30-day means', () => {
+    expect(ask(CHIPS[0], withRef())).toContain('HRV 54 ms is 1 ms above your 53 ms baseline (normal range 48–56 ms)');
+    expect(ask(CHIPS[2], withRef())).toContain('HRV 54 ms is 1 ms above your 53 ms baseline');
+  });
+
+  it('sleep cites the same reference and labels it', () => {
+    expect(ask(CHIPS[5], withRef())).toContain('HRV 54 ms (+1 vs 28-day baseline)');
+  });
+
+  it('without a 28-day reference the fallback figures are labelled by their window, never "baseline"', () => {
+    for (const q of [CHIPS[0], CHIPS[2], CHIPS[5]]) {
+      const out = ask(q);
+      expect(out).not.toMatch(/\d+ ms baseline/);
+      expect(out).not.toMatch(/vs baseline/);
+    }
+  });
+});
+
+describe('R7-9 offline coach — weights and rates follow profile.units', () => {
+  const KG = { ...DEFAULT_PROFILE, units: 'kg' as const };
+  const askKg = (q: string, ctx = fullContext()) => answerOffline(q, ctx, KG, DEFAULT_TARGETS, 'conversational');
+
+  it('weight chip: trend, rate, band and scale in kg with no lb figure', () => {
+    const out = askKg(CHIPS[3]);
+    expect(out).toContain('Trend 78.0 kg, −0.50 kg/wk (−0.64%/wk) against your 0.39–0.78 kg/wk loss target — on target.');
+    expect(out).toContain("Today's scale 77.9 kg vs trend 78.0 kg");
+    expect(out).not.toMatch(/\blb\b/);
+  });
+
+  it('generic and no-rate leads use kg too', () => {
+    expect(askKg('hello there')).toContain('Trend weight 78.0 kg, −0.50 kg/wk.');
+    const ctx = fullContext();
+    ctx.weight = { ...ctx.weight, trend: null, weeklyRateLb: null, weeklyRatePct: null, inBand: null };
+    expect(askKg(CHIPS[3], ctx)).toContain('latest 77.9 kg');
+    ctx.weight = { ...ctx.weight, trend: 171.9, weeklyRateLb: null };
+    expect(askKg(CHIPS[3], ctx)).toContain('Trend weight is 78.0 kg (scale 77.9 kg)');
+  });
+
+  it('the too-fast ceiling is quoted in kg/wk', () => {
+    const ctx = fullContext();
+    ctx.weight = { ...ctx.weight, weeklyRateLb: -2.2, weeklyRatePct: -1.28, inBand: 'above' };
+    ctx.expenditure = { tdee: null, valid: false, reason: 'Need 5+ weigh-ins this week', suggestedKcal: null, suggestedDelta: null };
+    expect(askKg(CHIPS[3], ctx)).toMatch(/faster than the 0\.78 kg\/wk ceiling/);
+    expect(ask(CHIPS[3], ctx)).toMatch(/faster than the 1\.72 lb\/wk ceiling/);
+  });
+
+  it('lb output is unchanged', () => {
+    expect(ask(CHIPS[3])).toContain('Trend 171.9 lb, −1.10 lb/wk (−0.64%/wk) against your 0.86–1.72 lb/wk loss target — on target.');
   });
 });

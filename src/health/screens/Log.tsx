@@ -11,6 +11,14 @@
  * — never rebuilt on a keystroke. Nothing is written until the user taps
  * Save / +1 / a food card (§2 "every AI estimate is editable before save").
  *
+ * Two "days" (R7-1):
+ *  - `today`   the calendar date — weight, tobacco, water and caffeine live here.
+ *  - `mealDay` the eating day (`eatingDayOf`): before 04:00 it is the previous
+ *    date, matching the engine's late-eating rule and `mealClockMinutes`, so a
+ *    00:20 supper is charged to the day it ended. Everything meal-related
+ *    (list, header totals, add/edit/delete, "Repeat yesterday") uses it; the
+ *    Today screen and the engine keep their calendar-day context unchanged.
+ *
  * One EstimateSheet serves five flows so "edit" looks like "log":
  *  - 'ai'      text bar result (N items, clarify row, source note)
  *  - 'portion' a favourite / recent with a grams stepper
@@ -19,14 +27,15 @@
  *  - 'edit'    an existing entry (plus Delete)
  * Barcode and Photo first open their own secondary sheet (code / camera);
  * the result closes it and opens the EstimateSheet (nested sheets are not
- * supported, so it is a hand-off, not a stack).
+ * supported, so it is a hand-off, not a stack). The sheet captures the day it
+ * was opened for (`date`), so a save after midnight still lands there (R7-2).
  *
  * Deep links: `useNav().logSection` scrolls the matching section into view,
  * focuses its field ('meal' → the AI bar, 'weight' → the weight input) and
  * flashes a ring, then is consumed so the next visit starts at the top.
  */
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FoodEstimate, FoodEstimateItem, FoodItem, HHMM, Meal, MealSource } from '../data/types';
+import type { AISettings, FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Meal, MealSource } from '../data/types';
 import { useHealth, useNow, useRecords } from '../data/store';
 import { buildCoachContext, mealOccasions } from '../engine';
 import { createClient, type AnthropicClient } from '../ai/client';
@@ -38,7 +47,7 @@ import { addDays, formatClock, formatDateShort, nowHHMM, parseISODate, toISODate
 import { fmt, fmtWeight } from '../lib/format';
 import { toast } from '../ui';
 import { useNav, type LogSection } from '../nav';
-import AIBar from './log/AIBar';
+import AIBar, { type AIStatus } from './log/AIBar';
 import BarcodeSheet from './log/BarcodeSheet';
 import BedtimeCard from './log/BedtimeCard';
 import EstimateSheet from './log/EstimateSheet';
@@ -55,6 +64,9 @@ import {
   appendClarification,
   appendNote,
   bedtimeRecordDate,
+  describeClientError,
+  eatingDayCaption,
+  eatingDayOf,
   estimateNote,
   estimateOrigin,
   foodItemFromEstimate,
@@ -79,6 +91,12 @@ interface SheetState {
   /** Stable identity while open — a new array resets the sheet's draft. */
   items: FoodEstimateItem[];
   time: HHMM;
+  /**
+   * The eating day the sheet was opened for. Captured at open so a sheet that
+   * straddles midnight (or the 04:00 rollover) still saves, edits or deletes
+   * on the day the user was looking at (R7-2). Unused while closed.
+   */
+  date: ISODate;
   clarify: string | null;
   note: string | null;
   src: MealSource;
@@ -92,20 +110,49 @@ interface SheetState {
   photo?: { file: File; hint: string };
 }
 
-const CLOSED: SheetState = { open: false, kind: 'ai', title: '', items: [], time: '12:00', clarify: null, note: null, src: 'manual' };
+const CLOSED: SheetState = { open: false, kind: 'ai', title: '', items: [], time: '12:00', date: '', clarify: null, note: null, src: 'manual' };
 
 /** Copy for a text-bar submit the parser could not turn into food. */
 const NO_FOOD_QUESTION = 'Could not find a food in that — add a dish name and an amount, e.g. "250 g biryani".';
 /** Copy when Claude saw no food in the photo and asked nothing. */
 const NO_FOOD_IN_PHOTO = 'No food recognised in that photo — try a closer shot of the plate, or type it.';
+/** Toast when an edit/delete finds its entry already gone (the store would silently no-op). */
+const ENTRY_GONE = 'That entry was already removed — nothing changed';
 
 /** How long a deep-linked section keeps its highlight ring. */
 const FLASH_MS = 1600;
 /** Delay before focusing after a sheet closes (its focus-return runs first). */
 const FOCUS_AFTER_SHEET_MS = 80;
+/**
+ * How long Estimate / Photo wait for the lazily imported SDK before the local
+ * parser is offered anyway (R7-3): long enough for a normal chunk download,
+ * short enough that a slow link never blocks logging.
+ */
+const AI_LOAD_WAIT_MS = 3000;
 
 /** Wall-clock HH:MM at the moment of a tap — stamps should not be up to 59 s stale. */
 const clockNow = (): HHMM => nowHHMM(new Date());
+
+// ---------------------------------------------------------------------------
+// Lazy AI client (R7-3)
+// ---------------------------------------------------------------------------
+
+type ClientStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+/**
+ * The client for one AISettings object. Keyed by the settings identity so a
+ * settings change drops the old client in the same render — the old key is
+ * never used with the new settings while the new client loads.
+ */
+interface ClientSlot {
+  ai: AISettings;
+  status: ClientStatus;
+  client: AnthropicClient | null;
+  /** Readable reason when `status === 'error'` (describeClientError). */
+  error: string | null;
+}
+
+const freshSlot = (ai: AISettings): ClientSlot => ({ ai, status: isAIConfigured(ai) ? 'loading' : 'idle', client: null, error: null });
 
 // ---------------------------------------------------------------------------
 
@@ -124,31 +171,67 @@ export default function Log() {
     d.setHours(hh, mm, 0, 0);
     return d;
   }, [today, hh, mm]);
+  // Eating day for everything meal-related (see the header comment); equals `today` from 04:00.
+  const mealDay = eatingDayOf(wall);
 
   const settings = state.settings;
   const profile = settings.profile;
   const ctx = useMemo(() => buildCoachContext({ records, settings, today, now }), [records, settings, today, now]);
+  // Between midnight and 04:00 the meal numbers (totals, remaining, day type)
+  // belong to the previous day's record, so build that day's context too.
+  const mealCtx = useMemo(() => (mealDay === today ? ctx : buildCoachContext({ records, settings, today: mealDay, now })), [ctx, mealDay, records, settings, today, now]);
 
-  const yesterday = addDays(today, -1);
+  const yesterday = addDays(mealDay, -1);
+  // Calendar-day record: weight, tobacco, water, caffeine and the tobacco note stamps.
   const todayRecord = state.days[today];
   const yesterdayMeals = state.days[yesterday]?.meals ?? [];
-  const todayMeals = todayRecord?.meals ?? [];
+  const mealDayMeals = state.days[mealDay]?.meals ?? [];
   const bedTarget = bedtimeRecordDate(now);
   const bedTargetRecord = state.days[bedTarget];
 
   const library = useMemo(() => [...settings.favorites, ...settings.recents], [settings.favorites, settings.recents]);
-  // The SDK is loaded lazily the first time a key/proxy is configured (null while loading or offline).
-  const [client, setClient] = useState<AnthropicClient | null>(null);
+  const aiConfigured = isAIConfigured(settings.ai);
+
+  // The SDK is loaded lazily whenever a key/proxy is configured. `slot` is the
+  // last resolved load; when settings change it is stale until the effect
+  // below resolves, so the derived `clientSlot` starts from a fresh 'loading'.
+  const [slot, setSlot] = useState<ClientSlot>(() => freshSlot(settings.ai));
+  const clientSlot = slot.ai === settings.ai ? slot : freshSlot(settings.ai);
   useEffect(() => {
+    const ai = settings.ai;
+    if (!isAIConfigured(ai)) return;
     let alive = true;
-    void createClient(settings.ai).then((c) => {
-      if (alive) setClient(c);
-    });
+    createClient(ai)
+      .then((c) => {
+        if (alive) setSlot({ ai, status: c ? 'ready' : 'idle', client: c, error: null });
+      })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        const error = describeClientError(e);
+        setSlot({ ai, status: 'error', client: null, error });
+        toast(`AI unavailable — ${error}`, 'warn');
+      });
     return () => {
       alive = false;
     };
   }, [settings.ai]);
-  const aiConfigured = isAIConfigured(settings.ai);
+  const client = clientSlot.client;
+  const clientStatus = clientSlot.status;
+  const clientError = clientSlot.error;
+
+  // After AI_LOAD_WAIT_MS of loading, stop blocking the buttons — the local parser answers meanwhile.
+  const [slowLoad, setSlowLoad] = useState(false);
+  useEffect(() => {
+    if (clientStatus !== 'loading') {
+      setSlowLoad(false);
+      return;
+    }
+    const id = window.setTimeout(() => setSlowLoad(true), AI_LOAD_WAIT_MS);
+    return () => window.clearTimeout(id);
+  }, [clientStatus, settings.ai]);
+  const aiStatus: AIStatus = clientStatus === 'idle' ? 'off' : clientStatus === 'loading' ? (slowLoad ? 'slow' : 'loading') : clientStatus;
+  /** Why a configured key still has no client right now — for the estimate note and toast. */
+  const noClientReason = clientStatus === 'error' ? (clientError ?? 'the AI client could not be created') : 'the AI module is still loading';
 
   // --- AI bar + sheet ---------------------------------------------------------
   const inputRef = useRef<HTMLInputElement>(null);
@@ -182,7 +265,15 @@ export default function Log() {
       setQuestion(null);
       try {
         const est = await estimateFood(description, settings.ai, profile, library, { client });
-        if (est.fallbackReason && alive.current) toast(`AI unavailable — ${est.fallbackReason}. Showing the local estimate.`, 'warn');
+        let origin = estimateOrigin(est);
+        let fallbackReason = est.fallbackReason ?? null;
+        if (origin === 'local' && aiConfigured) {
+          // A key exists but no client could be used (still loading, or the SDK
+          // failed to load): say so — never "connect an AI key" (R7-3).
+          origin = 'ai-fallback';
+          fallbackReason = noClientReason;
+        }
+        if (fallbackReason && alive.current) toast(`AI unavailable — ${fallbackReason}. Showing the local estimate.`, 'warn');
         if (!alive.current) return;
         if (est.items.length === 0) {
           const q = est.clarify ?? NO_FOOD_QUESTION;
@@ -191,24 +282,26 @@ export default function Log() {
           if (!keepTime) setQuestion(q);
           return;
         }
-        setSheet({
+        setSheet((s) => ({
           open: true,
           kind: 'ai',
           title: est.items.length > 1 ? `Check ${est.items.length} items` : 'Check the estimate',
           items: est.items,
+          // The AI bar's time is the real clock; the day is the eating day (a clarification keeps both).
           time: keepTime ?? clockNow(),
+          date: keepTime && s.open ? s.date : eatingDayOf(new Date()),
           clarify: est.clarify,
-          note: estimateNote(estimateOrigin(est)),
+          note: estimateNote(origin),
           src: ESTIMATE_MEAL_SRC,
           text: description,
-        });
+        }));
       } catch {
         if (alive.current) toast('Estimate failed — try again or type the label values', 'error');
       } finally {
         if (alive.current) setBusy(false);
       }
     },
-    [settings.ai, profile, library, client],
+    [settings.ai, profile, library, client, aiConfigured, noClientReason],
   );
 
   // --- Barcode / Photo (secondary sheets → estimate sheet) --------------------
@@ -228,6 +321,7 @@ export default function Log() {
       title: est.items[0]?.name ?? `Barcode ${code}`,
       items: est.items,
       time: clockNow(),
+      date: eatingDayOf(new Date()),
       clarify: null,
       note: BARCODE_NOTE,
       src: 'barcode',
@@ -242,7 +336,9 @@ export default function Log() {
   const runPhoto = useCallback(
     async (file: File, hint: string, keepTime?: HHMM) => {
       if (!client) {
-        setPhotoError('Add an AI key in Settings to estimate from photos.');
+        // The PhotoSheet already hides the camera without a key; this covers
+        // the loading / failed-load window for a configured key (R7-3).
+        setPhotoError(!aiConfigured ? 'Add an AI key in Settings to estimate from photos.' : clientStatus === 'error' ? `AI unavailable — ${noClientReason}.` : 'The AI module is still loading — try again in a moment, or type it.');
         return;
       }
       setPhotoBusy(true);
@@ -257,17 +353,18 @@ export default function Log() {
           return;
         }
         setSecondary(null);
-        setSheet({
+        setSheet((s) => ({
           open: true,
           kind: 'photo',
           title: est.items.length > 1 ? `Confirm ${est.items.length} items` : 'Confirm the photo estimate',
           items: est.items,
           time: keepTime ?? clockNow(),
+          date: keepTime && s.open ? s.date : eatingDayOf(new Date()),
           clarify: est.clarify,
           note: PHOTO_NOTE,
           src: 'photo',
           photo: { file, hint },
-        });
+        }));
       } catch (e) {
         if (!alive.current) return;
         const msg = e instanceof Error && e.message ? e.message : 'Photo estimate failed — try again or type it';
@@ -277,7 +374,7 @@ export default function Log() {
         if (alive.current) setPhotoBusy(false);
       }
     },
-    [client, settings.ai, profile],
+    [client, clientStatus, aiConfigured, noClientReason, settings.ai, profile],
   );
 
   const onClarify = (answer: string) => {
@@ -289,17 +386,25 @@ export default function Log() {
     void runEstimate(appendClarification(sheet.text, answer), sheet.time);
   };
 
+  /** The store's updateMeal/removeMeal no-op silently when the entry is gone; check first so toasts mean a write happened. */
+  const hasMeal = (date: ISODate, id: string) => (state.days[date]?.meals ?? []).some((m) => m.id === id);
+
   const onSheetSave = (items: FoodEstimateItem[], time: HHMM) => {
+    const date = sheet.date;
     if (sheet.kind === 'edit' && sheet.meal) {
       const it = items[0];
       if (!it) return;
-      actions.updateMeal(today, sheet.meal.id, itemToMeal(it, time, sheet.meal.src ?? 'manual'));
-      toast(`Updated ${it.name} · ${formatClock(time)}`);
+      if (!hasMeal(date, sheet.meal.id)) {
+        toast(ENTRY_GONE, 'warn');
+      } else {
+        actions.updateMeal(date, sheet.meal.id, itemToMeal(it, time, sheet.meal.src ?? 'manual'));
+        toast(`Updated ${it.name} · ${formatClock(time)}`);
+      }
     } else {
       let kc = 0;
       let p = 0;
       for (const it of items) {
-        actions.addMeal(today, itemToMeal(it, time, sheet.src));
+        actions.addMeal(date, itemToMeal(it, time, sheet.src));
         // Bump Recents so the dish is one tap away next time — the library
         // item itself for a portion save, else the matching/synthesised food.
         actions.touchRecent(sheet.kind === 'portion' && sheet.libItem ? sheet.libItem : foodItemFromEstimate(it, library));
@@ -307,7 +412,8 @@ export default function Log() {
         p += it.protein_g;
       }
       const what = items.length === 1 ? items[0].name : `${items.length} items`;
-      toast(`Saved ${what} · ${fmt(kc)} kcal · ${fmt(p)} g P`);
+      const where = date === mealDay ? '' : ` · ${formatDateShort(date)}`;
+      toast(`Saved ${what} · ${fmt(kc)} kcal · ${fmt(p)} g P${where}`);
       if (sheet.kind === 'ai') setText('');
     }
     closeSheet();
@@ -315,8 +421,12 @@ export default function Log() {
 
   const onSheetDelete = () => {
     if (sheet.kind === 'edit' && sheet.meal) {
-      actions.removeMeal(today, sheet.meal.id);
-      toast(`Deleted ${sheet.meal.n}`);
+      if (hasMeal(sheet.date, sheet.meal.id)) {
+        actions.removeMeal(sheet.date, sheet.meal.id);
+        toast(`Deleted ${sheet.meal.n}`);
+      } else {
+        toast(ENTRY_GONE, 'warn');
+      }
     }
     closeSheet();
   };
@@ -330,8 +440,10 @@ export default function Log() {
 
   // --- Fast paths -------------------------------------------------------------
   const repeatYesterday = () => {
+    // "Yesterday" is the eating day before the current one: at 00:20 on 7 Sep
+    // that copies 5 Sep onto 6 Sep, not 6 Sep onto 7 Sep.
     const occ = mealOccasions(yesterdayMeals).length;
-    const n = actions.repeatDay(yesterday, today);
+    const n = actions.repeatDay(yesterday, mealDay);
     if (!n) {
       toast('Nothing logged yesterday', 'warn');
       return;
@@ -344,7 +456,7 @@ export default function Log() {
 
   const quickAdd = (item: FoodItem, src: 'recent' | 'favorite') => {
     const est = foodItemToEstimate(item, portionOf(item));
-    actions.addMeal(today, itemToMeal(est, clockNow(), src));
+    actions.addMeal(mealDay, itemToMeal(est, clockNow(), src));
     actions.touchRecent(item);
     toast(`Added ${item.name} · ${fmt(est.kcal)} kcal · ${fmt(est.protein_g)} g P`);
   };
@@ -356,6 +468,7 @@ export default function Log() {
       title: item.name,
       items: [foodItemToEstimate(item, portionOf(item))],
       time: clockNow(),
+      date: mealDay,
       clarify: null,
       note: null,
       src,
@@ -376,6 +489,8 @@ export default function Log() {
       title: 'Edit entry',
       items: [mealToEstimateItem(m)],
       time: m.t,
+      // The list shows `mealDay`'s meals, so that is where this entry lives.
+      date: mealDay,
       clarify: null,
       note: null,
       src: m.src ?? 'manual',
@@ -383,11 +498,15 @@ export default function Log() {
     });
 
   const deleteMeal = (m: Meal) => {
-    actions.removeMeal(today, m.id);
+    if (!hasMeal(mealDay, m.id)) {
+      toast(ENTRY_GONE, 'warn');
+      return;
+    }
+    actions.removeMeal(mealDay, m.id);
     toast(`Deleted ${m.n}`);
   };
 
-  // --- Weight / tobacco / bedtime / caffeine / water --------------------------
+  // --- Weight / tobacco / bedtime / caffeine / water (calendar day) -----------
   const saveWeight = (lb: number) => {
     actions.setWeight(today, lb);
     toast(`Weight saved · ${fmtWeight(lb, profile.units)}`);
@@ -487,8 +606,8 @@ export default function Log() {
   const flashCls = (...sections: LogSection[]) =>
     `rounded-2xl transition-shadow duration-300 ${flash && sections.includes(flash) ? 'ring-2 ring-hx-blue/70 ring-offset-4 ring-offset-hx-base' : ''}`;
 
-  // --- Header numbers (protein-first, §1) -------------------------------------
-  const rem = ctx.nutrition.remaining;
+  // --- Header numbers (protein-first, §1) — the eating day's remaining -------
+  const rem = mealCtx.nutrition.remaining;
   const proteinLeft = rem.p > 0 ? `${fmt(rem.p)} g protein left` : 'Protein target hit';
   const kcalLeft = rem.kc >= 0 ? `${fmt(rem.kc)} kcal left` : `${fmt(-rem.kc)} kcal over`;
 
@@ -498,10 +617,15 @@ export default function Log() {
         <div className="flex items-baseline justify-between gap-3">
           <h1 className="text-[22px] leading-7 font-semibold text-hx-text">Log</h1>
           <p className="text-[12px] leading-4 text-hx-text2 text-right">
-            {formatDateShort(today)} · <span className="text-hx-text font-semibold">{proteinLeft}</span> · {kcalLeft}
+            {formatDateShort(mealDay)} · <span className="text-hx-text font-semibold">{proteinLeft}</span> · {kcalLeft}
           </p>
         </div>
-        <AIBar inputRef={inputRef} value={text} onChange={onTextChange} busy={busy} aiConfigured={aiConfigured} question={question} onSubmit={(t) => void runEstimate(t)} />
+        {mealDay !== today && (
+          <p className="text-[11px] leading-4 text-hx-yellow" role="status">
+            {eatingDayCaption(mealDay)}
+          </p>
+        )}
+        <AIBar inputRef={inputRef} value={text} onChange={onTextChange} busy={busy} aiStatus={aiStatus} aiError={clientError} question={question} onSubmit={(t) => void runEstimate(t)} />
       </header>
 
       <section className="px-4 py-5" aria-label="Fast paths">
@@ -519,7 +643,7 @@ export default function Log() {
       </section>
 
       <section className="px-4 pb-5" aria-label="Today's meals">
-        <MealsList meals={todayMeals} totals={ctx.nutrition.totals} targets={ctx.nutrition.targets} onEdit={editMeal} onDelete={deleteMeal} onLogFirst={() => focusBar()} />
+        <MealsList meals={mealDayMeals} totals={mealCtx.nutrition.totals} targets={mealCtx.nutrition.targets} onEdit={editMeal} onDelete={deleteMeal} onLogFirst={() => focusBar()} />
       </section>
 
       <section ref={weightRef} className="px-4 pb-5 scroll-mt-36" aria-label="Weight">
@@ -580,6 +704,7 @@ export default function Log() {
         open={secondary === 'photo'}
         onClose={closeSecondary}
         aiConfigured={aiConfigured}
+        aiLoading={aiStatus === 'loading'}
         busy={photoBusy}
         error={photoError}
         onPick={(file, hint) => void runPhoto(file, hint)}

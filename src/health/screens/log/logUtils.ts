@@ -11,12 +11,17 @@
  *   bedtime. See `bedtimeNightOf` / `bedtimeRecordDate`.
  * - Meals are one entry per food item sharing a clock time `t`; the list is
  *   grouped by `t` and "meals" means eating occasions (`mealOccasions`).
+ *   They are stored on the EATING day (`eatingDayOf`): a 00:20 supper belongs
+ *   to the previous calendar day, exactly as the engine's late-eating rule and
+ *   `mealClockMinutes` already read it (R7-1). Weight, tobacco, water and
+ *   caffeine stay on the calendar day.
  * - Weights are stored in lb; `profile.units` only changes display.
  */
 import type { FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Macros, Meal, MealSource } from '../../data/types';
 import { findFood, normalise } from '../../ai/foodDb';
 import { AI_UNAVAILABLE_NOTE } from '../../ai/food';
-import { addDays, hhmmToMinutes, minutesToHHMM, toISODate } from '../../lib/dates';
+import type { ExpenditureResult } from '../../engine/expenditure';
+import { addDays, formatDateShort, hhmmToMinutes, minutesToHHMM, toISODate } from '../../lib/dates';
 import { kgToLb, lbToKg, round } from '../../lib/format';
 import { mealClockMinutes, mealOccasions } from '../../engine/nutrition';
 
@@ -55,6 +60,30 @@ export function bedtimeNightOf(now: Date): ISODate {
  */
 export function bedtimeRecordDate(now: Date): ISODate {
   return addDays(bedtimeNightOf(now), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Eating day (R7-1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The eating day a clock moment belongs to — the record meals logged at `now`
+ * are written to. Before 04:00 (BEDTIME_ROLLOVER_HOUR, the engine's
+ * EATING_DAY_START_MIN) it is the PREVIOUS calendar date, so a 00:20 biryani
+ * on 7 Sep is charged to 6 Sep's budget and flags late eating for that night
+ * (SPEC §6.5), instead of opening 7 Sep with 520 kcal already spent.
+ *   13:00 on 6 Sep → 2026-09-06
+ *   00:20 on 7 Sep → 2026-09-06
+ *   04:00 on 7 Sep → 2026-09-07
+ */
+export function eatingDayOf(now: Date): ISODate {
+  return bedtimeNightOf(now);
+}
+
+/** Caption shown while the eating day differs from the calendar date (00:00–03:59). */
+export function eatingDayCaption(eatingDay: ISODate): string {
+  const boundary = `${String(BEDTIME_ROLLOVER_HOUR).padStart(2, '0')}:00`;
+  return `Logging to ${formatDateShort(eatingDay)} — meals before ${boundary} count toward the previous day`;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,15 +303,78 @@ export function withoutOne<T>(xs: readonly T[], v: T): T[] {
   return i < 0 ? [...xs] : [...xs.slice(0, i), ...xs.slice(i + 1)];
 }
 
-/** True when `now` is later than the caffeine cutoff on the same clock day. */
+/**
+ * True when `now` is later than the caffeine cutoff on the eating-day axis
+ * (`mealClockMinutes`, 04:00 → 240 … 00:30 → 1470): a 00:30 coffee is after a
+ * 14:00 cutoff, not 13.5 h before it.
+ */
 export function isAfterCutoff(now: HHMM, cutoff: HHMM): boolean {
-  const n = hhmmToMinutes(now);
-  const c = hhmmToMinutes(cutoff);
+  const n = mealClockMinutes(now);
+  const c = mealClockMinutes(cutoff);
   return n !== null && c !== null && n > c;
+}
+
+/**
+ * Signed hours from a caffeine time to the bed target, 1 dp, on the eating-day
+ * axis (§6.4 / §7 #12): 16:00 → 23:00 is 7 h; 23:30 → 23:00 is −0.5 h, i.e.
+ * AFTER the target — never the 23.5 h a clock-day wrap would give (R7-6). Null
+ * when either time is malformed. Callers show `< 0` as "after your bed target".
+ */
+export function hoursToBed(at: HHMM, bedTarget: HHMM): number | null {
+  const a = mealClockMinutes(at);
+  const b = mealClockMinutes(bedTarget);
+  if (a === null || b === null) return null;
+  return round((b - a) / 60, 1);
 }
 
 /** Normalised HH:MM from a <input type="time"> value, or the fallback when malformed. */
 export function normaliseTime(value: string, fallback: HHMM): HHMM {
   const m = hhmmToMinutes(value);
   return m === null ? fallback : minutesToHHMM(m);
+}
+
+// ---------------------------------------------------------------------------
+// Weigh-in block (R7-5)
+// ---------------------------------------------------------------------------
+
+/** SPEC §6.2: a 7-day block needs ≥ 5 weigh-ins (and intake days) to update the expenditure estimate. */
+export const WEIGH_INS_GATE = 5;
+
+/**
+ * "This block" copy for the weight card. It reads `weeklyExpenditure(...)`,
+ * whose `weighInsThisWeek` counts the in-progress 7-day block anchored to the
+ * first weigh-in — the block the expenditure gate is evaluated on — not the
+ * trailing 7 calendar days (`weighInsInWeek`), so the Log and Trends counters
+ * agree. `met` is `blockProgress(result, today).met` (both gates), so
+ * "Enough…" is only promised when the block will actually publish.
+ */
+export function weighInBlockLine(result: ExpenditureResult, met: boolean): { value: string; sub: string } {
+  const value = `${result.weighInsThisWeek}/7 weigh-ins`;
+  if (!result.firstWeighIn || !result.nextUpdate) {
+    return { value, sub: `Your first weigh-in starts a 7-day block — weigh in ${WEIGH_INS_GATE}+ days of it so expenditure can calibrate.` };
+  }
+  const next = formatDateShort(result.nextUpdate);
+  if (met) return { value, sub: `Enough for this block’s expenditure update · updates ${next}.` };
+  return { value, sub: `in this block · updates ${next} — weigh in ${WEIGH_INS_GATE}+ days to calibrate.` };
+}
+
+// ---------------------------------------------------------------------------
+// Lazy AI client (R7-3)
+// ---------------------------------------------------------------------------
+
+const CLIENT_LOAD_FALLBACK = 'the AI client could not be created';
+
+/**
+ * Readable reason for a `createClient` rejection. The SDK is a lazily imported
+ * chunk, so the usual failure is the browser's "Failed to fetch dynamically
+ * imported module" (offline, blocked, or a stale deploy) — say what to do
+ * about it rather than echo the URL.
+ */
+export function describeClientError(e: unknown): string {
+  const msg = e instanceof Error ? e.message.trim() : '';
+  if (!msg) return CLIENT_LOAD_FALLBACK;
+  if (/dynamically imported module|Failed to fetch|Importing a module script failed|Loading chunk/i.test(msg)) {
+    return 'the AI module could not be downloaded — check your connection and reload';
+  }
+  return msg;
 }

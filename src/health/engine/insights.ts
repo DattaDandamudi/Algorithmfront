@@ -281,7 +281,9 @@ const weightTrend: TemplateFn = (ctx, profile, targets) => {
   const trend = num(ctx.weight.trend);
   if (rate === null || trend === null) return null;
   const pct = num(ctx.weight.weeklyRatePct) ?? (trend > 0 ? (rate / trend) * 100 : null);
-  const rateStr = `${rate <= 0 ? 'down' : 'up'} ${weightStr(rate, profile)}/wk${pct === null ? '' : ` (${n1(Math.abs(pct))}%/wk)`}`;
+  // R7-10: the % rate at 2 dp, as the Trends card prints it — at 1 dp a
+  // 0.45 %/wk rate would read "0.5%/wk — under the 0.5–1% target".
+  const rateStr = `${rate <= 0 ? 'down' : 'up'} ${weightStr(rate, profile)}/wk${pct === null ? '' : ` (${fmt(Math.abs(pct), 2)}%/wk)`}`;
   const [lo, hi] = targets.weeklyRatePct;
   const bandStr = `${trim(lo)}–${trim(hi)}%`;
   const latest = num(ctx.weight.latest);

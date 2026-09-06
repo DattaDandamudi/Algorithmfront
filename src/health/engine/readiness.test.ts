@@ -262,6 +262,12 @@ describe('readiness — detail sentence', () => {
     expect(r.detail).toBe('HRV 60 ms (baseline 60), RHR 51 (−1 vs baseline), slept 7.4 h of 7.9 h need.');
   });
 
+  it('R7-8: labels the 7-day mean as such while the 28-day reference is still forming — never as "baseline"', () => {
+    const r = readiness([{ d: ASOF, hrv: 55, rhr: 52 }], ASOF, PROFILE);
+    expect(r.detail).toMatch(/HRV 55 ms \(7-day avg 55\)/);
+    expect(r.detail).not.toMatch(/\(baseline/);
+  });
+
   it('mentions a forming baseline with the day count', () => {
     const devs: Array<number | null> = Array.from({ length: 30 }, () => null);
     for (let i = 20; i < 30; i++) devs[i] = CYCLE[i % 7];

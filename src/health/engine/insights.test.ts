@@ -183,7 +183,7 @@ describe('generateInsights — triggers', () => {
   it('#10 weight trend copy varies by band and mentions water only on a > 1 lb scale bump', () => {
     const w = { trend: 170.4, weeklyRateLb: -1.2, weeklyRatePct: -0.7 };
     const inBand = only(makeCtx({ weight: { ...w, inBand: 'in', latest: 171.8 } }), 10)!;
-    expect(inBand.body).toContain('Trend is 170.4 lb, down 1.2 lb/wk (0.7%/wk) — right in the 0.5–1% target');
+    expect(inBand.body).toContain('Trend is 170.4 lb, down 1.2 lb/wk (0.70%/wk) — right in the 0.5–1% target');
     expect(inBand.body).toContain("Ignore today's scale bump; it's water");
     expect(inBand.band).toBe('green');
     expect(only(makeCtx({ weight: { ...w, inBand: 'in', latest: 170.9 } }), 10)!.body).not.toContain('water');
@@ -405,12 +405,12 @@ describe('review round — R1-12 units-aware weight copy', () => {
 
   it('#10 keeps lb copy for a lb user', () => {
     const c = byTemplate(DEFAULT_PROFILE, 10);
-    expect(c?.body).toContain('Trend is 171.8 lb, down 0.9 lb/wk (0.5%/wk)');
+    expect(c?.body).toContain('Trend is 171.8 lb, down 0.9 lb/wk (0.52%/wk)');
   });
 
   it('#10 formats trend and rate in kg and kg/wk for a kg user, with no lb figure', () => {
     const c = byTemplate(KG_PROFILE, 10);
-    expect(c?.body).toContain('Trend is 77.9 kg, down 0.4 kg/wk (0.5%/wk)');
+    expect(c?.body).toContain('Trend is 77.9 kg, down 0.4 kg/wk (0.52%/wk)');
     expect(c?.body).not.toMatch(/\blb\b/);
   });
 
@@ -419,5 +419,18 @@ describe('review round — R1-12 units-aware weight copy', () => {
     const kg = byTemplate(KG_PROFILE, 5);
     expect(kg?.body).toContain('hold your 0.4 kg/wk trend');
     expect(kg?.body).not.toMatch(/\blb\b/);
+  });
+});
+
+describe('R7-10 #10 — the %BW/wk figure is printed at 2 dp so it never contradicts the verdict', () => {
+  it('a rate just under the band reads "0.45%/wk — under the 0.5–1% target", never "0.5%/wk — under"', () => {
+    const c = only(makeCtx({ weight: { trend: 173.2, weeklyRateLb: -0.79, weeklyRatePct: -0.45, inBand: 'below' } }), 10)!;
+    expect(c.body).toContain('down 0.8 lb/wk (0.45%/wk) — under the 0.5–1% target');
+    expect(c.body).not.toContain('(0.5%/wk)');
+  });
+
+  it('a rate just over the band reads "1.04%/wk — faster than"', () => {
+    const c = only(makeCtx({ weight: { trend: 173.2, weeklyRateLb: -1.8, weeklyRatePct: -1.04, inBand: 'above' } }), 10)!;
+    expect(c.body).toContain('(1.04%/wk) — faster than the 0.5–1% target');
   });
 });

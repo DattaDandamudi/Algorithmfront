@@ -70,3 +70,34 @@ describe('applyTrend', () => {
     expect(out['2026-09-01'].wt).toBeUndefined();
   });
 });
+
+describe('R7-13 applyTrend — never stamps a trend on a future-dated record', () => {
+  it('a bedtime logged for tomorrow keeps its bedtime but gets no `wt`; today still does', () => {
+    const days = {
+      '2026-09-05': { d: '2026-09-05', w: 172 },
+      '2026-09-06': { d: '2026-09-06', w: 171.8 },
+      '2026-09-07': { d: '2026-09-07', bt: '23:10' },
+    } as Record<string, DailyRecord>;
+    const out = applyTrend(days, 0.1, '2026-09-06');
+    expect(out['2026-09-06'].wt).toBe(171.98);
+    expect(out['2026-09-07']).toEqual({ d: '2026-09-07', bt: '23:10' });
+  });
+
+  it('heals a stale trend already persisted on a future record', () => {
+    const days = {
+      '2026-09-06': { d: '2026-09-06', w: 171.8, wt: 171.8 },
+      '2026-09-07': { d: '2026-09-07', bt: '23:10', wt: 171.8 },
+    } as Record<string, DailyRecord>;
+    const out = applyTrend(days, 0.1, '2026-09-06');
+    expect(out['2026-09-07'].wt).toBeUndefined();
+    expect(out['2026-09-06']).toBe(days['2026-09-06']); // unchanged record keeps identity
+  });
+
+  it('a weigh-in dated after `through` is still trended (real data, not a stub)', () => {
+    const days = {
+      '2026-09-06': { d: '2026-09-06', w: 172 },
+      '2026-09-07': { d: '2026-09-07', w: 171 },
+    } as Record<string, DailyRecord>;
+    expect(applyTrend(days, 0.1, '2026-09-06')['2026-09-07'].wt).toBe(171.9);
+  });
+});

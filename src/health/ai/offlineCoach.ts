@@ -12,7 +12,7 @@
  */
 import type { CoachContext, CoachTone, ISODate, Profile, SessionType, Targets, TrainingSplit, Weekday } from '../data/types';
 import { weekdayOf } from '../lib/dates';
-import { fmtSigned, round } from '../lib/format';
+import { fmt, fmtSigned, fmtWeight, lbToKg, round } from '../lib/format';
 import { EMERGENCY_MESSAGE, MAX_WORDS, detectEmergency, isSymptomAsk, wordCount } from './guardrails';
 
 export type OfflineRoute = 'train' | 'eat' | 'recovery' | 'weight' | 'carbs' | 'sleep' | 'tobacco' | 'labs' | 'generic';
@@ -45,6 +45,19 @@ const has = (v: number | null | undefined): v is number => typeof v === 'number'
 const r0 = (v: number) => round(v, 0);
 const r1 = (v: number) => round(v, 1);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * R7-9: weights and rates are stored in lb; every figure the coach quotes
+ * follows `profile.units` exactly as the insight cards do (a kg user never
+ * sees an lb number). `wtStr` is a weight ("78.0 kg"), `rateStr` a signed
+ * weekly rate ("−0.50 kg/wk"), `perWk` an unsigned band edge ("0.39 kg/wk").
+ */
+type Units = Profile['units'];
+const unitsOf = (p: Profile): Units => (p.units === 'kg' ? 'kg' : 'lb');
+const inUnits = (lb: number, u: Units) => (u === 'kg' ? lbToKg(lb) : lb);
+const wtStr = (lb: number, u: Units) => fmtWeight(lb, u);
+const rateStr = (lb: number, u: Units) => `${fmtSigned(inUnits(lb, u), 2)} ${u}/wk`;
+const perWk = (lb: number, u: Units) => `${fmt(inUnits(lb, u), 2)} ${u}/wk`;
 
 interface Parts {
   lead: string;
@@ -81,16 +94,31 @@ export function nextSession(split: TrainingSplit, today: ISODate): SessionType |
 // Handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * R7-8: the one user-facing HRV "baseline" is the 28-day reference the SWC is
+ * centred on (`baseline28` — the figure the Today tile and hero also cite).
+ * While it is still forming, the 7-day mean is named by its window instead.
+ */
 function hrvSentence(ctx: CoachContext): string {
   const h = ctx.hrv;
   if (!has(h.today)) return "I don't have HRV for today.";
   let s = `HRV ${r0(h.today)} ms`;
-  if (has(h.baseline7)) {
-    const d = h.today - h.baseline7;
-    s += ` is ${r0(Math.abs(d))} ms ${d < 0 ? 'below' : 'above'} your ${r0(h.baseline7)} ms baseline`;
+  const ref = has(h.baseline28) ? { value: h.baseline28, label: 'baseline' } : has(h.baseline7) ? { value: h.baseline7, label: '7-day average' } : null;
+  if (ref) {
+    const d = h.today - ref.value;
+    const abs = r0(Math.abs(d));
+    s += abs === 0 ? ` is at your ${r0(ref.value)} ms ${ref.label}` : ` is ${abs} ms ${d < 0 ? 'below' : 'above'} your ${r0(ref.value)} ms ${ref.label}`;
   }
   if (has(h.swcLower) && has(h.swcUpper)) s += ` (normal range ${r0(h.swcLower)}–${r0(h.swcUpper)} ms)`;
   return `${s}, band ${h.band}.`;
+}
+
+/** " (+1 vs 28-day baseline)" — or the explicitly-labelled 30-day mean while the reference is forming (R7-8). */
+function hrvVsRef(h: CoachContext['hrv']): string {
+  if (!has(h.today)) return '';
+  if (has(h.baseline28)) return ` (${fmtSigned(h.today - h.baseline28, 0)} vs 28-day baseline)`;
+  if (has(h.delta.delta)) return ` (${fmtSigned(h.delta.delta, 0)} vs 30-day avg)`;
+  return '';
 }
 
 function sleepSentence(ctx: CoachContext): string {
@@ -194,25 +222,26 @@ function weight(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
   const w = ctx.weight;
   const e = ctx.expenditure;
   const phase = profile.goalPhase;
+  const u = unitsOf(profile);
   const [lo, hi] = w.targetLbPerWk;
   const details: string[] = [];
   let lead: string;
   if (!has(w.trend)) {
-    lead = `I don't have a weight trend for you yet — ${plural(w.weighInsThisWeek, 'weigh-in')} this week${has(w.latest) ? `, latest ${r1(w.latest)} lb` : ''}.`;
+    lead = `I don't have a weight trend for you yet — ${plural(w.weighInsThisWeek, 'weigh-in')} this week${has(w.latest) ? `, latest ${wtStr(w.latest, u)}` : ''}.`;
   } else if (!has(w.weeklyRateLb)) {
-    lead = `Trend weight is ${r1(w.trend)} lb${has(w.latest) ? ` (scale ${r1(w.latest)} lb)` : ''}, but I need 8+ days of weigh-ins for a weekly rate.`;
+    lead = `Trend weight is ${wtStr(w.trend, u)}${has(w.latest) ? ` (scale ${wtStr(w.latest, u)})` : ''}, but I need 8+ days of weigh-ins for a weekly rate.`;
   } else {
     // R5-15: the engine's band is a fat-loss band (§6.1, 0.5–1 %BW/wk); only rate it in that phase.
-    const rate = `${fmtSigned(w.weeklyRateLb, 2)} lb/wk (${fmtSigned(w.weeklyRatePct, 2)}%/wk)`;
+    const rate = `${rateStr(w.weeklyRateLb, u)} (${fmtSigned(w.weeklyRatePct, 2)}%/wk)`;
     if (phase === 'fat-loss') {
       const bandWord = w.inBand === 'in' ? 'on target' : w.inBand === 'below' ? 'slower than target' : w.inBand === 'above' ? 'faster than target' : 'not yet rated';
-      lead = `Trend ${r1(w.trend)} lb, ${rate} against your ${lo}–${hi} lb/wk loss target — ${bandWord}.`;
+      lead = `Trend ${wtStr(w.trend, u)}, ${rate} against your ${fmt(inUnits(lo, u), 2)}–${perWk(hi, u)} loss target — ${bandWord}.`;
     } else if (phase === 'muscle-gain') {
-      lead = `Trend ${r1(w.trend)} lb, ${rate} — you're in a muscle-gain phase, so I'm not rating that against a loss band; the aim is a slow upward trend.`;
+      lead = `Trend ${wtStr(w.trend, u)}, ${rate} — you're in a muscle-gain phase, so I'm not rating that against a loss band; the aim is a slow upward trend.`;
     } else {
-      lead = `Trend ${r1(w.trend)} lb, ${rate} — you're in maintenance, so I'm not rating that against a loss band; the aim is a flat trend.`;
+      lead = `Trend ${wtStr(w.trend, u)}, ${rate} — you're in maintenance, so I'm not rating that against a loss band; the aim is a flat trend.`;
     }
-    if (has(w.latest)) details.push(`Today's scale ${r1(w.latest)} lb vs trend ${r1(w.trend)} lb — trust the trend, not the dot.`);
+    if (has(w.latest)) details.push(`Today's scale ${wtStr(w.latest, u)} vs trend ${wtStr(w.trend, u)} — trust the trend, not the dot.`);
   }
   if (e.valid && has(e.tdee)) {
     let s = `Estimated expenditure ${r0(e.tdee)} kcal; you're targeting ${targets.kcal} kcal.`;
@@ -250,7 +279,7 @@ function weight(ctx: CoachContext, profile: Profile, targets: Targets): Parts {
     action =
       e.valid && has(e.suggestedKcal) && e.suggestedKcal > targets.kcal
         ? `Add ~${r0(e.suggestedKcal - targets.kcal)} kcal (to ${r0(e.suggestedKcal)}), mostly carbs on lift days, to protect muscle`
-        : `Add 100–150 kcal of carbs on lift days — you're losing faster than the ${hi} lb/wk ceiling`;
+        : `Add 100–150 kcal of carbs on lift days — you're losing faster than the ${perWk(hi, u)} ceiling`;
   }
   return { lead, details, action };
 }
@@ -300,7 +329,7 @@ function sleep(ctx: CoachContext, profile: Profile): Parts {
   if (r.score !== null || has(ctx.hrv.today)) {
     const parts = [];
     if (r.score !== null) parts.push(`readiness ${r0(r.score)}% (${r.band})`);
-    if (has(ctx.hrv.today)) parts.push(`HRV ${r0(ctx.hrv.today)} ms${has(ctx.hrv.delta.delta) ? ` (${fmtSigned(ctx.hrv.delta.delta, 0)} vs baseline)` : ''}`);
+    if (has(ctx.hrv.today)) parts.push(`HRV ${r0(ctx.hrv.today)} ms${hrvVsRef(ctx.hrv)}`);
     details.push(`This morning: ${parts.join(', ')}.`);
   }
   if (s.lastBedtime) {
@@ -404,7 +433,8 @@ function generic(ctx: CoachContext, profile: Profile): Parts {
   const pLeft = Math.max(0, r0(n.remaining.p));
   const lead = r.score === null ? 'No readiness score yet today — log or import WHOOP recovery or HRV.' : `Readiness ${r0(r.score)}% (${r.band}) — verdict: ${r.training}.`;
   const details = [`Protein ${r0(n.totals.p)} g of ${n.targets.p} g — ${pLeft} g left over ${plural(n.mealsLeft, 'meal')}; ${r0(n.remaining.kc)} kcal remaining.`];
-  if (has(ctx.weight.trend)) details.push(`Trend weight ${r1(ctx.weight.trend)} lb${has(ctx.weight.weeklyRateLb) ? `, ${fmtSigned(ctx.weight.weeklyRateLb, 2)} lb/wk` : ''}.`);
+  const u = unitsOf(profile);
+  if (has(ctx.weight.trend)) details.push(`Trend weight ${wtStr(ctx.weight.trend, u)}${has(ctx.weight.weeklyRateLb) ? `, ${rateStr(ctx.weight.weeklyRateLb, u)}` : ''}.`);
   details.push(sleepSentence(ctx));
   details.push('Ask me about training, food, recovery, weight, carbs, sleep, tobacco or your lab habits.');
   let action: string;

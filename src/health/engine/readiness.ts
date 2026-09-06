@@ -163,9 +163,12 @@ function buildDetail(
 ): string {
   const parts: string[] = [];
   if (source === 'whoop' && today && isScore(today.rec)) parts.push(`WHOOP recovery ${fmt(today.rec)}%`);
-  const base = hrv.baselineMs ?? hrv.mean7Ms;
+  // R7-8: "baseline" is the 28-day reference the SWC is centred on (the same
+  // number the HRV tile and the coach cite); while it is still forming the
+  // 7-day mean is named by its window, never as a baseline.
+  const ref = hrv.baselineMs !== null ? `baseline ${fmt(hrv.baselineMs)}` : hrv.mean7Ms !== null ? `7-day avg ${fmt(hrv.mean7Ms)}` : null;
   if (hrv.todayMs !== null) {
-    parts.push(`HRV ${fmt(hrv.todayMs)} ms${base !== null ? ` (baseline ${fmt(base)})` : ''}`);
+    parts.push(`HRV ${fmt(hrv.todayMs)} ms${ref !== null ? ` (${ref})` : ''}`);
   } else if (hrv.mean7Ms !== null) {
     parts.push(`HRV 7-day mean ${fmt(hrv.mean7Ms)} ms (none logged today)`);
   }

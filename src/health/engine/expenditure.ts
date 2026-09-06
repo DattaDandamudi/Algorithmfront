@@ -92,7 +92,12 @@ export interface ExpenditureResult {
   valid: boolean;
   /** Empty-state copy when invalid ("Weigh in 5+ days this week…"), otherwise a short calibration summary. */
   reason: string;
-  /** The last `weeks` COMPLETED blocks, OLDEST FIRST; `weeks[weeks.length − 1]` is the latest completed block. */
+  /**
+   * The last `weeks` COMPLETED blocks, OLDEST FIRST; `weeks[weeks.length − 1]`
+   * is the latest completed block. Fewer than `weeks` (down to none in the
+   * first week) when that many have not completed yet — never padded with
+   * blocks dated before the first weigh-in (R7-7).
+   */
   weeks: WeekEstimate[];
   /** Weigh-ins so far in the in-progress block ("this week"). */
   weighInsThisWeek: number;
@@ -112,7 +117,7 @@ export interface ExpenditureOpts {
   minWeighIns?: number;
   /** Intake days (kc > 0) required per block (default 5). */
   minIntakeDays?: number;
-  /** Number of completed 7-day blocks to return (default 6). The smoothing state always uses every block. */
+  /** Max completed 7-day blocks to return (default 6; fewer exist early on). The smoothing state always uses every block. */
   weeks?: number;
   /** EWMA α across valid weekly estimates (default 0.3). 1 = no smoothing. */
   smoothing?: number;
@@ -279,8 +284,11 @@ export function weeklyExpenditure(
     }
     byIndex.set(k, wk);
   }
+  // R7-7: only blocks that exist — never pad back before the first weigh-in
+  // (a phantom block would put a null point on the chart eight days before
+  // the user ever weighed in and inflate the "N weekly estimates" caption).
   const weeks: WeekEstimate[] = [];
-  for (let k = j - nWeeks; k < j; k++) weeks.push(byIndex.get(k) ?? estimate(k));
+  for (let k = Math.max(0, j - nWeeks); k < j; k++) weeks.push(byIndex.get(k) as WeekEstimate);
 
   const last = j > 0 ? (byIndex.get(j - 1) as WeekEstimate) : null;
   const current = progressCounts(records, blockStart(j), asOf);
