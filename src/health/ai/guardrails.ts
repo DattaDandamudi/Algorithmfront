@@ -32,8 +32,9 @@ export const EMERGENCY_MESSAGE =
  *     couch". Bare "911" / "ambulance" / "allergic reaction" are gone.
  */
 const EMERGENCY_PATTERNS: RegExp[] = [
-  // Cardiac
-  /\bchest\s+(pain|pains|pressure|tightness|tight|heaviness|hurts?|hurting|aches?|aching|burning)\b/i,
+  // Cardiac — "chest hurts from bench / after the workout" is DOMS talk (still a medical ask, not an emergency)
+  /\bchest\s+(pain|pains|pressure|tightness|tight|heaviness|burning)\b/i,
+  /\bchest\s+(hurts?|hurting|aches?|aching)\b(?!\s+(?:a\s+bit\s+|a\s+little\s+|slightly\s+)?(?:from|after|since)\s+(?:bench|press|push|dips|flyes|chest\s+day|the\s+workout|my\s+(?:workout|session|lift)|training|lifting|yesterday))/i,
   /\b(pain|pressure|tightness|burning)\s+in\s+(my\s+)?chest\b/i,
   /\bcrushing\s+(pain|pressure|feeling)\b/i,
   /\bpain\s+(radiating|spreading|shooting)\s+(to|down|into)\s+(my\s+)?(left\s+)?(arm|jaw|shoulder)\b/i,

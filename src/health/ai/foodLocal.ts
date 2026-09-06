@@ -253,9 +253,20 @@ interface Parsed {
   segment: string;
 }
 
-/** Bare digits with no unit: grams when ≥ BARE_GRAMS_MIN, else a count capped at MAX_BARE_COUNT (R5-3). */
-function bareNumberRead(q: Quantity): 'grams' | 'count' | null {
+/** "20 prawns" / "3 eggs": the plural of the item's own unit word is an explicit piece count, not an ambiguous bare number. */
+const MAX_PLURAL_UNIT_COUNT = 50;
+
+/**
+ * Bare digits with no unit: grams when ≥ BARE_GRAMS_MIN, else a count capped
+ * at MAX_BARE_COUNT (R5-3). When the food phrase is the plural of the matched
+ * item's unit ("20 prawns", "15 rotis") the user counted pieces, so it stays a
+ * count (uncapped up to MAX_PLURAL_UNIT_COUNT); 'plural' marks that case.
+ */
+function bareNumberRead(q: Quantity, item?: FoodItem): 'grams' | 'count' | 'plural' | null {
   if (q.unit !== null || q.count === null || !q.countNumeric) return null;
+  const unitWord = item?.unitName ? singularize(normalise(item.unitName)) : null;
+  const pluralUnit = !!unitWord && q.food.some((t) => t.endsWith('s') && singularize(t) === unitWord);
+  if (pluralUnit && q.count <= MAX_PLURAL_UNIT_COUNT) return 'plural';
   return q.count >= BARE_GRAMS_MIN ? 'grams' : 'count';
 }
 
@@ -301,7 +312,7 @@ function parseSegment(segment: string, extra: FoodItem[]): Parsed {
   let grams: number;
   let conf: number;
   let asm: string;
-  const bare = bareNumberRead({ ...q, unit });
+  const bare = bareNumberRead({ ...q, unit }, it);
   const capped = bare === 'count' && (q.count as number) > MAX_BARE_COUNT;
   const count = capped ? MAX_BARE_COUNT : (q.count ?? 1);
   const capNote = capped ? ` (${q.count} read as a count, capped at ${MAX_BARE_COUNT} — add "g" if you meant grams)` : '';

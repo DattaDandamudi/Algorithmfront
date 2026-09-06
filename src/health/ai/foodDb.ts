@@ -274,11 +274,13 @@ const plainness = (it: FoodItem) => (it.tags?.includes('home') ? 0 : 1);
  * first and wins ties, so the user's own staples beat generic DB entries.
  * Results are de-duplicated by normalised name and sorted by score desc.
  *
- * Ambiguity rule (R5-14): when the top score is a strict-subset match shared
- * by ≥2 different items ("chicken" fits tikka, curry, biryani, breast, …),
- * every subset match is scaled so the best sits at 0.75 (< STRONG) and the
- * plainest item wins the tie — the parser then reports ≤0.45 confidence with
- * a "low confidence" note instead of picking a restaurant dish at Med.
+ * Ambiguity rule (R5-14): when the best match is a strict subset of its key
+ * and ≥2 different items have such subset matches ("chicken" fits tikka,
+ * curry, biryani, breast, …; "kebab" fits seekh, kofta, kebab plate), every
+ * subset match is scaled so the best sits at 0.75 (< STRONG) and the plainest
+ * item wins the tie — the parser then reports ≤0.45 confidence with a "low
+ * confidence" note instead of picking a restaurant dish at Med. A lone subset
+ * match ("scrambled" → eggs) keeps its strong score.
  */
 export function findFood(query: string, extra: FoodItem[] = []): FoodMatch[] {
   const q = tokens(query);
@@ -304,10 +306,10 @@ export function findFood(query: string, extra: FoodItem[] = []): FoodMatch[] {
   for (const it of FOOD_DB) consider(it, 0);
 
   const rows = [...seen.values()];
-  const top = rows.reduce((m, r) => Math.max(m, r.score), 0);
-  const leaders = rows.filter((r) => r.score === top);
-  if (top < 1 && top > WEAK_SUBSET && leaders.length >= 2 && leaders.every((r) => r.subset)) {
-    const k = WEAK_SUBSET / top;
+  const best = rows.reduce<Candidate | null>((m, r) => (m === null || r.score > m.score ? r : m), null);
+  const subsetRows = rows.filter((r) => r.subset && r.score >= WEAK_SUBSET);
+  if (best && best.subset && best.score < 1 && best.score > WEAK_SUBSET && subsetRows.length >= 2) {
+    const k = WEAK_SUBSET / best.score;
     for (const r of rows) if (r.subset) r.score *= k;
   }
   return rows

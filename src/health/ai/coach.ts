@@ -364,7 +364,7 @@ export interface AskCoachResult {
  *   but caching only kicks in above a model-specific minimum prefix — 512
  *   tokens on Opus 5 / Fable 5.1, 1024 on Sonnet 5 (shorter prefixes are
  *   silently not cached). With the DERIVED legend the default prompt is
- *   ~2.9k chars ≈ 700 tokens: expect cache hits on Opus 5 / Fable 5.1 and
+ *   ~3.3k chars ≈ 800 tokens: expect cache hits on Opus 5 / Fable 5.1 and
  *   none on Sonnet 5 unless the profile/notes push it past 1024. Verify with
  *   `usage.cache_read_input_tokens` rather than assuming (R5-13).
  * - `fallbacks: 'default'` + the 2026-07-01 beta: if the requested model's

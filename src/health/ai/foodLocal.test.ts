@@ -289,9 +289,16 @@ describe('R5-3 bare numbers without a unit', () => {
 
   it('< 20 stays a count, capped at 12', () => {
     expect(parseFoodText('3 eggs').items[0]).toMatchObject({ name: 'Eggs', grams: 150, confidence: 0.75 });
-    const [prawns] = parseFoodText('15 prawns').items;
-    expect(prawns.grams).toBe(240); // 12 × 20 g
-    expect(prawns.assumptions).toContain('capped');
+    const [tikka] = parseFoodText('15 chicken tikka').items;
+    expect(tikka.grams).toBe(420); // 12 × 35 g
+    expect(tikka.assumptions).toContain('capped at 12');
+  });
+
+  it('the plural of the item\'s own unit word is an explicit piece count — no gram reading, no cap', () => {
+    expect(parseFoodText('15 prawns').items[0]).toMatchObject({ name: 'Tandoori prawns', grams: 300, confidence: 0.75 });
+    expect(parseFoodText('20 prawns').items[0]).toMatchObject({ name: 'Tandoori prawns', grams: 400, confidence: 0.75 });
+    expect(parseFoodText('24 eggs').items[0]).toMatchObject({ name: 'Eggs', grams: 1200 });
+    expect(parseFoodText('200 prawns').items[0]).toMatchObject({ grams: 200, confidence: 0.6 }); // beyond any plausible count → grams
   });
 
   it('a bare number with no food is an unknown item with a question, not 30,000 g', () => {

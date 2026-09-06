@@ -244,6 +244,7 @@ describe('R5-1 / R5-5 detectEmergency — acute phrases fire, ordinary logging l
     'unconscious eating habits are wrecking my deficit',
     'breathing during squats — brace or exhale?',
     "my dad's family history of heart attack worries me, how do I lower risk?",
+    'my chest hurts from bench press yesterday, train upper anyway?',
     ...CHIPS,
   ];
 
@@ -285,7 +286,7 @@ describe('R5-9 isMedicalAsk — supplement dosing', () => {
 });
 
 describe('R5-6 isSymptomAsk — the symptom subset of medical asks', () => {
-  it.each(['I feel dizzy after training', 'my knee hurts when I squat', 'I get palpitations after coffee', 'headache all day, train or rest?', 'feeling faint on the stairs'])(
+  it.each(['I feel dizzy after training', 'my knee hurts when I squat', 'I get palpitations after coffee', 'headache all day, train or rest?', 'feeling faint on the stairs', 'my chest hurts from bench press yesterday'])(
     'true for "%s"',
     (q) => {
       expect(isSymptomAsk(q)).toBe(true);
