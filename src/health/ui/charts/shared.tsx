@@ -112,8 +112,11 @@ export function ChartTooltip({ x, width, title, rows, top = 4 }: TooltipProps) {
 
 /** The table view twin: every plotted number, reachable without a pointer. */
 export function HiddenTable({ caption, head, rows }: { caption: string; head: string[]; rows: string[][] }) {
+  // Wrapped in an sr-only <div>: a <table> never shrinks below its content width, so an
+  // absolutely-positioned sr-only table can widen the document and cause horizontal scroll.
   return (
-    <table className="sr-only">
+    <div className="sr-only">
+    <table>
       <caption>{caption}</caption>
       <thead>
         <tr>
@@ -132,6 +135,7 @@ export function HiddenTable({ caption, head, rows }: { caption: string; head: st
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

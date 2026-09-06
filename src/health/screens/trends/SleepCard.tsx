@@ -14,10 +14,10 @@ import { Moon } from 'lucide-react';
 import type { CoachContext, HHMM } from '../../data/types';
 import { COACH_CHIPS } from '../../engine';
 import { formatClock } from '../../lib/dates';
-import { fmt, fmtHours, fmtMinutes } from '../../lib/format';
-import { Button, Delta, EmptyState } from '../../ui';
+import { fmt, fmtHours, fmtMinutes, round } from '../../lib/format';
+import { Button, EmptyState } from '../../ui';
 import { BarSeries, TimeSeriesChart, type DatedValue } from '../../ui/charts';
-import { Note, Readout, TrendCard } from './TrendCard';
+import { DeltaSub, Note, Readout, TrendCard } from './TrendCard';
 import {
   BEDTIME_SD_OK_MIN,
   BEDTIME_SD_WARN_MIN,
@@ -82,6 +82,10 @@ export default function SleepCard({ sleep, series, offsets, win, bedTarget, onLo
   else sdText = `Over ${BEDTIME_SD_WARN_MIN} min — regularity is slipping; a fixed ${target} bedtime does more for recovery than extra hours.`;
 
   const hasOffsets = offsets.some((p) => p.value !== null);
+  // 7-night mean vs the 30-day baseline (ctx.sleep.delta.baseline is the mean
+  // of the 30 nights before today); more sleep is the good direction (§0).
+  const base30 = sleep.delta.baseline;
+  const meanDelta = series.mean7 !== null && base30 !== null ? round(series.mean7 - base30, 2) : null;
 
   return (
     <TrendCard
@@ -105,7 +109,7 @@ export default function SleepCard({ sleep, series, offsets, win, bedTarget, onLo
         <Readout
           label="7-night mean"
           value={series.mean7 === null ? null : fmtHours(series.mean7)}
-          sub={<Delta value={sleep.delta.delta} good={sleep.delta.good} dp={1} unit="h" />}
+          sub={<DeltaSub value={meanDelta} good={meanDelta === null ? null : meanDelta > 0} dp={1} unit="h" />}
         />
       </div>
 

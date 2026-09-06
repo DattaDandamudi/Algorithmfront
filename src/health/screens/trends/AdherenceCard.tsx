@@ -12,7 +12,7 @@ import type { CoachContext, ISODate } from '../../data/types';
 import { EmptyState, SegmentedControl } from '../../ui';
 import { Heatmap, type HeatmapDay } from '../../ui/charts';
 import { Readout, TrendCard } from './TrendCard';
-import { HEAT_WEEKS, type HeatMode } from './series';
+import { HEAT_WEEKS, type HeatMode } from './summaries';
 
 const LENSES: Array<{ value: HeatMode; label: string }> = [
   { value: 'protein', label: 'Protein' },

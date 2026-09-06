@@ -6,22 +6,17 @@ import { addDays } from '../../lib/dates';
 import {
   bedtimeOffsetSeries,
   bedtimeSdTone,
-  frequencyRows,
-  heatDay,
-  heatWindowDays,
+  goalBandLabel,
   hrvBandTone,
-  intakeSuggestion,
   perWeek,
   rangeCaption,
   rangeWindow,
   rateBandState,
   rollingMeanSeries,
   sleepSeries,
-  tdeeChartRange,
-  tdeeSeries,
-  weekEndingFormat,
   weightSeries,
 } from './series';
+import { frequencyRows, heatDay, heatWindowDays, intakeSuggestion, tdeeChartRange, tdeeSeries, weekEndingFormat } from './summaries';
 
 const TODAY = '2026-09-06'; // a Sunday
 
@@ -156,6 +151,12 @@ describe('tdeeSeries', () => {
     expect(t2.annotations).toEqual([]);
     expect(t.points.length).toBe(5);
   });
+  it('keeps only the latest update marker at 1Y', () => {
+    const t = tdeeSeries(demo(40), rangeWindow('1Y', TODAY), 0.1);
+    expect(t.points).toHaveLength(52);
+    expect(t.annotations).toHaveLength(1);
+    expect(t.annotations[0].d).toBe(TODAY);
+  });
   it('formats weekly points and picks the weekly date-label range', () => {
     expect(tdeeChartRange('7D')).toBe('90D');
     expect(tdeeChartRange('1Y')).toBe('1Y');
@@ -200,6 +201,13 @@ describe('heatmap helpers', () => {
     expect(heatDay('logging', y, byDate.get(y.d), DEFAULT_TARGETS)).toMatchObject({ level: 2, title: '2 meals logged' });
     const t = grid[1];
     expect(heatDay('protein', t, byDate.get(t.d), DEFAULT_TARGETS).level).toBeNull();
+  });
+});
+
+describe('goalBandLabel', () => {
+  it('abbreviates whole thousands', () => {
+    expect(goalBandLabel(8000, 10000)).toBe('8–10k');
+    expect(goalBandLabel(7500, 10000)).toBe('7,500–10,000');
   });
 });
 

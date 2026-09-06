@@ -16,7 +16,8 @@ import { fmt } from '../../lib/format';
 import { Button, EmptyState } from '../../ui';
 import { TimeSeriesChart } from '../../ui/charts';
 import { Note, Readout, TrendCard } from './TrendCard';
-import { intakeSuggestion, tdeeChartRange, weekEndingFormat, type RangeWindow, type TdeeSeries } from './series';
+import type { RangeWindow } from './series';
+import { intakeSuggestion, tdeeChartRange, weekEndingFormat, type TdeeSeries } from './summaries';
 
 /** §6.2: a week needs at least this many weigh-ins and intake days to update the estimate. */
 export const GATE_DAYS = 5;

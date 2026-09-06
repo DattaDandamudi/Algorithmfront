@@ -26,28 +26,21 @@ import { parseISODate, toISODate } from '../../lib/dates';
 import type { ChartRange, DatedValue, HeatmapDay } from '../../ui/charts';
 import {
   bedtimeOffsetSeries,
-  frequencyRows,
-  heatDay,
-  heatLegend,
-  heatWindowDays,
   hrvSeries,
   metricChartSeries,
   rangeWindow,
   rollingMeanSeries,
   sleepSeries,
   stepsStats,
-  tdeeSeries,
   weightSeries,
   type BandedSeries,
-  type FrequencyRow,
-  type HeatMode,
   type LinedSeries,
   type RangeWindow,
   type SleepSeries,
   type StepsStats,
-  type TdeeSeries,
   type WeightSeries,
 } from './series';
+import { frequencyRows, heatDay, heatLegend, heatWindowDays, tdeeSeries, type FrequencyRow, type HeatMode, type TdeeSeries } from './summaries';
 
 export const HEAT_MODES: HeatMode[] = ['protein', 'kcal', 'logging'];
 

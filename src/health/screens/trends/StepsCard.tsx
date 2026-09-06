@@ -7,16 +7,10 @@
 import { Footprints } from 'lucide-react';
 import type { CoachContext } from '../../data/types';
 import { fmt } from '../../lib/format';
-import { Delta, EmptyState } from '../../ui';
+import { EmptyState } from '../../ui';
 import { TimeSeriesChart, type DatedValue } from '../../ui/charts';
-import { Readout, TrendCard } from './TrendCard';
-import { bucketDateFormat, type RangeWindow, type StepsStats } from './series';
-
-/** "8–10k" when both goals are whole thousands, else "8,000–10,000". */
-export function goalBandLabel(lo: number, hi: number): string {
-  if (lo % 1000 === 0 && hi % 1000 === 0) return `${lo / 1000}–${hi / 1000}k`;
-  return `${fmt(lo)}–${fmt(hi)}`;
-}
+import { DeltaSub, Readout, TrendCard } from './TrendCard';
+import { bucketDateFormat, goalBandLabel, type RangeWindow, type StepsStats } from './series';
 
 export interface StepsCardProps {
   steps: CoachContext['steps'];
@@ -48,7 +42,7 @@ export default function StepsCard({ steps, series, stats, win }: StepsCardProps)
       meaning={`Steps are the cheapest expenditure lever in a deficit — days inside the ${goal} band keep your daily activity steady while calories come down.`}
     >
       <div className="grid grid-cols-3 gap-3">
-        <Readout label="Today" value={steps.today} sub={<Delta value={steps.delta} good={steps.good} />} />
+        <Readout label="Today" value={steps.today} sub={<DeltaSub value={steps.delta} good={steps.good} />} />
         <Readout label="Average" value={stats.meanSteps} sub={`${stats.loggedDays} logged day${stats.loggedDays === 1 ? '' : 's'}`} />
         <Readout label="Goal days" value={`${stats.goalDays}/${stats.loggedDays}`} sub={`≥ ${fmt(steps.goalMin)} steps`} tone={goalTone} />
       </div>

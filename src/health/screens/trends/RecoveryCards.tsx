@@ -15,7 +15,7 @@ import { BASELINE_READINGS, COACH_CHIPS } from '../../engine';
 import { fmt } from '../../lib/format';
 import { Button, Delta, EmptyState } from '../../ui';
 import { TimeSeriesChart } from '../../ui/charts';
-import { Note, Readout, TrendCard } from './TrendCard';
+import { DeltaSub, Note, Readout, TrendCard } from './TrendCard';
 import { bucketDateFormat, hrvBandName, hrvBandTone, type BandedSeries, type LinedSeries, type RangeWindow } from './series';
 
 const hasData = (pts: Array<{ value: number | null }>) => pts.some((p) => p.value !== null);
@@ -135,9 +135,9 @@ export function RhrCard({ rhr, series, win, onOpenSettings }: RhrCardProps) {
       meaning="A resting heart rate creeping above your 28-day baseline usually means fatigue, short sleep or illness — read it together with HRV before adding load."
     >
       <div className="grid grid-cols-3 gap-3">
-        <Readout label="Today" value={rhr.today} unit="bpm" sub={<Delta value={rhr.delta} good={rhr.good} unit="bpm" caption="vs 28-day" />} />
+        <Readout label="Today" value={rhr.today} unit="bpm" sub={<DeltaSub value={rhr.delta} good={rhr.good} unit="bpm" caption="vs 28-day baseline" />} />
         <Readout label="7-day mean" value={series.meanLast} dp={1} unit="bpm" />
-        <Readout label="28-day baseline" value={rhr.baseline} dp={1} unit="bpm" sub={`${rhr.n} readings`} />
+        <Readout label="Baseline" value={rhr.baseline} dp={1} unit="bpm" sub={`28-day · ${rhr.n} readings`} />
       </div>
 
       <TimeSeriesChart

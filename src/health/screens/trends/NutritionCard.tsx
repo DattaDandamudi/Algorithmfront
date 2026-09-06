@@ -10,7 +10,8 @@ import { Utensils } from 'lucide-react';
 import { COACH_CHIPS, DOCTOR_CUE, type FrequencyCounters } from '../../engine';
 import { Button, EmptyState } from '../../ui';
 import { TrendCard } from './TrendCard';
-import type { FrequencyRow, RangeWindow } from './series';
+import type { RangeWindow } from './series';
+import type { FrequencyRow } from './summaries';
 
 export interface NutritionCardProps {
   rows: FrequencyRow[];
@@ -99,7 +100,7 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
         </ul>
       )}
 
-      <p className="text-[11px] leading-4 text-hx-muted">General wellness information from your own labs — {DOCTOR_CUE}</p>
+      <p className="text-[11px] leading-4 text-hx-muted">General wellness information from your own labs. {DOCTOR_CUE}</p>
     </TrendCard>
   );
 }

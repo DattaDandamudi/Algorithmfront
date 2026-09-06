@@ -5,13 +5,18 @@
  * to draw it passes `empty` (an <EmptyState> with the spec copy) and the card
  * surface is skipped so the dashed empty card is not nested inside another.
  *
+ * The card surface is `overflow-hidden`: the charts' visually-hidden table
+ * twins (`HiddenTable`, `.sr-only`) are absolutely positioned and a <table>
+ * never shrinks below its content width, so a 5-column band table would
+ * otherwise extend the document's scrollable width past the 390 px frame.
+ *
  * `Readout` is the small label / number / unit block used in readout rows —
  * 22 px tabular numerals (tile numbers are 28–32 px; these are secondary),
  * null → "—" (never a placeholder number), state text coloured by tone only.
  */
 import type { ReactNode } from 'react';
 import { fmt } from '../../lib/format';
-import { SectionHeader, bandBg, bandText, type Tone } from '../../ui';
+import { Delta, SectionHeader, bandBg, bandText, type Tone } from '../../ui';
 
 export interface TrendCardProps {
   title: string;
@@ -29,7 +34,7 @@ export function TrendCard({ title, caption, action, meaning, empty, children }: 
     <section aria-label={title} className="px-4 pb-5 flex flex-col gap-3">
       <SectionHeader title={title} caption={caption} action={action} />
       {empty ?? (
-        <div className="hx-card p-4 flex flex-col gap-4">
+        <div className="hx-card p-4 flex flex-col gap-4 overflow-hidden">
           {children}
           {meaning && (
             <p className="text-[12px] leading-4 text-hx-text2 border-t border-hx-border pt-3">
@@ -77,5 +82,27 @@ export function Note({ tone = 'neutral', children, className = '' }: { tone?: To
       <span className={`mt-[7px] w-1.5 h-1.5 rounded-full shrink-0 ${bandBg(tone)}`} aria-hidden />
       <span className="min-w-0">{children}</span>
     </p>
+  );
+}
+
+export interface DeltaSubProps {
+  value: number | null | undefined;
+  good: boolean | null | undefined;
+  dp?: number;
+  unit?: string;
+  /** Default "vs 30-day avg". */
+  caption?: string;
+}
+
+/**
+ * ▲/▼ delta for a narrow (3-column) readout: the glyph + number never wrap
+ * apart, and the caption drops to its own muted line instead of splitting.
+ */
+export function DeltaSub({ value, good, dp, unit, caption = 'vs 30-day avg' }: DeltaSubProps) {
+  return (
+    <span className="flex flex-col">
+      <Delta value={value} good={good} dp={dp} unit={unit} caption="" className="whitespace-nowrap" />
+      <span className="text-hx-muted">{caption}</span>
+    </span>
   );
 }
