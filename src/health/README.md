@@ -86,27 +86,108 @@ Default model is `claude-opus-5`; the coach streams with server-side refusal fal
 The SDK is only downloaded when a key or proxy is configured (dynamic import in `ai/client.ts`).
 Photo logging needs an AI client; barcode lookup does not (it calls Open Food Facts directly).
 
-## Engine notes (v2)
+## Engine notes (v3)
 
-* **Readiness:** WHOOP recovery when present (67/34 bands), else an HRV-derived score. A red
-  "Light day" verdict is forced when recovery < 34 or the HRV 7-day mean sits below the SWC.
-* **HRV:** ln(rMSSD); the SWC (mean ± 0.5 SD) is centred on a 28-day reference and the 7-day
-  rolling mean is banded against it; a single day's reading only drives the "big drop" flag.
-* **Sleep debt** accrues against baseline + f(strain) − naps and is paid back by surplus sleep;
-  f(debt) only raises tonight's displayed need.
-* **Expenditure** is published weekly on blocks anchored to the first weigh-in, gated on ≥ 5
-  weigh-ins and ≥ 5 logged days per block and ≥ 14 days of trend history; intake suggestions
-  only move after a full week outside the 0.5–1 %BW/wk band, in 100–200 kcal steps, never
-  below the fat floor.
+Every module is pure and deterministic: `asOf` / `now` / `through` are parameters, nothing under
+`engine/` or `ai/` reads the clock, and missing data returns `null` with a reason rather than a
+number that looks real. Each module header carries its citations, and any constant without one is
+explicitly labelled a heuristic **in a string the UI can show the user**, not only in a comment.
+
+* **Weight** is a Kalman local linear trend with adaptive measurement noise, an outlier gate, and a
+  re-anchor after three consecutive same-sign rejections so a real step change cannot lock the
+  filter out. An RTS smoother redraws history at render time; the filtered series is what decisions
+  use. EWMA is kept for export continuity. A 20 lb typo moves the level 0.0 lb.
+* **Expenditure** uses the Hall/Forbes energy density from body composition, not a flat
+  3,500 kcal/lb — for a lean lifter the true factor is about 30% lower, which was the single
+  largest bias in the old estimate. A glycogen–water state stops week one of a carb cut reporting a
+  fake jump. The posterior fuses a weight-derived and a steps-derived observation against a Mifflin
+  prior, and publishes an interval. Intake moves in a 50–100 kcal nudge after one block, or 150+
+  only after two plus a 14-day freeze.
+* **HRV** is ln(rMSSD) against a 60-day robust reference, suppressed below four valid readings in
+  the week rather than guessed, with a vagal-saturation guard so a high reading is not read as good
+  news when it is not. Forcing a light day fires on 3.1% of stationary days, against roughly 30%
+  before.
+* **Readiness** blends WHOOP recovery over a 7-day ramp rather than switching hard, adds a 3-night
+  sleep history and the subjective check-in, and always publishes its per-input contributions and a
+  confidence band. Without an established baseline it says Calibrating instead of guessing.
+* **Sleep** decays debt at 0.85/day, whose 4.3-day half-life matches Kitamura 2016. One long night
+  retires at most 2 h, so a lie-in cannot clear a week. Adds the Sleep Regularity Index, social
+  jetlag, and a dose-aware caffeine cutoff.
+* **Training load** is Foster sRPE, Edwards and Banister heart-rate load, with the WHOOP strain
+  conversion and the Banister time constants both fitted to the user rather than assumed. The
+  acute:chronic ratio is charted but never gates advice on its own (Impellizzeri 2020); decisions
+  lead on absolute acute load and week-on-week change.
+* **Strength** selects its one-rep-max formula by rep range and returns nothing above 15 reps.
+  Volume landmarks are advisory bands that never reduce a suggestion, since the 2025 meta-regression
+  found no plateau in the dose-response. Deloads are reactive only (Coleman 2024).
+* **Stress** keeps four outputs separate on purpose. A Hooper check-in, an overnight index reported
+  alongside the count of signals outside the personal range (the count leads), a conjunctive illness
+  flag, and a 14-day resilience balance that always shows its two component curves.
+* **Energy** is an explicit two-process model with a caffeine term. It is a forecast, never a
+  measurement, and the interface says so.
+* **Regime shifts and behaviour impact** are the two things no consumer product ships. Changepoint
+  detection separates a dip from a new baseline and truncates the HRV reference accordingly. The
+  N-of-1 engine gates at five yes and five no days in 90, shrinks toward published priors, and
+  corrects for multiplicity across the whole grid — applied to the unshrunk p-value, so a prior can
+  never manufacture significance for a user whose own days show nothing.
+
+## Evidence and limits
+
+What this app measures, what it models, and what it cannot do:
+
+* **Measured** — anything you log or import: weight, food, steps, sleep times, sessions, and the
+  overnight physiology a wearable exports (heart-rate variability, resting and respiratory rate,
+  skin temperature, blood oxygen).
+* **Modelled** — every score. Readiness, the overnight strain index, resilience, predicted energy,
+  fitness and fatigue, expenditure. Each is a calculation over the above with its uncertainty
+  reported, not a sensor reading.
+* **Not possible here.** Daytime stress *events* and recovery moments need continuous heart rate,
+  which a daily log does not have, so the energy curve is a prediction from sleep and load rather
+  than a measurement. Baevsky's stress index and DFA-α1 need beat-to-beat intervals and are
+  therefore absent rather than approximated. This app cannot out-sense a wearable; what it does
+  better is show its working, learn your baselines from your own data, analyse lifting at all, and
+  put an interval on every number.
+
+The medical boundary is unchanged and applies to the new signals: the illness flag names the
+signals behind it and never a condition, behaviour effects are stated as associations with their
+intervals and day counts, and persistent symptoms route to a doctor.
 
 ## Data & durability
 
 * Records use the compact schema from the spec (≈250–450 bytes/day). Shards are keyed by month;
   the index stores per-shard counts and checksums which are validated on load.
+* **Workouts are a second shard family** (`hx:wk:YYYY-MM`) with the same checksum validation,
+  corrupt-preservation and pruning. A training session is far bigger than a day record, so mixing
+  them would rewrite a month of days every time a set is logged. The live session lives under
+  `hx:wk:draft` and is restored on mount, so closing the app mid-workout loses nothing; the shard
+  pattern deliberately cannot match that key.
 * Writes are debounced (500 ms, 2 s max wait) and flushed on `visibilitychange`/`pagehide`.
 * `QuotaExceededError` is caught, surfaced as a banner and retried with back-off; a second tab's
   writes are picked up through the `storage` event (last writer wins per month).
 * JSON exports omit the API key; imports normalise ids and numeric fields.
+
+### Migration, v1 → v2
+
+Purely additive. Existing day shards load unchanged because every new field is optional; a v1
+index with no `workouts` key simply means no workouts; settings gain their new blocks through
+`mergeSettings` on first write; and a v2 export opened by a v1 build ignores what it does not know
+rather than failing. Downgrading loses the new data but never corrupts the old.
+
+## Importing training history
+
+Settings → Imports reads three formats, all parsed by `data/workoutImport.ts`:
+
+* **WHOOP** `workouts.csv` — heart-rate zone percentages become minutes, strain seeds a session RPE
+  you can correct. `physiological_cycles.csv` keeps its existing importer and now also reads
+  respiratory rate, skin temperature and blood oxygen for the stress engine.
+* **Strava** `activities.csv` — moving time rather than elapsed, and session RPE only from the
+  Perceived Exertion column, since Relative Effort is Strava's own load number and not a 1–10 rating.
+* **Apple Health** `export.xml` — streamed in 4 MB slices, skipping the record samples without
+  parsing them. Because Apple writes workouts after the samples, the 200 MB limit is a window over
+  the *end* of the file rather than a refusal, and the result says so when it applies.
+
+Re-importing the same export is safe: sessions dedupe on their source id, or on same day, same kind
+and a start within ten minutes. An import never overwrites a session you typed.
 
 ## Medical boundary
 
