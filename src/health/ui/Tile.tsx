@@ -34,6 +34,8 @@ export interface TileProps {
   sub?: ReactNode;
   /** Sparkline / ProgressRing slot, rendered at the bottom-right. */
   chart?: ReactNode;
+  /** 'inline' (default) puts the chart beside the delta; 'stack' gives it its own full-width row above the delta so a wide sparkline never squeezes the text. */
+  chartLayout?: 'inline' | 'stack';
   onClick?: () => void;
   /** Shown instead of the delta when value is null. */
   emptyHint?: string;
@@ -41,7 +43,7 @@ export interface TileProps {
   className?: string;
 }
 
-export default function Tile({ label, value, dp = 0, unit, delta, band, sub, chart, onClick, emptyHint, size = 'md', className = '' }: TileProps) {
+export default function Tile({ label, value, dp = 0, unit, delta, band, sub, chart, chartLayout = 'inline', onClick, emptyHint, size = 'md', className = '' }: TileProps) {
   const has = value !== null && value !== undefined && !(typeof value === 'number' && Number.isNaN(value));
   const text = !has ? '—' : typeof value === 'number' ? fmt(value, dp) : value;
   const numCls = size === 'lg' ? 'text-[32px] leading-9' : 'text-[28px] leading-8';
@@ -57,6 +59,7 @@ export default function Tile({ label, value, dp = 0, unit, delta, band, sub, cha
         {has && unit && <span className="text-[13px] font-medium text-hx-text2">{unit}</span>}
       </div>
       {sub && <div className={`mt-0.5 text-[13px] leading-4 font-medium ${band ? bandText(band) : 'text-hx-text2'}`}>{sub}</div>}
+      {chart && chartLayout === 'stack' && <div className="mt-2 w-full">{chart}</div>}
       <div className="mt-2 flex items-end justify-between gap-2 min-h-4">
         <div className="min-w-0">
           {has && delta ? (
@@ -65,7 +68,7 @@ export default function Tile({ label, value, dp = 0, unit, delta, band, sub, cha
             <span className="text-[13px] leading-4 text-hx-muted">{emptyHint}</span>
           ) : null}
         </div>
-        {chart && <div className="shrink-0">{chart}</div>}
+        {chart && chartLayout === 'inline' && <div className="shrink-0">{chart}</div>}
       </div>
     </>
   );

@@ -13,7 +13,7 @@ import { DEFAULT_PROFILE, DEFAULT_TARGETS } from '../../data/defaults';
 import { useHealth } from '../../data/store';
 import { fmt, lbToKg, round } from '../../lib/format';
 import { Button, toast } from '../../ui';
-import { useConfirm } from './confirm';
+import { useConfirm } from './useConfirm';
 import { Field, Note, NumberField, SubHeading, TimeField } from './fields';
 
 export default function TargetsSection() {

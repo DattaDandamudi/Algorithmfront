@@ -245,7 +245,8 @@ const tobacco: TemplateFn = (ctx) => {
   const free = num(ctx.tobacco.hrvSmokeFree);
   const smoking = num(ctx.tobacco.hrvSmoking);
   const delta = free !== null && smoking !== null ? free - smoking : null;
-  const hrvClause = delta !== null && delta > 0 && free !== null ? ` — on smoke-free days your HRV averaged ${n0(free)} ms, ${n0(delta)} ms higher` : '';
+  // Only cite the HRV difference when it rounds to ≥ 1 ms — "0 ms higher" is noise, not feedback.
+  const hrvClause = delta !== null && Math.round(delta) >= 1 && free !== null ? ` — on smoke-free days your HRV averaged ${n0(free)} ms, ${n0(delta)} ms higher` : '';
   const lead = avg === null ? `${n0(today)} today so far` : `${n0(today)} today vs your ${n1(avg)} average`;
   const streak = num(ctx.tobacco.streakDays) ?? 0;
   const action = today > 0 ? 'One fewer keeps the streak alive.' : streak > 0 ? `Stay at zero to extend your ${plural(streak, 'day')} streak.` : 'Stay at zero tonight to start a streak.';

@@ -5,32 +5,11 @@
  * `confirm({...})` before touching the store. One <Sheet> is mounted at the
  * Settings root; sections never open their own sheets, so the "no nested
  * sheets" rule from the UI kit holds. `requireText` implements the typed
- * double-confirm for "Clear all data".
+ * double-confirm for "Clear all data". The hook lives in ./useConfirm.ts.
  */
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { Button, Sheet } from '../../ui';
-
-export interface ConfirmOptions {
-  title: string;
-  body: ReactNode;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  danger?: boolean;
-  /** The user must type this exact text before the confirm button enables. */
-  requireText?: string;
-  /** Optional extra footer action (e.g. "Export JSON first"); does not close the sheet. */
-  secondary?: { label: string; onClick: () => void };
-}
-
-export type ConfirmFn = (opts: ConfirmOptions) => Promise<boolean>;
-
-const ConfirmContext = createContext<ConfirmFn | null>(null);
-
-export function useConfirm(): ConfirmFn {
-  const fn = useContext(ConfirmContext);
-  if (!fn) throw new Error('useConfirm must be used inside <ConfirmProvider>');
-  return fn;
-}
+import { ConfirmContext, type ConfirmFn, type ConfirmOptions } from './useConfirm';
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [opts, setOpts] = useState<ConfirmOptions | null>(null);

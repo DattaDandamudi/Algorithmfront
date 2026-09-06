@@ -121,11 +121,13 @@ export interface NumberFieldProps {
   validate?: (n: number) => string | null;
   disabled?: boolean;
   className?: string;
+  /** Compact mode for dense rows: no visible label (the label becomes aria-label); errors still show inline. */
+  hideLabel?: boolean;
 }
 
 const draftOf = (v: number | null | undefined, dp: number) => (v === null || v === undefined || !Number.isFinite(v) ? '' : String(round(v, dp)));
 
-export function NumberField({ label, value, onCommit, onClear, min, max, step = 1, dp = 0, unit, hint, placeholder, validate, disabled, className = '' }: NumberFieldProps) {
+export function NumberField({ label, value, onCommit, onClear, min, max, step = 1, dp = 0, unit, hint, placeholder, validate, disabled, className = '', hideLabel }: NumberFieldProps) {
   const id = useId();
   const [draft, setDraft] = useState(() => draftOf(value, dp));
   const [editing, setEditing] = useState(false);
@@ -185,29 +187,47 @@ export function NumberField({ label, value, onCommit, onClear, min, max, step = 
     }
   };
 
+  const control = (
+    <div className="relative">
+      <input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        value={draft}
+        placeholder={placeholder}
+        disabled={disabled}
+        aria-label={hideLabel ? label : undefined}
+        aria-invalid={error ? true : undefined}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          if (error) setError(null);
+        }}
+        onBlur={commit}
+        onKeyDown={onKey}
+        className={`${CONTROL} ${unit ? 'pr-14' : ''} ${error ? 'border-hx-red' : ''}`}
+      />
+      {unit && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-hx-muted pointer-events-none">{unit}</span>}
+    </div>
+  );
+
+  if (hideLabel) {
+    return (
+      <div className={className}>
+        {control}
+        {error && (
+          <p className="mt-1 text-[12px] leading-4 text-hx-red" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <Field label={label} htmlFor={id} hint={hint} error={error} className={className}>
-      <div className="relative">
-        <input
-          id={id}
-          type="text"
-          inputMode="decimal"
-          autoComplete="off"
-          value={draft}
-          placeholder={placeholder}
-          disabled={disabled}
-          aria-invalid={error ? true : undefined}
-          onFocus={() => setEditing(true)}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            if (error) setError(null);
-          }}
-          onBlur={commit}
-          onKeyDown={onKey}
-          className={`${CONTROL} ${unit ? 'pr-14' : ''} ${error ? 'border-hx-red' : ''}`}
-        />
-        {unit && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-hx-muted pointer-events-none">{unit}</span>}
-      </div>
+      {control}
     </Field>
   );
 }

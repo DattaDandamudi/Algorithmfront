@@ -34,7 +34,14 @@ export default function MacroSection({ ctx, emptyText, onLogMeal }: MacroSection
       ) : (
         <div className="hx-card p-4 flex flex-col gap-4">
           <MacroBar label="Protein" value={totals.p} target={targets.p} color="green" />
-          <MacroBar label={`Carbs · ${dayWord}`} value={totals.c} target={targets.c} range={targets.carbsRange} color="blue" />
+          <MacroBar
+            label={`Carbs · ${dayWord}`}
+            value={totals.c}
+            target={targets.carbsRange[1]}
+            targetLabel={`${targets.carbsRange[0]}–${targets.carbsRange[1]}`}
+            range={targets.carbsRange}
+            color="blue"
+          />
           <MacroBar label="Fat" value={totals.f} target={targets.f} floor={targets.fatFloor} color="yellow" />
           <MacroBar label="Fiber" value={totals.fi} target={targets.fi} color="neutral" />
         </div>

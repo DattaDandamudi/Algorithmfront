@@ -158,7 +158,8 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, smoothedTdee, b
           band={hrvMeta.band}
           sub={hrvMeta.text}
           delta={{ value: ctx.hrv.delta.delta, good: ctx.hrv.delta.good, unit: 'ms' }}
-          chart={hasHrvSpark ? <Sparkline values={hrv7} band={swc} highlightLast width={88} height={28} title="HRV, last 7 days" /> : undefined}
+          chart={hasHrvSpark ? <Sparkline values={hrv7} band={swc} highlightLast width={124} height={26} title="HRV, last 7 days" /> : undefined}
+          chartLayout="stack"
           emptyHint={empty.hrv ?? 'Log HRV or connect WHOOP to start your baseline.'}
           onClick={open('hrv')}
         />

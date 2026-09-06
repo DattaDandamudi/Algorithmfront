@@ -14,8 +14,10 @@ export interface MacroBarProps {
   label: string;
   value: number | null | undefined;
   target: number;
-  /** Lighter zone lo–hi, e.g. carbs range for the day type. */
+  /** Lighter zone lo–hi, e.g. carbs range for the day type. When set, `target` should be the top of the range: "left" counts to the top, "over" starts above it, and values inside the zone read "in range". */
   range?: [number, number] | null;
+  /** Text shown after the slash instead of the numeric target, e.g. "70–100". */
+  targetLabel?: string;
   /** Vertical tick + "x g floor" label (fat floor). */
   floor?: number | null;
   unit?: string;
@@ -27,25 +29,29 @@ export interface MacroBarProps {
 
 const pct = (n: number, scale: number) => `${Math.max(0, Math.min(100, (n / scale) * 100))}%`;
 
-export default function MacroBar({ label, value, target, range = null, floor = null, unit = 'g', color, remainingLabel = true, className = '' }: MacroBarProps) {
+export default function MacroBar({ label, value, target, range = null, targetLabel, floor = null, unit = 'g', color, remainingLabel = true, className = '' }: MacroBarProps) {
   const v = value !== null && value !== undefined && Number.isFinite(value) ? Math.max(0, value) : 0;
   const rangeHi = range ? Math.max(range[0], range[1]) : 0;
   const scale = Math.max(target, rangeHi, floor ?? 0, Math.min(v, target * 1.25), 1);
+  const rangeLo = range ? Math.min(range[0], range[1]) : null;
   const over = v > target;
+  const inRange = rangeLo !== null && v >= rangeLo && !over;
   const remaining = target - v;
   const right = !remainingLabel
     ? null
     : over
       ? `${fmt(v - target)} ${unit} over`
-      : `${fmt(remaining)} ${unit} left`;
+      : inRange
+        ? 'in range'
+        : `${fmt(remaining)} ${unit} left`;
 
   return (
     <div className={`flex flex-col gap-1.5 ${floor !== null && floor !== undefined ? 'pb-4' : ''} ${className}`}>
       <div className="flex items-baseline justify-between gap-3">
         <span className="hx-label">{label}</span>
         <span className="text-[13px] leading-4 text-hx-text2">
-          <span className="text-hx-text font-semibold">{fmt(v)}</span> / {fmt(target)} {unit}
-          {right && <span className={`ml-2 ${over ? 'text-hx-red font-medium' : 'text-hx-muted'}`}>{right}</span>}
+          <span className="text-hx-text font-semibold">{fmt(v)}</span> / {targetLabel ?? fmt(target)} {unit}
+          {right && <span className={`ml-2 ${over ? 'text-hx-red font-medium' : inRange ? 'text-hx-green' : 'text-hx-muted'}`}>{right}</span>}
         </span>
       </div>
       <div

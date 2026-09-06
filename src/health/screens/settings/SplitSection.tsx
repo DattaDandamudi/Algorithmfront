@@ -11,7 +11,7 @@ import { useHealth } from '../../data/store';
 import type { SessionType, Weekday } from '../../data/types';
 import { weekdayShort } from '../../lib/dates';
 import { Button, toast } from '../../ui';
-import { useConfirm } from './confirm';
+import { useConfirm } from './useConfirm';
 import { Note, SelectField } from './fields';
 import { SESSION_OPTIONS, isLiftSession } from './util';
 
