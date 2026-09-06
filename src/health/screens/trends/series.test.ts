@@ -19,7 +19,7 @@ import {
   sleepSeries,
   weightSeries,
 } from './series';
-import { frequencyRows, heatDay, heatWindowDays, intakeSuggestion, tdeeChartRange, tdeeSeries, weekEndingFormat } from './summaries';
+import { blockProgress, frequencyRows, heatDay, heatWindowDays, intakeSuggestion, tdeeChartRange, tdeeSeries, weekEndingFormat } from './summaries';
 
 const TODAY = '2026-09-06'; // a Sunday
 
@@ -185,14 +185,17 @@ describe('tdeeSeries', () => {
       expect(t.result.tdee).toBe(ctx.expenditure.tdee);
       expect(t.points[t.points.length - 1].value).toBe(ctx.expenditure.tdee);
     }
-    // Each historical point is the estimate as displayed at that week's end.
+    // Each historical point is the estimate the app published the morning after that block closed.
     const wk3 = long.points[long.points.length - 4];
-    expect(wk3.value).toBe(weeklyExpenditure(recs, wk3.d, { alpha: 0.1 }).tdee);
+    expect(wk3.value).toBe(weeklyExpenditure(recs, addDays(wk3.d, 1), { alpha: 0.1 }).tdee);
   });
   it('plots one point per weekly block with markers only on valid weeks', () => {
     const t = tdeeSeries(demo(40), rangeWindow('30D', TODAY), 0.1);
     expect(t.points).toHaveLength(5);
-    expect(t.points[t.points.length - 1].d).toBe(TODAY);
+    // Blocks are anchored to the first weigh-in (39 days ago), so the latest COMPLETED block ends 5 days ago.
+    const lastWeek = t.result.weeks[t.result.weeks.length - 1];
+    expect(t.points[t.points.length - 1].d).toBe(lastWeek.end);
+    expect(lastWeek.end).toBe(addDays(TODAY, -5));
     expect(t.result.valid).toBe(true);
     expect(t.annotations.length).toBeGreaterThan(0);
     expect(t.annotations[0].label).toMatch(/weigh-ins/);
@@ -214,7 +217,29 @@ describe('tdeeSeries', () => {
     const t = tdeeSeries(demo(40), rangeWindow('1Y', TODAY), 0.1);
     expect(t.points).toHaveLength(52);
     expect(t.annotations).toHaveLength(1);
-    expect(t.annotations[0].d).toBe(TODAY);
+    expect(t.annotations[0].d).toBe(t.result.weeks[t.result.weeks.length - 1].end);
+  });
+  it('words the in-progress block as progress, not failure (engine v2 anchored blocks)', () => {
+    // demo(40): first weigh-in 39 days ago → the open block started 4 days ago (5 of 7 days incl. today), 2 left.
+    const t = tdeeSeries(demo(40), rangeWindow('30D', TODAY), 0.1);
+    const b = blockProgress(t.result, TODAY);
+    expect(b.daysLeft).toBe(2);
+    expect(b.weighIns).toBe(5);
+    expect(b.met).toBe(true);
+    expect(b.tone).toBe('green');
+    expect(b.text).toMatch(/Gate met — 5\/7 weigh-ins, 5\/7 intake days · 2 days left/);
+    // Day 2 of a block (first weigh-in 8 days ago → block started yesterday) with no weigh-ins yet: neutral, never yellow.
+    const early = blockProgress({ ...t.result, firstWeighIn: addDays(TODAY, -8), weighInsThisWeek: 0, intakeDaysThisWeek: 2 }, TODAY);
+    expect(early.daysLeft).toBe(5);
+    expect(early).toMatchObject({ met: false, unreachable: false, tone: 'neutral' });
+    expect(early.text).toBe('0/7 weigh-ins, 2/7 intake days so far · 5 days left');
+    // Day 6 of a block with one weigh-in: even today + tomorrow cannot reach 5 → yellow, estimate holds.
+    const late = blockProgress({ ...t.result, firstWeighIn: addDays(TODAY, -12), weighInsThisWeek: 1, intakeDaysThisWeek: 6 }, TODAY);
+    expect(late.daysLeft).toBe(1);
+    expect(late).toMatchObject({ met: false, unreachable: true, tone: 'yellow' });
+    expect(late.text).toMatch(/Too few weigh-ins to update from this block — the estimate holds · 1 day left/);
+    // Before any weigh-in: no block, plain counts.
+    expect(blockProgress({ ...t.result, firstWeighIn: null, weighInsThisWeek: 0, intakeDaysThisWeek: 0 }, TODAY)).toMatchObject({ daysLeft: null, tone: 'neutral', text: '0/7 weigh-ins, 0/7 intake days so far' });
   });
   it('formats weekly points and picks the weekly date-label range', () => {
     expect(tdeeChartRange('7D')).toBe('90D');

@@ -186,7 +186,6 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
           <input
             type="text"
             inputMode="numeric"
-            pattern="[0-9 -]*"
             autoComplete="off"
             value={code}
             onChange={(e) => {

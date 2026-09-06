@@ -233,6 +233,14 @@ export interface AppSettings {
   lastExportAt?: number;
   /** Date of the last morning weigh-in prompt shown (so we prompt once a day). */
   lastWeighPromptDate?: ISODate;
+  /**
+   * Physician-escalation banners the user has dismissed on Today, keyed per
+   * marker AND value (`escalationKey()` in screens/today/banners.ts) so a new
+   * lab result re-surfaces the banner (SPEC Caveats: elevated lead escalates).
+   */
+  acknowledgedEscalations?: string[];
+  /** Today's JSON-backup reminder (SPEC §10) is snoozed until this date. */
+  backupReminderSnoozedUntil?: ISODate;
   whoop: { connected: boolean; lastImportAt?: number; source?: 'manual' | 'csv' };
 }
 

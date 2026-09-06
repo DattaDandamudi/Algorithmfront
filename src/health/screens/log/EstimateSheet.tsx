@@ -129,18 +129,19 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
           )}
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 shrink-0">
-              <span className="hx-label">Time</span>
+              {/* Edit mode also carries Delete — the visible label gives way so "Save changes" stays on one line at 390 px. */}
+              <span className={mode === 'edit' ? 'sr-only' : 'hx-label'}>Time</span>
               <input
                 type="time"
                 value={draftTime}
                 onChange={(e) => setDraftTime(normaliseTime(e.target.value, draftTime))}
-                className="h-11 px-2.5 text-[15px] font-semibold w-[112px]"
+                className="h-11 px-2 text-[15px] font-semibold w-[136px]"
                 aria-label="Time eaten"
               />
             </label>
             {mode === 'edit' && onDelete && (
               <Button variant="danger" size="md" onClick={onDelete} aria-label="Delete this entry" icon={<Trash2 aria-hidden />}>
-                Delete
+                <span className="sr-only">Delete</span>
               </Button>
             )}
             <Button className="flex-1" size="md" loading={busy} disabled={!canSave} onClick={() => onSave(draftItems(rows), draftTime)}>

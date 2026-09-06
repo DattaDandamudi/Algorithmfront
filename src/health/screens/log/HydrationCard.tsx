@@ -61,7 +61,7 @@ export default function HydrationCard({ ctx, todayRecord, profile, nowHHMM, onCa
               type="time"
               value={at}
               onChange={(e) => setPicked(normaliseTime(e.target.value, at))}
-              className="h-11 px-2.5 text-[15px] font-semibold w-[112px]"
+              className="h-11 px-2 text-[15px] font-semibold w-[136px]"
               aria-label="Time of the coffee"
             />
           </label>

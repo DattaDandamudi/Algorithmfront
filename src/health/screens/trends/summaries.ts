@@ -11,7 +11,7 @@
  */
 import type { Band, CoachContext, DailyRecord, ISODate, Targets } from '../../data/types';
 import { MONTH_SHORT, addDays, diffDays, parseISODate } from '../../lib/dates';
-import { fmt, round } from '../../lib/format';
+import { clamp, fmt, round } from '../../lib/format';
 import {
   KCAL_HIT_OVER_G,
   KCAL_HIT_UNDER_G,
@@ -104,35 +104,72 @@ export interface TdeeSeries {
 }
 
 /**
- * Each point is the estimate *as the app displayed it* at that week's end:
- * `weeklyExpenditure(records, end, { alpha })` with the engine's default
- * window — the very call engine/context.ts makes for the Today tile and the
- * coach. That guarantees (a) the last point equals `ctx.expenditure.tdee`
- * exactly and (b) a point never changes value when the range toggle changes;
- * the range only decides how many weeks are plotted (`win.tdeeWeeks`).
- * Evaluating one long window per range instead would re-seed the smoothing
- * EWMA from a range-dependent oldest week and drift every point — and the
- * readout — away from the number shown on Today (review R2-1). `alpha` must
- * be the store's EWMA α (INTEGRATION_NOTES). At 1Y the 52 weekly points sit
- * ~5 px apart, so only the latest update keeps its ▼ marker (the tooltip and
- * hidden table still carry every week).
+ * One engine pass: `weeks` only decides how many COMPLETED blocks come back —
+ * the engine's smoothing EWMA runs over every block since the first weigh-in
+ * regardless (engine v2), so a point has the same value at every range and
+ * `result.tdee` is exactly `ctx.expenditure.tdee`, the Today / coach number
+ * (review R2-1). Points sit on each block's END date (blocks are anchored to
+ * the first weigh-in, so the latest one can be up to 6 days old); invalid
+ * blocks are gaps. `alpha` must be the store's EWMA α (INTEGRATION_NOTES). At
+ * 1Y the 52 weekly points sit ~5 px apart, so only the latest update keeps
+ * its ▼ marker (the tooltip and hidden table still carry every week).
  */
 export function tdeeSeries(records: DailyRecord[], win: RangeWindow, alpha: number): TdeeSeries {
-  const weeks = Math.max(1, Math.floor(win.tdeeWeeks));
+  const result = weeklyExpenditure(records, win.end, { alpha, weeks: win.tdeeWeeks });
   const points: DatedValue[] = [];
   let annotations: TimeSeriesAnnotation[] = [];
-  // Today's evaluation (k = 0) doubles as `result`.
-  const result = weeklyExpenditure(records, win.end, { alpha });
-  for (let k = weeks - 1; k >= 0; k--) {
-    const end = addDays(win.end, -7 * k);
-    const r = k === 0 ? result : weeklyExpenditure(records, end, { alpha });
-    const cur = r.weeks[r.weeks.length - 1];
-    const ok = r.valid && r.tdee !== null;
-    points.push({ d: end, value: ok ? r.tdee : null });
-    if (ok) annotations.push({ d: end, label: `Updated · ${cur.weighIns} weigh-ins, ${cur.intakeDays} intake days` });
+  for (const wk of result.weeks) {
+    const ok = wk.valid && wk.smoothedTdee !== null;
+    points.push({ d: wk.end, value: ok ? wk.smoothedTdee : null });
+    if (ok) annotations.push({ d: wk.end, label: `Updated · ${wk.weighIns} weigh-ins, ${wk.intakeDays} intake days` });
   }
   if (win.range === '1Y' && annotations.length > 1) annotations = annotations.slice(-1);
   return { points, annotations, result };
+}
+
+export interface BlockProgress {
+  weighIns: number;
+  intakeDays: number;
+  /** Days of the in-progress block still to come after today (0–6); null before the first weigh-in. */
+  daysLeft: number | null;
+  /** Both gates already met, so the block will publish when it closes. */
+  met: boolean;
+  /** A gate can no longer be met in this block even with an entry on every remaining day (today included). */
+  unreachable: boolean;
+  tone: Band;
+  /** State line without the date — the card appends "next update <date>". */
+  text: string;
+}
+
+/**
+ * Copy for the in-progress expenditure block. Engine v2 anchors 7-day blocks
+ * to the first weigh-in, so `weighInsThisWeek` counts a block that may be one
+ * day old — "2/7, gate not met" on day 2 is not a failure, it is progress. The
+ * tone is only yellow once the gate is arithmetically out of reach and only
+ * green once it is met; anything in between is neutral (coordinator note on
+ * R2-1/R2-8).
+ */
+export function blockProgress(result: ExpenditureResult, today: ISODate, gate = 5): BlockProgress {
+  const w = result.weighInsThisWeek;
+  const i = result.intakeDaysThisWeek;
+  let daysLeft: number | null = null;
+  if (result.firstWeighIn) {
+    const since = Math.max(0, diffDays(result.firstWeighIn, today));
+    const start = addDays(result.firstWeighIn, 7 * Math.floor(since / 7));
+    daysLeft = clamp(diffDays(today, addDays(start, 6)), 0, 6);
+  }
+  const met = w >= gate && i >= gate;
+  // Today may still get an entry, so it counts as a chance.
+  const chances = daysLeft === null ? 7 : daysLeft + 1;
+  const unreachable = !met && (w + chances < gate || i + chances < gate);
+  const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+  const tail = daysLeft === null ? '' : daysLeft === 0 ? ' · block closes tonight' : ` · ${days(daysLeft)} left`;
+  if (met) return { weighIns: w, intakeDays: i, daysLeft, met, unreachable: false, tone: 'green', text: `Gate met — ${w}/7 weigh-ins, ${i}/7 intake days${tail}` };
+  if (unreachable) {
+    const what = w + chances < gate ? 'weigh-ins' : 'intake days';
+    return { weighIns: w, intakeDays: i, daysLeft, met, unreachable, tone: 'yellow', text: `Too few ${what} to update from this block — the estimate holds${tail}` };
+  }
+  return { weighIns: w, intakeDays: i, daysLeft, met, unreachable, tone: 'neutral', text: `${w}/7 weigh-ins, ${i}/7 intake days so far${tail}` };
 }
 
 /** The TDEE chart always plots weekly points, so its date labels use the '6 Sep' (90D) or 'Sep' (1Y) format. */
