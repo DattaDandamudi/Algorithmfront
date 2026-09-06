@@ -41,7 +41,8 @@ export default function Chip({ children, active, pressed, color = 'neutral', ico
       {...rest}
     >
       {icon && <span className="inline-flex shrink-0 [&>svg]:w-4 [&>svg]:h-4">{icon}</span>}
-      <span className="truncate">{children}</span>
+      {/* No truncation: a chip sizes to its label; a scroll row or flex-wrap parent handles overflow. */}
+      <span>{children}</span>
     </button>
   );
 }
