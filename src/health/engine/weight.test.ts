@@ -7,6 +7,7 @@ import {
   isWeight,
   latestWeight,
   rateBand,
+  rateBandProb,
   targetLbPerWeek,
   trendAt,
   weeklyRate,
@@ -180,6 +181,43 @@ describe('targetLbPerWeek / rateBand (§6.1 0.5–1.0 %BW/wk)', () => {
   it('returns null with no usable rate', () => {
     expect(rateBand(null, 172, [0.5, 1])).toBeNull();
     expect(rateBand(NaN, 172, [0.5, 1])).toBeNull();
+  });
+});
+
+describe('rateBandProb (§1a adapter — the band as a probability)', () => {
+  const band: [number, number] = [0.5, 1]; // 172 lb → [−1.72, −0.86] lb/wk signed
+
+  it('agrees with rateBand on which side, but says how sure it is', () => {
+    // Losing too slowly: mass sits ABOVE the signed band (rateBand: 'below').
+    const slow = rateBandProb({ lbPerWk: -0.5, sdLbPerWk: 0.2 }, 172, band);
+    expect(rateBand(-0.5, 172, band)).toBe('below');
+    expect(slow.direction).toBe('above');
+    expect(slow.pAbove).toBeGreaterThan(0.95);
+    expect(slow.p).toBeCloseTo(slow.pAbove + slow.pBelow, 10);
+
+    // Losing too fast: mass sits BELOW the signed band (rateBand: 'above').
+    const fast = rateBandProb({ lbPerWk: -2.5, sdLbPerWk: 0.2 }, 172, band);
+    expect(rateBand(-2.5, 172, band)).toBe('above');
+    expect(fast.direction).toBe('below');
+    expect(fast.pBelow).toBeGreaterThan(0.95);
+  });
+
+  it('refuses to call a borderline rate outside the band when the error is wide', () => {
+    // −0.80 lb/wk is outside [−1.72, −0.86] as a point estimate…
+    expect(rateBand(-0.8, 172, band)).toBe('below');
+    // …but with a ±0.5 lb/wk standard error only ~55% of its mass is.
+    const p = rateBandProb({ lbPerWk: -0.8, sdLbPerWk: 0.5 }, 172, band).p;
+    expect(p).toBeGreaterThan(0.4);
+    expect(p).toBeLessThan(0.7); // below §1b's 0.7 fine-tier gate
+  });
+
+  it('is certain when the rate is precise and far outside', () => {
+    expect(rateBandProb({ lbPerWk: 0.4, sdLbPerWk: 0.05 }, 172, band).p).toBeCloseTo(1, 6);
+  });
+
+  it('reports no evidence for an unavailable rate', () => {
+    expect(rateBandProb(null, 172, band)).toEqual({ p: 0, pBelow: 0, pAbove: 0, direction: null });
+    expect(rateBandProb({ lbPerWk: -1, sdLbPerWk: null }, 172, band).direction).toBeNull();
   });
 });
 

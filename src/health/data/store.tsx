@@ -78,6 +78,7 @@ import {
 import { buildCSV, buildExportJSON, buildWorkoutsCSV, parseImport } from './export';
 import { generateDemoData } from './seed';
 import { computeEwmaTrend } from '../engine/weight';
+import { computeKalmanTrend } from '../engine/kalman';
 import { todayISO, yearMonthOf } from '../lib/dates';
 import { round, uid } from '../lib/format';
 
@@ -129,41 +130,56 @@ function compact<T extends object>(obj: T): T {
 }
 
 /**
- * Apply EWMA trend to every record; preserves identity of unchanged records.
- * `through` (the store passes today) caps the trend at max(last weigh-in,
- * today): "Going to bed" writes tomorrow's bedtime before midnight, and that
- * future-dated stub must not be persisted / exported with a trend weight
- * (R7-13). A stale `wt` already on such a record is removed.
+ * Apply the EWMA trend (`wt`) and the Kalman state (`kl`/`ks`/`kv`/`ws`) to
+ * every record; preserves identity of unchanged records.
  *
- * TODO(phase-1a): also stamp the Kalman state — `kl` (level), `ks` (slope,
- * lb/day), `kv` (level variance) and `ws` (weigh-in rejected by the outlier
- * gate) — from `engine/kalman.computeKalmanTrend(records, through)`, under the
- * same `through` cap and the same identity-preserving rules. EWMA stays as it
- * is: it is kept for export continuity and the Log block line, while the
- * smoothed Kalman level becomes the drawn trend and the decision input.
+ * `through` (the store passes today) caps both at max(last weigh-in, today):
+ * "Going to bed" writes tomorrow's bedtime before midnight, and that
+ * future-dated stub must not be persisted / exported with a trend weight or a
+ * Kalman level (R7-13). Stale values already on such a record are removed.
+ *
+ * The two trends coexist by design (§1a): EWMA is the *display* trend, kept
+ * for export continuity and the Log block line, while the Kalman filter is the
+ * *decision* trend — `kl` (level, lb), `ks` (slope, lb/day), `kv` (level
+ * variance, lb², which §1b's `Var(Δ)` sums) and `ws` (the weigh-in failed the
+ * outlier gate). What is stamped is the **filtered** (causal) series: it is
+ * what the day's decisions were made from and it never rewrites yesterday's
+ * stored number. Trends redraws history through `smoothKalman` at render time.
+ *
+ * Values are rounded before they are compared and written, so recomputing the
+ * same records cannot churn the dirty-shard diff on floating-point noise.
  */
 export function applyTrend(days: Days, alpha: number, through?: ISODate): Days {
   const records = Object.values(days);
   const trend = computeEwmaTrend(records, alpha, through);
+  const kalman = computeKalmanTrend(records, through);
   let changed = false;
   const next: Days = { ...days };
   for (const r of records) {
     const wt = trend.get(r.d);
-    if (wt === undefined) {
-      if (r.wt !== undefined) {
-        const c = { ...r };
-        delete c.wt;
-        next[r.d] = c;
-        changed = true;
-      }
-      continue;
-    }
-    if (r.wt !== wt) {
-      next[r.d] = { ...r, wt };
-      changed = true;
-    }
+    const k = kalman.byDate.get(r.d);
+    const kl = k ? round(k.level, 2) : undefined;
+    const ks = k ? round(k.slope, 5) : undefined;
+    const kv = k ? round(k.levelSd * k.levelSd, 4) : undefined;
+    const ws = k?.suspect ? true : undefined;
+    if (r.wt === wt && r.kl === kl && r.ks === ks && r.kv === kv && r.ws === ws) continue;
+    const c = { ...r };
+    assign(c, 'wt', wt);
+    assign(c, 'kl', kl);
+    assign(c, 'ks', ks);
+    assign(c, 'kv', kv);
+    if (ws) c.ws = true;
+    else delete c.ws;
+    next[r.d] = c;
+    changed = true;
   }
   return changed ? next : days;
+}
+
+/** Set a derived numeric field, or delete it when the engine has no value. */
+function assign(rec: DailyRecord, key: 'wt' | 'kl' | 'ks' | 'kv', v: number | undefined): void {
+  if (v === undefined) delete rec[key];
+  else rec[key] = v;
 }
 
 function sortRecords(days: Days): DailyRecord[] {

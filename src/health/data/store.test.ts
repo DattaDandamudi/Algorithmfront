@@ -56,18 +56,79 @@ describe('applyTrend', () => {
   });
 
   it('preserves object identity for unchanged records and the map when nothing changes', () => {
-    const a: DailyRecord = { d: '2026-09-01', w: 172, wt: 172 };
-    const b: DailyRecord = { d: '2026-09-02', w: 174, wt: 172.2 };
-    const days = { [a.d]: a, [b.d]: b };
+    // Records that already carry every derived field (EWMA *and* Kalman) must
+    // come back untouched: the dirty-shard diff is a reference comparison, so a
+    // recompute that rebuilt equal-but-new objects would rewrite every month.
+    const days = applyTrend(
+      {
+        '2026-09-01': { d: '2026-09-01', w: 172 },
+        '2026-09-02': { d: '2026-09-02', w: 174 },
+      } as Record<string, DailyRecord>,
+      0.1,
+    );
+    expect(days['2026-09-01'].wt).toBe(172);
+    expect(days['2026-09-01'].kl).toBe(172);
     const out = applyTrend(days, 0.1);
     expect(out).toBe(days);
-    expect(out[a.d]).toBe(a);
+    expect(out['2026-09-01']).toBe(days['2026-09-01']);
   });
 
   it('removes a stale trend when no weigh-ins exist', () => {
-    const days = { '2026-09-01': { d: '2026-09-01', wt: 170 } } as Record<string, DailyRecord>;
+    const days = {
+      '2026-09-01': { d: '2026-09-01', wt: 170, kl: 170, ks: 0, kv: 0.81, ws: true },
+    } as Record<string, DailyRecord>;
     const out = applyTrend(days, 0.1);
-    expect(out['2026-09-01'].wt).toBeUndefined();
+    expect(out['2026-09-01']).toEqual({ d: '2026-09-01' });
+  });
+});
+
+describe('applyTrend — Kalman state (§1a: kl/ks/kv/ws)', () => {
+  it('stamps the filtered level, slope, level variance and the outlier flag', () => {
+    const days = {
+      '2026-09-01': { d: '2026-09-01', w: 172 },
+      '2026-09-02': { d: '2026-09-02', w: 171 },
+      '2026-09-03': { d: '2026-09-03' },
+    } as Record<string, DailyRecord>;
+    const out = applyTrend(days, 0.1);
+    // Anchor day: x₀ = [w₀, 0], P₀ = diag(0.81, 0.09).
+    expect(out['2026-09-01'].kl).toBe(172);
+    expect(out['2026-09-01'].ks).toBe(0);
+    expect(out['2026-09-01'].kv).toBe(0.81);
+    // Hand-worked first update (see kalman.test.ts): level 171.4709, P₀₀ 0.4285.
+    expect(out['2026-09-02'].kl).toBe(171.47);
+    expect(out['2026-09-02'].ks).toBeCloseTo(-0.05233, 5);
+    expect(out['2026-09-02'].kv).toBeCloseTo(0.4285, 4);
+    // A day without a weigh-in still gets a (predicted) level.
+    expect(out['2026-09-03'].kl).toBeCloseTo(171.42, 2);
+    expect(out['2026-09-03'].kv as number).toBeGreaterThan(out['2026-09-02'].kv as number);
+    expect(out['2026-09-03'].ws).toBeUndefined();
+  });
+
+  it('flags a typo with `ws` and keeps the level where it was', () => {
+    const days: Record<string, DailyRecord> = {};
+    for (let i = 1; i <= 10; i++) {
+      const d = `2026-09-${String(i).padStart(2, '0')}`;
+      days[d] = { d, w: 172 };
+    }
+    days['2026-09-11'] = { d: '2026-09-11', w: 272 };
+    const out = applyTrend(days, 0.1);
+    expect(out['2026-09-11'].ws).toBe(true);
+    expect(out['2026-09-11'].kl).toBeCloseTo(172, 1);
+    // EWMA has no gate, so the display trend does move — that is the difference
+    // the two trends exist for.
+    expect(out['2026-09-11'].wt as number).toBeGreaterThan(180);
+  });
+
+  it('leaves records with no Kalman state clean rather than stamping nulls', () => {
+    const out = applyTrend(
+      {
+        '2026-09-01': { d: '2026-09-01', kc: 1900 },
+        '2026-09-02': { d: '2026-09-02', w: 172 },
+      } as Record<string, DailyRecord>,
+      0.1,
+    );
+    expect(out['2026-09-01']).toEqual({ d: '2026-09-01', kc: 1900 });
+    expect(out['2026-09-02'].kl).toBe(172);
   });
 });
 
@@ -85,11 +146,11 @@ describe('R7-13 applyTrend — never stamps a trend on a future-dated record', (
 
   it('heals a stale trend already persisted on a future record', () => {
     const days = {
-      '2026-09-06': { d: '2026-09-06', w: 171.8, wt: 171.8 },
-      '2026-09-07': { d: '2026-09-07', bt: '23:10', wt: 171.8 },
+      '2026-09-06': { d: '2026-09-06', w: 171.8, wt: 171.8, kl: 171.8, ks: 0, kv: 0.81 },
+      '2026-09-07': { d: '2026-09-07', bt: '23:10', wt: 171.8, kl: 171.8, ks: 0, kv: 0.81, ws: true },
     } as Record<string, DailyRecord>;
     const out = applyTrend(days, 0.1, '2026-09-06');
-    expect(out['2026-09-07'].wt).toBeUndefined();
+    expect(out['2026-09-07']).toEqual({ d: '2026-09-07', bt: '23:10' });
     expect(out['2026-09-06']).toBe(days['2026-09-06']); // unchanged record keeps identity
   });
 

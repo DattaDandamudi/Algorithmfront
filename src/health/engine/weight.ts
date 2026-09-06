@@ -1,5 +1,6 @@
 import type { DailyRecord, ISODate } from '../data/types';
 import { addDays } from '../lib/dates';
+import { pOutsideBand, type BandProbability } from './kalman';
 
 /**
  * §6.1 EWMA weight trend (Hacker's Diet / TrendWeight).
@@ -140,6 +141,36 @@ export function rateBand(
   if (loss < lo) return 'below';
   if (loss > hi) return 'above';
   return 'in';
+}
+
+/**
+ * §1a adapter: `rateBand` as a **probability** rather than a verdict.
+ *
+ * `rateBand` answers "which side of the band is the point estimate on", which
+ * is exactly the question that made v2 flip-flop: a rate of −0.87 lb/wk with a
+ * ±0.5 lb/wk standard error is not meaningfully "inside" a band whose edge is
+ * at −0.86. This converts the %BW band to the signed lb/wk band the Kalman
+ * posterior lives on and asks `pOutsideBand` how much of the rate's mass is
+ * actually outside it — the number §1b's two-tier intake rule is gated on
+ * (fine tier `p ≥ 0.7`, coarse `p ≥ 0.8`).
+ *
+ * Takes any `{ lbPerWk, sdLbPerWk }`, so both `kalmanRate` and a per-block
+ * expenditure rate can be passed. **Direction is on the signed axis**, not
+ * `rateBand`'s loss axis: a fat-loss band `[0.5, 1.0] %BW/wk` at 172 lb
+ * becomes `[−1.72, −0.86] lb/wk`, so `direction: 'below'` = losing faster than
+ * the band (`rateBand`'s `'above'`) and `'above'` = losing too slowly or
+ * gaining (`rateBand`'s `'below'`).
+ *
+ * `{ p: 0, direction: null }` whenever the rate has no usable standard error —
+ * an unavailable rate is never evidence of being outside anything.
+ */
+export function rateBandProb(
+  rate: { lbPerWk: number | null; sdLbPerWk: number | null } | null,
+  bodyWeightLb: number,
+  pctBand: [number, number],
+): BandProbability {
+  const [lo, hi] = targetLbPerWeek(bodyWeightLb, pctBand);
+  return pOutsideBand(rate, -hi, -lo);
 }
 
 /** Count of scale weigh-ins in the 7 days ending at `asOf` (inclusive). */
