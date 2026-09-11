@@ -25,7 +25,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANT: Record<ButtonVariant, string> = {
   primary:
     'bg-hx-lume text-hx-base shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_8px_20px_-10px_rgba(233,241,255,0.45)] hover:bg-white active:bg-hx-text2 disabled:bg-hx-text2',
-  secondary: 'hx-raised text-hx-text hover:border-hx-neutral',
+  secondary: 'hx-raised !rounded-ctl text-hx-text hover:border-hx-neutral',
   ghost: 'bg-transparent text-hx-text2 hover:text-hx-text hover:bg-hx-card2/60',
   danger: 'bg-hx-red/15 text-hx-red border border-hx-red/40 hover:bg-hx-red/25',
 };

@@ -28,6 +28,12 @@ with `lib/format.fmt` (tabular numerals are inherited from `.hx`). Null means "n
 
 Tailwind: `rounded-tile` (20 px), `rounded-ctl` (14 px), `font-display`, `text-hx-lume`.
 
+Two cascade facts worth knowing. `health.css` loads after Tailwind's utilities, so a material's own
+radius wins over `rounded-ctl` at equal specificity: to put a 14 px radius on a `.hx-card`/`.hx-raised`
+or a pill on a `.hx-well`, write `!rounded-ctl` / `!rounded-full` (the kit does this itself). And none
+of the material classes sets `position`, so `absolute`/`fixed` utilities keep working on them; set
+`relative` yourself where a child needs an anchor.
+
 ## bands.ts
 | fn | returns |
 |---|---|
@@ -90,6 +96,8 @@ No entrance animation.
 `{ value; onChange(n); step?=1; min?; max?; dp?=0; unit?; label?='Value'; size?: 'sm'|'lg'; disabled? }`
 44 px (sm) / 56 px (lg) buttons; typed input commits on blur/Enter (clamped, rounded to `dp`); ↑/↓ step.
 Weight: `step={0.1} dp={1} unit="lb"`. Tobacco: `step={1} min={0}`.
+The `sm` field is a fixed 80 px, so two steppers side by side inside 390 px squeeze it: put the
+unit in the column's label ("Weight, lb") instead of passing `unit`, as the Train logger does.
 
 ## Sheet — bottom sheet
 `{ open; onClose; title?; children; footer? }` — dialog/aria-modal, ESC + backdrop close, scroll lock,

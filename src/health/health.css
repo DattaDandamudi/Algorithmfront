@@ -161,9 +161,11 @@
   display: none;
 }
 
-/* Safe-area aware bottom tab bar. */
+/* Safe-area aware bottom tab bar. Denser glass than a raised card: content
+   scrolls under it all day, so it must read as a surface, not a tint. */
 .hx-tabbar {
   padding-bottom: max(8px, env(safe-area-inset-bottom));
+  background: rgba(17, 24, 32, 0.94);
 }
 
 /* The one orchestrated moment: the dial sweeps in and its glow blooms. */
