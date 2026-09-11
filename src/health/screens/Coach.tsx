@@ -2,11 +2,13 @@
  * Coach — SPEC §4 (chat UI, quick-prompt chips, tone toggle, disclaimer,
  * escalation cue) on top of the §8 prompt in ai/coach.ts.
  *
- * Layout: a fixed-height column (100dvh minus the shell's 96 px bottom
- * padding) so the transcript scrolls internally while header and composer
- * stay put. This file only composes: header · transcript · chips + composer,
- * the nav prefill hand-off (task item 7) and the clear-conversation confirm
- * (task item 8). The send flow lives in coach/useCoachChat.ts.
+ * Not a bento (DESIGN.md): the Coach's surface is the transcript, so this is a
+ * conversation on the ground — a fixed-height column (100dvh minus the shell's
+ * 96 px bottom padding) so the transcript scrolls internally while the header
+ * and the composer stay put. This file only composes the three parts (header,
+ * transcript, composer), the nav prefill hand-off (task item 7) and the
+ * clear-conversation confirm (task item 8). The send flow lives in
+ * coach/useCoachChat.ts.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useNav } from '../nav';
@@ -14,12 +16,12 @@ import { Button, Sheet, toast } from '../ui';
 import Composer from './coach/Composer';
 import CoachHeader from './coach/CoachHeader';
 import Transcript from './coach/Transcript';
-import { modelPillLabel } from './coach/text';
+import { modelStatusLine } from './coach/text';
 import { introLine } from './coach/turn';
 import { useCoachChat } from './coach/useCoachChat';
 
-/** Fits the 390 px header pill now that its column is flex-1 (review R6-17); the aria-label adds "Open Settings". */
-const OFFLINE_STATUS = 'Offline · add a key in Settings';
+/** The status line when no key is set: a sentence, not a pill (the aria-label adds "Open Settings"). */
+const OFFLINE_STATUS = 'Offline coach, add a key in Settings';
 
 export default function Coach() {
   const c = useCoachChat();
@@ -65,14 +67,14 @@ export default function Coach() {
         appName={appName}
         tone={c.settings.ai.tone}
         onTone={c.setTone}
-        statusLabel={c.aiConfigured ? modelPillLabel(c.settings.ai) : OFFLINE_STATUS}
+        statusLabel={c.aiConfigured ? modelStatusLine(c.settings.ai) : OFFLINE_STATUS}
         configured={c.aiConfigured}
         onOpenSettings={() => openSettings('coach')}
         canClear={c.chat.length > 0}
         onClear={() => setConfirmOpen(true)}
       />
 
-      <Transcript chat={c.chat} appName={appName} intro={introLine(c.ctx)} busy={c.busy} onChip={send} />
+      <Transcript chat={c.chat} intro={introLine(c.ctx)} busy={c.busy} onChip={send} />
 
       <Composer
         value={draft}
@@ -100,7 +102,7 @@ export default function Coach() {
           </div>
         }
       >
-        <p className="text-[14px] leading-6 text-hx-text2">
+        <p className="text-[15px] leading-[22px] text-hx-text2">
           This removes all {c.chat.length} message{c.chat.length === 1 ? '' : 's'} from this device{c.busy ? ' and stops the reply in progress' : ''}. Your logs, targets and settings are untouched.
         </p>
       </Sheet>

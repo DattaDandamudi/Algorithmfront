@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_AI } from '../../data/defaults';
-import { modelPillLabel, splitBold, stripDanglingBold } from './text';
+import { modelStatusLine, splitBold, stripDanglingBold } from './text';
 
 describe('splitBold', () => {
   it('returns [] for empty text', () => {
@@ -47,13 +47,13 @@ describe('stripDanglingBold', () => {
   });
 });
 
-describe('modelPillLabel', () => {
-  it('shortens known models', () => {
-    expect(modelPillLabel({ ...DEFAULT_AI, model: 'claude-opus-5' })).toBe('Claude · Opus 5');
-    expect(modelPillLabel({ ...DEFAULT_AI, model: 'claude-sonnet-5' })).toBe('Claude · Sonnet 5');
+describe('modelStatusLine', () => {
+  it('reads as a sentence-case line, with no middle dot', () => {
+    expect(modelStatusLine({ ...DEFAULT_AI, model: 'claude-opus-5' })).toBe('Claude Opus 5');
+    expect(modelStatusLine({ ...DEFAULT_AI, model: 'claude-sonnet-5' })).toBe('Claude Sonnet 5');
   });
   it('falls back to the default model when unset and to the raw id when unknown', () => {
-    expect(modelPillLabel({ ...DEFAULT_AI, model: '' })).toBe('Claude · Opus 5');
-    expect(modelPillLabel({ ...DEFAULT_AI, model: 'claude-custom-x' })).toBe('Claude · claude-custom-x');
+    expect(modelStatusLine({ ...DEFAULT_AI, model: '' })).toBe('Claude Opus 5');
+    expect(modelStatusLine({ ...DEFAULT_AI, model: 'claude-custom-x' })).toBe('Claude custom-x');
   });
 });

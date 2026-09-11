@@ -114,7 +114,7 @@ describe('captions', () => {
   it('wordHint is null at or under 120 words and names the count above it', () => {
     expect(wordHint('short reply. **Do it.**')).toBeNull();
     const long = Array.from({ length: 134 }, (_, i) => `w${i}`).join(' ');
-    expect(wordHint(long)).toBe('134 words · over the 120-word target');
+    expect(wordHint(long)).toBe('134 words, over the 120-word target');
   });
 
   it('formatTime renders a clock and tolerates garbage', () => {

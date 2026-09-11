@@ -112,7 +112,7 @@ export function formatTime(ts: number): string {
 /** Caption shown only when a reply breaks the §8 ≤120-word rule. */
 export function wordHint(text: string): string | null {
   const { words, over } = checkLength(text);
-  return over ? `${words} words · over the ${MAX_WORDS}-word target` : null;
+  return over ? `${words} words, over the ${MAX_WORDS}-word target` : null;
 }
 
 /** How many planned exercises the intro names before it counts the rest. */

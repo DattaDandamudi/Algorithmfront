@@ -1,16 +1,22 @@
 /**
- * Transcript (task item 2): user bubbles right, assistant left, `**bold**`
- * rendered as <strong> (the only markup the coach emits, §8 OUTPUT), a
- * source caption ('Claude' / 'offline' / 'guardrail' / 'error'), the
- * over-120-words hint, and the medical escalation cue above replies to
- * lab / medication / symptom asks (task item 6). Empty state = a short intro
- * from real numbers + the quick-prompt chips (COACH_CHIPS, §4).
+ * Transcript (task item 2) — the Coach screen's surface, and the one screen in
+ * the app that is NOT a bento: a conversation sitting on the ground.
+ *
+ * The two turns are told apart by material, not by colour (DESIGN.md "Depth is
+ * structural"): a user turn is `.hx-raised` — the thing you did, slate glass,
+ * aligned right — and a coach turn is `.hx-card` — a reading, graphite, aligned
+ * left. Inside a reply: `**bold**` rendered as <strong> (the only markup the
+ * coach emits, §8 OUTPUT, so the bold action line it ends with stays bold), a
+ * caption naming who answered and when, the over-120-words hint, and the
+ * medical escalation cue above replies to lab / medication / symptom asks
+ * (task item 6) — its copy verbatim from ai/guardrails. Empty state = a short
+ * intro from real numbers plus the quick-prompt chips (COACH_CHIPS, §4).
  *
  * Auto-scroll sticks to the bottom while the reader is there (or has just
  * sent a message) and leaves them alone once they scroll up to re-read.
  */
 import { useEffect, useRef, type UIEvent } from 'react';
-import { AlertTriangle, Sparkles, Stethoscope } from 'lucide-react';
+import { AlertTriangle, Stethoscope } from 'lucide-react';
 import type { ChatMessage } from '../../data/types';
 import { COACH_CHIPS } from '../../engine';
 import { Chip } from '../../ui';
@@ -22,14 +28,13 @@ const STICK_PX = 80;
 
 export interface TranscriptProps {
   chat: ChatMessage[];
-  appName: string;
   /** Empty-state one-liner built from the current context. */
   intro: string;
   busy: boolean;
   onChip: (prompt: string) => void;
 }
 
-export default function Transcript({ chat, appName, intro, busy, onChip }: TranscriptProps) {
+export default function Transcript({ chat, intro, busy, onChip }: TranscriptProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
 
@@ -41,7 +46,8 @@ export default function Transcript({ chat, appName, intro, busy, onChip }: Trans
   const last = chat[chat.length - 1];
   useEffect(() => {
     const el = scroller.current;
-    if (!el) return;
+    // The empty state is read from the top: its intro and chips are the whole screen.
+    if (!el || chat.length === 0) return;
     // A fresh user turn always jumps to the bottom; streaming follows only while stuck.
     if (last?.role === 'user') stuck.current = true;
     if (stuck.current) el.scrollTop = el.scrollHeight;
@@ -57,7 +63,7 @@ export default function Transcript({ chat, appName, intro, busy, onChip }: Trans
       className="flex-1 min-h-0 overflow-y-auto hx-scroll px-4 py-4 flex flex-col gap-3"
     >
       {chat.length === 0 ? (
-        <EmptyIntro appName={appName} intro={intro} busy={busy} onChip={onChip} />
+        <EmptyIntro intro={intro} busy={busy} onChip={onChip} />
       ) : (
         chat.map((m, i) => <Bubble key={m.id} m={m} medicalCue={needsMedicalCue(chat, i)} />)
       )}
@@ -65,26 +71,33 @@ export default function Transcript({ chat, appName, intro, busy, onChip }: Trans
   );
 }
 
-function EmptyIntro({ appName, intro, busy, onChip }: Omit<TranscriptProps, 'chat'>) {
+function EmptyIntro({ intro, busy, onChip }: Omit<TranscriptProps, 'chat'>) {
   return (
-    <div className="flex flex-col gap-4 pt-2">
-      <div className="hx-card p-4 flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-hx-blue">
-          <Sparkles className="w-4 h-4" aria-hidden />
-          <span className="hx-label !text-hx-blue">{appName} Coach</span>
-        </div>
+    <div className="flex flex-col gap-5">
+      {/* The coach's opening turn: the same graphite card its replies arrive in. */}
+      <div className="hx-card px-4 py-3.5 flex flex-col gap-2 self-start max-w-[92%]">
         <p className="text-[15px] leading-[22px] text-hx-text">
           I answer from your own numbers — readiness, HRV baseline, trend weight, macros, sleep, today's session and your stress signals. Short replies, one action each.
         </p>
-        <p className="text-[13px] leading-5 text-hx-text2">{intro}</p>
+        <p className="text-[13px] leading-[18px] text-hx-text2">{intro}</p>
       </div>
-      <div>
-        <p className="hx-label mb-2">Ask me</p>
-        {/* Real list + 44 px chips: button semantics and touch targets (review R2-2 / R2-13). */}
-        <ul className="m-0 p-0 list-none flex flex-wrap gap-2" role="list" aria-label="Quick prompts">
+      <div className="flex flex-col gap-2">
+        <p className="hx-label">Ask me</p>
+        {/*
+         * A two-row shelf that scrolls sideways: the longest prompt is wider
+         * than the 358 px column, so a wrapping row would break the 16 px
+         * margin. Wide content scrolls inside its own container (DESIGN.md
+         * "Quality floor"). Real list + 44 px chips keep button semantics and
+         * the touch-target floor (review R2-2 / R2-13).
+         */}
+        <ul
+          className="m-0 p-0 list-none grid grid-flow-col grid-rows-2 auto-cols-max gap-2 overflow-x-auto hx-no-scrollbar"
+          role="list"
+          aria-label="Quick prompts"
+        >
           {COACH_CHIPS.map((c) => (
-            <li key={c} className="max-w-full">
-              <Chip size="md" disabled={busy} onClick={() => onChip(c)} className="max-w-full">
+            <li key={c}>
+              <Chip size="sm" disabled={busy} onClick={() => onChip(c)}>
                 {c}
               </Chip>
             </li>
@@ -99,27 +112,30 @@ function Bubble({ m, medicalCue }: { m: ChatMessage; medicalCue: boolean }) {
   if (m.role === 'user') {
     return (
       <div className="self-end max-w-[85%] flex flex-col items-end gap-1">
-        <div className="rounded-2xl rounded-br-md bg-hx-text text-hx-base px-3.5 py-2.5 text-[15px] leading-[22px] whitespace-pre-wrap break-words">{m.text}</div>
-        <span className="text-[11px] leading-4 text-hx-muted px-1">{formatTime(m.ts)}</span>
+        {/* Raised glass: the thing you did. */}
+        <div className="hx-raised px-4 py-3 text-[15px] leading-[22px] text-hx-text whitespace-pre-wrap break-words">{m.text}</div>
+        <span className="px-1 text-[12px] leading-4 text-hx-muted">{formatTime(m.ts)}</span>
       </div>
     );
   }
 
   const streaming = m.streaming === true;
   const source = m.source;
-  const tone = source === 'error' ? 'border-hx-red/40' : source === 'guardrail' ? 'border-hx-yellow/40' : 'border-hx-border';
+  // The bezel carries the state on a reply that is not ordinary coaching.
+  const tone = source === 'error' ? '!border-hx-red/40' : source === 'guardrail' ? '!border-hx-yellow/40' : '';
   const hint = !streaming && source !== 'error' ? wordHint(m.text) : null;
   const text = streaming ? stripDanglingBold(m.text) : m.text;
 
   return (
     <div className="self-start max-w-[92%] flex flex-col gap-1.5">
       {medicalCue && (
-        <p className="flex items-start gap-1.5 px-1 text-[12px] leading-4 text-hx-yellow">
-          <Stethoscope className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden />
+        <p className="flex items-start gap-2 px-1 text-[13px] leading-[18px] text-hx-yellow">
+          <Stethoscope className="w-4 h-4 shrink-0 mt-px" aria-hidden />
           <span>{MEDICAL_CUE}</span>
         </p>
       )}
-      <div className={`rounded-2xl rounded-bl-md bg-hx-card border ${tone} px-3.5 py-2.5 text-[15px] leading-[22px] text-hx-text whitespace-pre-wrap break-words`}>
+      {/* Graphite card: a reading. */}
+      <div className={`hx-card px-4 py-3 text-[15px] leading-[22px] text-hx-text whitespace-pre-wrap break-words ${tone}`}>
         {streaming && !text ? (
           <TypingDots />
         ) : (
@@ -139,27 +155,21 @@ function Bubble({ m, medicalCue }: { m: ChatMessage; medicalCue: boolean }) {
           </>
         )}
       </div>
-      <div className="flex items-center gap-1.5 px-1 text-[11px] leading-4 text-hx-muted">
+      <div className="flex items-center gap-2 px-1 text-[12px] leading-4 text-hx-muted">
         {streaming ? (
           <>
             <span className="w-1.5 h-1.5 rounded-full bg-hx-blue hx-pulse" aria-hidden />
-            <span>replying…</span>
+            <span>Replying…</span>
           </>
         ) : (
           <>
-            {source && <span className={`w-1.5 h-1.5 rounded-full ${SOURCE_DOT[source]}`} aria-hidden />}
-            {source && <span>{SOURCE_LABEL[source]}</span>}
-            {source && <span aria-hidden>·</span>}
-            <span>{formatTime(m.ts)}</span>
-            {hint && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="text-hx-yellow">{hint}</span>
-              </>
-            )}
+            {source && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${SOURCE_DOT[source]}`} aria-hidden />}
+            {/* A comma list, never a middle dot: "Offline coach, 9:41 am". */}
+            <span>{source ? `${SOURCE_LABEL[source]}, ${formatTime(m.ts)}` : formatTime(m.ts)}</span>
           </>
         )}
       </div>
+      {hint && <p className="px-1 -mt-0.5 text-[12px] leading-4 text-hx-yellow">{hint}</p>}
     </div>
   );
 }

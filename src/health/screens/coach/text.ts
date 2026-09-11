@@ -7,7 +7,9 @@
  * - stripDanglingBold: while a reply streams, an opening `**` arrives before
  *   its close — hide it until the pair completes so the bubble doesn't flash
  *   asterisks mid-sentence.
- * - modelPillLabel: "Claude · Opus 5" for the header status pill.
+ * - modelStatusLine: "Claude Opus 5" — the header's status line, a sentence-case
+ *   line rather than the uppercase pill it used to be (DESIGN.md "Copy rules":
+ *   no middle dots, sentence case).
  * - SOURCE_LABEL / SOURCE_DOT: caption text and dot colour per ChatMessage.source
  *   (blue = AI per §0 "Blue: informational/AI"; error red; guardrail yellow).
  */
@@ -47,21 +49,22 @@ export function stripDanglingBold(text: string): string {
   return text.slice(0, idx) + text.slice(idx + 2);
 }
 
-/** "Claude · Opus 5" from the settings' model (label without the "(default)" hint), or the raw id for unknown models. */
-export function modelPillLabel(ai: AISettings): string {
+/** "Claude Opus 5" from the settings' model (label without the "(default)" hint), or the bare id for unknown models. */
+export function modelStatusLine(ai: AISettings): string {
   const id = resolveModel(ai);
   const opt = MODEL_OPTIONS.find((o) => o.id === id);
-  const short = opt ? opt.label.replace(/\s*\([^)]*\)\s*$/, '').replace(/^Claude\s+/i, '') : id;
-  return `Claude · ${short}`;
+  const short = opt ? opt.label.replace(/\s*\([^)]*\)\s*$/, '') : id;
+  return short.replace(/^claude[\s-]+/i, 'Claude ');
 }
 
 export type ReplySource = NonNullable<ChatMessage['source']>;
 
+/** Sentence case: these read as the first half of "Offline coach, 9:41 am". */
 export const SOURCE_LABEL: Record<ReplySource, string> = {
   claude: 'Claude',
-  offline: 'offline',
-  guardrail: 'guardrail',
-  error: 'error',
+  offline: 'Offline coach',
+  guardrail: 'Guardrail',
+  error: 'Error',
 };
 
 export const SOURCE_DOT: Record<ReplySource, string> = {
