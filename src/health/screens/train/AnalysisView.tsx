@@ -1,6 +1,13 @@
 /**
  * Train ▸ Analysis — estimated max, weekly volume, training load, PRs and the
- * three callouts.
+ * three callouts, as one bento (DESIGN.md).
+ *
+ * Size encodes importance. The estimated-max chart is the hero: a span-2 tile,
+ * with the two numbers you read off it ("trend now", "best estimate") as 1×1
+ * complications beneath. The volume grid and the load curve need the full
+ * width and are span-2; the load gauge contributes its own two 1×1 tiles for
+ * acute load and the week-on-week change, which are the only load numbers this
+ * release acts on. PRs and the three callouts close the grid as span-2 tiles.
  *
  * The range toggle only changes what is plotted: the volume grid is always the
  * last 12 weeks (that is what a landmark comparison means) and the load series
@@ -50,14 +57,14 @@ export default function AnalysisView({ model, onStart }: AnalysisViewProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="hx-bento">
       <SegmentedControl<ChartRange>
         options={RANGES}
         value={range}
         onChange={setRange}
         size="sm"
         ariaLabel="Analysis range"
-        className="self-start"
+        className="hx-span-2 self-start"
       />
 
       <E1rmCard
@@ -71,6 +78,7 @@ export default function AnalysisView({ model, onStart }: AnalysisViewProps) {
       />
 
       <TrainCard
+        tile
         title="Weekly sets per muscle"
         caption={`Last ${VOLUME_WEEKS} weeks`}
         meaning="One set per primary muscle, half a set per secondary, warm-ups excluded — counted Monday to Sunday."

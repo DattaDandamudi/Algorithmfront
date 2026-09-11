@@ -1,6 +1,7 @@
 /**
  * The three findings the Analysis view is willing to state outright: a
- * plateau, a deload, and a push/pull or squat/hinge imbalance.
+ * plateau, a deload, and a push/pull or squat/hinge imbalance — three span-2
+ * tiles in the view's bento.
  *
  * Each one is deliberately bounded:
  * - a **plateau** is "trained ≥ 4× in 21 days, estimated max up ≤ 1% while
@@ -40,8 +41,8 @@ export default function Callouts({ training }: CalloutsProps) {
   const squatHingeOff = !isBalancedRatio(balance.squatHinge);
 
   return (
-    <div className="flex flex-col gap-5">
-      <TrainCard title="Stalled lifts" caption={plateaus.length ? `${plateaus.length} flagged` : 'None flagged'}>
+    <>
+      <TrainCard tile title="Stalled lifts" caption={plateaus.length ? `${plateaus.length} flagged` : 'None flagged'}>
         {plateaus.length === 0 ? (
           <Note>
             Nothing has stalled: no lift you have trained at least four times in the last three weeks is holding its
@@ -51,11 +52,11 @@ export default function Callouts({ training }: CalloutsProps) {
           <ul className="flex flex-col gap-3">
             {plateaus.map((p) => (
               <li key={p.exerciseId} className="flex gap-2">
-                <TrendingDown className="w-4 h-4 mt-0.5 shrink-0 text-hx-yellow" aria-hidden />
+                <TrendingDown className="w-4 h-4 mt-1 shrink-0 text-hx-yellow" aria-hidden />
                 <div className="min-w-0">
-                  <p className="text-[14px] leading-5 text-hx-text">{p.name} has stalled</p>
-                  <p className="text-[12px] leading-4 text-hx-text2">
-                    {p.sessions} sessions in three weeks · estimated max {fmt(p.gainPct, 1)}% · mean RPE{' '}
+                  <p className="text-[15px] leading-[22px] text-hx-text">{p.name} has stalled</p>
+                  <p className="text-[13px] leading-[18px] text-hx-text2">
+                    {p.sessions} sessions in three weeks, estimated max {fmt(p.gainPct, 1)}%, mean RPE{' '}
                     {p.rpeTrend >= 0 ? '+' : '−'}
                     {fmt(Math.abs(p.rpeTrend), 1)} across the window.
                   </p>
@@ -66,19 +67,20 @@ export default function Callouts({ training }: CalloutsProps) {
         )}
       </TrainCard>
 
-      <TrainCard title="Deload" caption={deload.recommended ? 'Recommended' : 'Not right now'}>
+      <TrainCard tile title="Deload" caption={deload.recommended ? 'Recommended' : 'Not right now'}>
         {deload.recommended ? (
           <div className="flex gap-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-hx-yellow" aria-hidden />
+            <AlertTriangle className="w-4 h-4 mt-1 shrink-0 text-hx-yellow" aria-hidden />
             <div className="min-w-0">
-              <p className="text-[14px] leading-5 text-hx-text">
+              <p className="text-[15px] leading-[22px] text-hx-text">
                 Two or more things are pointing the same way. A week at −{DELOAD_SET_CUT_PCT}% sets and −
                 {DELOAD_LOAD_CUT_PCT}% load is the usual answer.
               </p>
-              <ul className="mt-1 flex flex-col gap-0.5">
+              <ul className="mt-1.5 flex flex-col gap-1">
                 {deload.reasons.map((r) => (
-                  <li key={r} className="text-[12px] leading-4 text-hx-text2">
-                    · {r}
+                  <li key={r} className="flex items-start gap-2 text-[13px] leading-[18px] text-hx-text2">
+                    <span className="mt-[7px] w-1 h-1 rounded-full shrink-0 bg-hx-neutral" aria-hidden />
+                    <span className="min-w-0">{r}</span>
                   </li>
                 ))}
               </ul>
@@ -89,8 +91,8 @@ export default function Callouts({ training }: CalloutsProps) {
         )}
       </TrainCard>
 
-      <TrainCard title="Push / pull balance" caption="Sets over the last 28 days">
-        <ul className="flex flex-col gap-2">
+      <TrainCard tile title="Push / pull balance" caption="Sets over the last 28 days">
+        <ul className="flex flex-col gap-3">
           <BalanceRow label="Push : pull" ratio={balance.pushPull} off={pushPullOff} more="pushing" less="pulling" />
           <BalanceRow label="Squat : hinge" ratio={balance.squatHinge} off={squatHingeOff} more="squatting" less="hinging" />
         </ul>
@@ -99,7 +101,7 @@ export default function Callouts({ training }: CalloutsProps) {
           one-sided weeks report nothing rather than a large number.
         </Note>
       </TrainCard>
-    </div>
+    </>
   );
 }
 
@@ -120,9 +122,9 @@ function BalanceRow({
   return (
     <li className="flex items-center gap-2">
       <Scale className="w-4 h-4 shrink-0 text-hx-muted" aria-hidden />
-      <span className="text-[13px] leading-5 text-hx-text">{label}</span>
-      <span className="ml-auto text-[13px] leading-5 text-hx-text tabular-nums">{ratio === null ? '—' : fmt(ratio, 2)}</span>
-      <span className={`text-[12px] leading-4 w-28 text-right ${off ? 'text-hx-yellow' : 'text-hx-text2'}`}>{word}</span>
+      <span className="text-[15px] leading-[22px] text-hx-text">{label}</span>
+      <span className="hx-display ml-auto text-[15px] leading-[22px] font-semibold text-hx-text">{ratio === null ? '—' : fmt(ratio, 2)}</span>
+      <span className={`text-[13px] leading-[18px] w-[108px] text-right ${off ? 'text-hx-yellow' : 'text-hx-text2'}`}>{word}</span>
     </li>
   );
 }

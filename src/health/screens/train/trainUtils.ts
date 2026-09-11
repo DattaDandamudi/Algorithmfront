@@ -117,7 +117,7 @@ export function kindLabel(k: WorkoutKind): string {
 export function sessionTitle(w: Pick<Workout, 'title' | 'kind' | 'session' | 'cardio'>): string {
   if (w.title) return w.title;
   if (w.kind === 'strength') return w.session ? `${sessionLabel(w.session)} session` : 'Strength session';
-  return `${kindLabel(w.kind)}${w.cardio?.sport ? ` · ${w.cardio.sport}` : ''}`;
+  return `${kindLabel(w.kind)}${w.cardio?.sport ? `, ${w.cardio.sport}` : ''}`;
 }
 
 /** The three progression modes, in the user's words. */

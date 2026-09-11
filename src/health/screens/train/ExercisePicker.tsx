@@ -43,7 +43,7 @@ export default function ExercisePicker({ open, onClose, onPick, custom, inSessio
   return (
     <Sheet open={open} onClose={onClose} title="Add an exercise">
       <div className="flex flex-col gap-3">
-        <label className="flex items-center gap-2 rounded-xl border border-hx-border bg-hx-card2 px-3 h-11">
+        <label className="hx-well flex items-center gap-2 px-4 h-11">
           <Search className="w-4 h-4 shrink-0 text-hx-muted" aria-hidden />
           <span className="sr-only">Search exercises</span>
           <input
@@ -51,13 +51,13 @@ export default function ExercisePicker({ open, onClose, onPick, custom, inSessio
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search — bench, rdl, ohp…"
-            className="flex-1 min-w-0 bg-transparent text-[15px] leading-5 text-hx-text placeholder:text-hx-muted outline-none"
+            className="flex-1 min-w-0 bg-transparent border-0 shadow-none text-hx-text placeholder:text-hx-muted"
             autoComplete="off"
           />
         </label>
 
         {results.length === 0 ? (
-          <p className="text-[13px] leading-5 text-hx-text2 py-6 text-center">
+          <p className="text-[15px] leading-[22px] text-hx-text2 py-6">
             Nothing matches “{query}”. Add it as a custom exercise in Settings ▸ Training.
           </p>
         ) : (
@@ -67,17 +67,17 @@ export default function ExercisePicker({ open, onClose, onPick, custom, inSessio
                 <button
                   type="button"
                   onClick={() => onPick(e)}
-                  className="w-full min-h-11 py-2 px-2 flex items-center gap-3 rounded-xl text-left hover:bg-hx-card2"
+                  className="hx-press w-full min-h-11 py-2 px-2 flex items-center gap-3 rounded-ctl text-left hover:bg-hx-card2"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] leading-5 text-hx-text truncate">{e.name}</span>
-                    <span className="block text-[12px] leading-4 text-hx-muted truncate">
-                      {e.equipment} · {(e.muscles?.primary ?? []).map(muscleLabel).join(', ') || '—'}
-                      {e.custom ? ' · custom' : ''}
+                    <span className="block text-[15px] leading-[22px] text-hx-text truncate">{e.name}</span>
+                    <span className="block text-[13px] leading-[18px] text-hx-muted truncate">
+                      {e.equipment}, {(e.muscles?.primary ?? []).map(muscleLabel).join(', ') || '—'}
+                      {e.custom ? ', custom' : ''}
                     </span>
                   </span>
                   {present.has(e.id) && (
-                    <span className="shrink-0 text-[11px] leading-4 text-hx-text2">in this session</span>
+                    <span className="shrink-0 text-[13px] leading-[18px] text-hx-text2">in this session</span>
                   )}
                 </button>
               </li>

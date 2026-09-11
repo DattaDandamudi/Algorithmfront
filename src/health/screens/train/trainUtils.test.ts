@@ -264,7 +264,7 @@ describe('formatting and labels', () => {
     expect(sessionTitle({ title: 'Deload upper', kind: 'strength' })).toBe('Deload upper');
     expect(sessionTitle({ kind: 'strength', session: 'lower' })).toBe('Lower body session');
     expect(sessionTitle({ kind: 'strength' })).toBe('Strength session');
-    expect(sessionTitle({ kind: 'cardio', cardio: { sport: 'run' } })).toBe('Cardio · run');
+    expect(sessionTitle({ kind: 'cardio', cardio: { sport: 'run' } })).toBe('Cardio, run');
   });
 
   it('reads RPE straight or converts it from RIR', () => {

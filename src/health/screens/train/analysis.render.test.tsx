@@ -96,8 +96,8 @@ describe('AnalysisView', () => {
     // Both lifts have 12 sessions, so the picker falls back to name order.
     const picker = screen.getByRole('combobox', { name: 'Exercise' }) as HTMLSelectElement;
     expect(picker.value).toBe('barbell-row');
-    expect(within(picker).getByRole('option', { name: /Bench Press · 12 sessions/ })).toBeTruthy();
-    expect(within(picker).getByRole('option', { name: /Barbell Row · 12 sessions/ })).toBeTruthy();
+    expect(within(picker).getByRole('option', { name: /Bench Press, 12 sessions/ })).toBeTruthy();
+    expect(within(picker).getByRole('option', { name: /Barbell Row, 12 sessions/ })).toBeTruthy();
 
     // The chart itself, and its table view twin.
     expect(screen.getByRole('img', { name: /Barbell Row estimated one-rep max/ })).toBeTruthy();
@@ -172,7 +172,7 @@ describe('MuscleVolumeGrid', () => {
       expect(title).toMatch(/week of .+: .+ sets — .+/);
     }
     // Every row also ends in a readable band, so the word is on screen too.
-    expect(screen.getAllByText(/^\d+(\.\d)? · (below MEV|building|productive|high)$/).length).toBe(15);
+    expect(screen.getAllByText(/^\d+(\.\d)? sets, (below MEV|building|productive|high)$/).length).toBe(15);
   });
 
   it('carries its own hidden table with the landmarks spelled out', () => {

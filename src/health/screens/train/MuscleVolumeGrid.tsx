@@ -5,7 +5,7 @@
  * because both are promises the app makes about volume:
  *
  * 1. **The status word is always on screen.** Every row ends in the current
- *    week's set count *and* its band in words ("12 · productive"), the legend
+ *    week's set count *and* its band in words ("12 sets, productive"), the legend
  *    spells the four bands out, and the visually-hidden table names the band of
  *    **every** cell — all twelve weeks, not just the last one. Nothing here is
  *    knowable from colour alone.
@@ -25,7 +25,7 @@
  *
  * Exported from `screens/train/index.ts` for the Trends screen (plan §2c).
  */
-import type { CSSProperties } from 'react';
+import { Fragment, type CSSProperties } from 'react';
 import type { ISODate, MuscleVolume } from '../../data/types';
 import { VOLUME_ADVISORY_NOTE } from '../../engine';
 import { formatDateShort } from '../../lib/dates';
@@ -89,14 +89,27 @@ export default function MuscleVolumeGrid({
     return <Note>No sets logged yet — the grid fills in as soon as a session is saved.</Note>;
   }
 
-  const columns = `62px repeat(${weeks.length}, minmax(0, 1fr)) 74px`;
+  // The band word must never be truncated away (it is the non-colour channel),
+  // so the summary column takes exactly the width it needs and the cells — which
+  // can shrink to nothing without losing meaning — absorb the difference.
+  const columns = `62px repeat(${weeks.length}, minmax(0, 1fr)) max-content`;
 
   return (
     <div className="flex flex-col gap-3">
-      <div role="img" aria-label={ariaLabel} className="flex flex-col gap-1">
+      {/*
+        One grid for all 15 rows, not one grid per row: the summary column is
+        sized to its widest label, and a per-row grid would give every row its
+        own track widths — a heat map whose columns do not line up.
+      */}
+      <div
+        role="img"
+        aria-label={ariaLabel}
+        className="grid items-center"
+        style={{ gridTemplateColumns: columns, columnGap: 2, rowGap: 4 }}
+      >
         {muscles.map((current, row) => (
-          <div key={current.muscle} className="grid items-center gap-[2px]" style={{ gridTemplateColumns: columns }}>
-            <span className="text-[10px] leading-3 text-hx-text2 truncate pr-1">{muscleLabel(current.muscle)}</span>
+          <Fragment key={current.muscle}>
+            <span className="text-[11px] leading-4 text-hx-text2 truncate pr-1">{muscleLabel(current.muscle)}</span>
             {weeks.map((week) => {
               const m = week.muscles[row];
               const cell = m ?? current;
@@ -110,17 +123,17 @@ export default function MuscleVolumeGrid({
                 />
               );
             })}
-            <span className={`text-[10px] leading-3 text-right truncate ${bandText(volumeStatusTone(current.status))}`}>
-              {fmt(current.sets, current.sets % 1 === 0 ? 0 : 1)} · {volumeStatusWord(current.status)}
+            <span className={`text-[11px] leading-4 text-right whitespace-nowrap pl-2 ${bandText(volumeStatusTone(current.status))}`}>
+              {fmt(current.sets, current.sets % 1 === 0 ? 0 : 1)} sets, {volumeStatusWord(current.status)}
             </span>
-          </div>
+          </Fragment>
         ))}
       </div>
 
-      <ul className="flex flex-wrap gap-x-3 gap-y-1">
+      <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
         {LEGEND.map((status) => (
-          <li key={status} className="flex items-center gap-1.5 text-[10px] leading-3 text-hx-text2">
-            <span className="w-2.5 h-2.5 rounded-[2px] shrink-0" style={volumeCellStyle(status)} aria-hidden />
+          <li key={status} className="flex items-center gap-1.5 text-[13px] leading-[18px] text-hx-text2">
+            <span className="w-3 h-3 rounded-[3px] shrink-0" style={volumeCellStyle(status)} aria-hidden />
             {volumeStatusWord(status)}
           </li>
         ))}

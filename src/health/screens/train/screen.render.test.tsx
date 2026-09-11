@@ -9,7 +9,7 @@
  * turn, which is the cheapest way to catch a render-time throw in any of them.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { HealthStoreProvider } from '../../data/store';
 import { NavProvider } from '../../nav';
 import Train from '../Train';
@@ -85,7 +85,10 @@ describe('Train screen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add exercise/ }));
     fireEvent.change(screen.getByLabelText('Search exercises'), { target: { value: 'bench press' } });
     fireEvent.click(screen.getByRole('button', { name: /^Bench Press/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Add set/ }));
+    // Starting a strength session seeds the draft with the day's planned
+    // exercises, so on a training day there is one "Add set" per planned lift
+    // as well as the one just added — the query has to name its exercise.
+    fireEvent.click(screen.getByRole('button', { name: 'Add set to Bench Press' }));
     fireEvent.click(screen.getByRole('button', { name: 'Increase Weight, set 1 of Bench Press' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
@@ -94,8 +97,11 @@ describe('Train screen', () => {
     // The draft is gone and the session is in History, with its detail open.
     expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(screen.getByRole('radio', { name: 'History' }).getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(screen.getAllByText(/Strength session|Rest session/).length).toBeGreaterThan(0);
+    // The split names the session — "Lower body session" on a lower day,
+    // "Strength session" on a day with no slot — so pin the shape of the title
+    // in the detail sheet rather than whichever weekday the suite runs on.
+    const detail = screen.getByRole('dialog');
+    expect(within(detail).getByRole('heading', { name: /session$/ })).toBeTruthy();
   });
 
   it('starts a cardio session on the short form rather than the set logger', () => {

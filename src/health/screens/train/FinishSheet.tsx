@@ -111,7 +111,7 @@ export default function FinishSheet({
     >
       <div className="flex flex-col gap-5">
         <div>
-          <p className="text-[12px] leading-4 text-hx-muted mb-1.5">Duration</p>
+          <p className="hx-label mb-1.5">Duration</p>
           <Stepper
             label="Duration in minutes"
             value={duration}
@@ -125,9 +125,7 @@ export default function FinishSheet({
         </div>
 
         <div>
-          <p className="text-[12px] leading-4 text-hx-muted mb-1.5">
-            Session RPE — how hard the whole session felt, 1 (nothing) to 10 (maximal)
-          </p>
+          <p className="hx-label mb-2">Session RPE — how hard the whole session felt, 1 (nothing) to 10 (maximal)</p>
           {/*
             Two rows of five rather than one scrolling row. Ten chips cannot fit
             across 390 px: they measured 33.2 px wide, under the 44 px touch
@@ -168,18 +166,18 @@ export default function FinishSheet({
 
         {summary && summary.prs.length > 0 && (
           <div className="flex flex-col gap-2 border-t border-hx-border pt-4">
-            <p className="text-[12px] leading-4 text-hx-muted">
+            <p className="hx-label">
               {summary.prs.length} personal record{summary.prs.length === 1 ? '' : 's'}
             </p>
             <ul className="flex flex-wrap gap-1.5">
               {summary.prs.map((pr) => (
                 <li
                   key={`${pr.exerciseId}-${pr.kind}`}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-hx-green/15 text-hx-green px-2.5 py-1 text-[12px] leading-4"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-hx-green/15 text-hx-green px-2.5 py-1 text-[13px] leading-[18px]"
                 >
                   <Trophy className="w-3.5 h-3.5 shrink-0" aria-hidden />
                   <span>
-                    {pr.name} · {pr.kind === 'reps' ? `${fmt(pr.value, 0)} reps` : formatLoad(pr.value, units)}
+                    {pr.name}, {pr.kind === 'reps' ? `${fmt(pr.value, 0)} reps` : formatLoad(pr.value, units)}
                     {pr.kind === 'e1rm' ? ' est. max' : ''}
                   </span>
                 </li>
@@ -190,13 +188,13 @@ export default function FinishSheet({
 
         {summary && summary.deltas.length > 0 && (
           <div className="flex flex-col gap-2 border-t border-hx-border pt-4">
-            <p className="text-[12px] leading-4 text-hx-muted">Estimated max</p>
+            <p className="hx-label">Estimated max</p>
             <ul className="flex flex-col gap-1">
               {summary.deltas.map((d) => (
-                <li key={d.exerciseId} className="flex items-baseline gap-2 text-[13px] leading-5">
+                <li key={d.exerciseId} className="flex items-baseline gap-2 text-[15px] leading-[22px]">
                   <span className="text-hx-text truncate">{d.name}</span>
-                  <span className="ml-auto shrink-0 text-hx-text tabular-nums">{formatLoad(d.bestKg, units)}</span>
-                  <span className="shrink-0 w-20 text-right tabular-nums text-hx-text2">
+                  <span className="hx-display ml-auto shrink-0 font-semibold text-hx-text">{formatLoad(d.bestKg, units)}</span>
+                  <span className="shrink-0 w-20 text-right text-[13px] leading-[18px] text-hx-text2">
                     {d.deltaKg === null
                       ? 'first time'
                       : d.deltaKg === 0
@@ -214,12 +212,12 @@ export default function FinishSheet({
         )}
 
         <label className="flex flex-col gap-1.5 border-t border-hx-border pt-4">
-          <span className="text-[12px] leading-4 text-hx-muted">Note (optional)</span>
+          <span className="hx-label">Note (optional)</span>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            className="rounded-xl border border-hx-border bg-hx-card2 px-3 py-2 text-[14px] leading-5 text-hx-text placeholder:text-hx-muted outline-none focus-visible:border-hx-blue"
+            className="px-3 py-2 text-hx-text placeholder:text-hx-muted"
             placeholder="Left shoulder cranky on the last set…"
           />
         </label>

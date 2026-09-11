@@ -3,6 +3,11 @@
  * the form (fitness − fatigue) that falls out of them, over the same readouts
  * Today shows.
  *
+ * In the Analysis bento it is a heading on the ground, a span-2 chart tile,
+ * and then the gauge's own tiles (`LoadGauge` renders two 1×1 complications
+ * and a span-2 tile), so the curve and the numbers read off it sit in one
+ * grid rather than one long card.
+ *
  * Three series on one y axis is one series more than `TimeSeriesChart` draws,
  * so the SVG here is composed from the shared chart primitives
  * (`scaleLinear`, `niceTicks`, `buildPath`, `xPositions`, `HiddenTable`) — the
@@ -17,7 +22,7 @@
 import type { TrainingContext } from '../../data/types';
 import type { LoadChartPoint } from '../../engine';
 import { fmt } from '../../lib/format';
-import { bandColor } from '../../ui';
+import { SectionHeader, bandColor } from '../../ui';
 import {
   HiddenTable,
   TOKEN,
@@ -36,7 +41,6 @@ import {
   type Pt,
 } from '../../ui/charts';
 import LoadGauge from './LoadGauge';
-import { TrainCard } from './TrainCard';
 
 export interface LoadCardProps {
   points: LoadChartPoint[];
@@ -55,14 +59,20 @@ const TICK_FONT = 12;
 
 export default function LoadCard({ points, load, range }: LoadCardProps) {
   return (
-    <TrainCard
-      title="Training load"
-      caption={points.length ? `${points.length} days` : 'No load logged yet'}
-      meaning="Fitness rises slowly and fades slowly; fatigue does both fast. Form is what is left — positive means fresher than usual, negative means carrying work."
-    >
-      <LoadChart points={points} range={range} />
-      <LoadGauge load={load} />
-    </TrainCard>
+    <>
+      <SectionHeader
+        className="hx-span-2"
+        title="Training load"
+        caption={points.length ? `${points.length} days` : 'No load logged yet'}
+      />
+      <section aria-label="Training load" className="hx-card hx-span-2 p-4 flex flex-col gap-4 overflow-hidden">
+        <LoadChart points={points} range={range} />
+      </section>
+      <LoadGauge
+        load={load}
+        meaning="Fitness rises slowly and fades slowly; fatigue does both fast. Form is what is left — positive means fresher than usual, negative means carrying work."
+      />
+    </>
   );
 }
 
@@ -75,7 +85,7 @@ function LoadChart({ points, range }: { points: LoadChartPoint[]; range: ChartRa
       <div
         role="img"
         aria-label="Training load: nothing logged yet"
-        className="flex items-center justify-center rounded-xl border border-hx-border bg-hx-card2/40 px-4 text-center text-[13px] leading-5 text-hx-text2"
+        className="flex items-center justify-center rounded-ctl border border-hx-border bg-hx-base/40 px-4 text-[15px] leading-[22px] text-hx-text2"
         style={{ height: HEIGHT }}
       >
         Log a session and the fitness, fatigue and form curves start here.
@@ -142,13 +152,13 @@ function LoadChart({ points, range }: { points: LoadChartPoint[]; range: ChartRa
         )}
       </svg>
 
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
         {SERIES.map((s, i) => {
           const last = values[i][n - 1];
           return (
-            <li key={s.key} className="flex items-center gap-1.5 text-[11px] leading-4 text-hx-text2">
+            <li key={s.key} className="flex items-center gap-1.5 text-[13px] leading-[18px] text-hx-text2">
               <span className="w-3 h-0.5 rounded-full shrink-0" style={{ background: s.color }} aria-hidden />
-              {s.label} <span className="text-hx-text tabular-nums">{fmt(Math.round(last), 0)}</span>
+              {s.label} <span className="hx-display font-semibold text-hx-text">{fmt(Math.round(last), 0)}</span>
             </li>
           );
         })}

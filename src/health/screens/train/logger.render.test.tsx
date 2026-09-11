@@ -84,7 +84,7 @@ describe('SessionLogger', () => {
   it('names the session, its start and its elapsed time', () => {
     render(<Harness initial={draftWith([])} />);
     expect(screen.getByRole('heading', { name: 'Upper body session' })).toBeTruthy();
-    expect(screen.getByText(/Started 18:00 · 0m/)).toBeTruthy();
+    expect(screen.getByText(/Started 18:00, 0m/)).toBeTruthy();
   });
 
   it('shows the ghost line from last time in the display units', () => {

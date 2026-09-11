@@ -85,9 +85,9 @@ export default function SessionDetail({ open, workout, units, custom, onClose, o
     >
       {workout && (
         <div className="flex flex-col gap-5">
-          <p className="text-[13px] leading-5 text-hx-text2">
-            {formatDateLong(workout.d)} · started {workout.start}
-            {workout.source !== 'manual' ? ` · imported from ${workout.source}` : ''}
+          <p className="text-[15px] leading-[22px] text-hx-text2">
+            {formatDateLong(workout.d)}, started {workout.start}
+            {workout.source !== 'manual' ? `, imported from ${workout.source}` : ''}
           </p>
 
           <div className="flex gap-4">
@@ -129,32 +129,32 @@ export default function SessionDetail({ open, workout, units, custom, onClose, o
               {(workout.exercises ?? []).map((we, i) => (
                 <li key={`${we.exerciseId}-${i}`}>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[14px] leading-5 font-medium text-hx-text truncate">
+                    <span className="text-[15px] leading-[22px] font-medium text-hx-text truncate">
                       {exerciseById(we.exerciseId, custom)?.name ?? we.exerciseId}
                     </span>
-                    {we.superset && <span className="text-[11px] leading-4 text-hx-text2">Superset {we.superset}</span>}
+                    {we.superset && <span className="text-[13px] leading-[18px] text-hx-text2">Superset {we.superset}</span>}
                   </div>
                   <ul className="mt-1 flex flex-col gap-0.5">
                     {(we.sets ?? []).map((s, j) => {
                       const rpe = setRpe(s);
                       return (
-                        <li key={j} className="text-[13px] leading-5 text-hx-text2 tabular-nums">
-                          {s.k === 'wu' ? 'Warm-up' : `Set ${j + 1}`} · {s.w > 0 ? formatLoad(s.w, units) : 'BW'} ×{' '}
+                        <li key={j} className="text-[13px] leading-[18px] text-hx-text2">
+                          {s.k === 'wu' ? 'Warm-up' : `Set ${j + 1}`}, {s.w > 0 ? formatLoad(s.w, units) : 'BW'} ×{' '}
                           {fmt(s.r, 0)}
                           {rpe !== null ? ` @${fmt(rpe, Number.isInteger(rpe) ? 0 : 1)}` : ''}
-                          {s.x ? ' · skipped' : ''}
+                          {s.x ? ', skipped' : ''}
                         </li>
                       );
                     })}
                   </ul>
-                  {we.note && <p className="text-[12px] leading-4 text-hx-muted mt-1">{we.note}</p>}
+                  {we.note && <p className="text-[13px] leading-[18px] text-hx-muted mt-1">{we.note}</p>}
                 </li>
               ))}
             </ul>
           )}
 
           {workout.note && (
-            <p className="text-[13px] leading-5 text-hx-text2 border-t border-hx-border pt-4">{workout.note}</p>
+            <p className="text-[15px] leading-[22px] text-hx-text2 border-t border-hx-border pt-4">{workout.note}</p>
           )}
         </div>
       )}

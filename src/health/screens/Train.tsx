@@ -164,7 +164,7 @@ export default function Train() {
     clearDraft();
     setDetailId(w.id);
     setView('history');
-    toast(prs.length > 0 ? `Session saved · ${prs.length} PR${prs.length === 1 ? '' : 's'}` : 'Session saved');
+    toast(prs.length > 0 ? `Session saved, ${prs.length} PR${prs.length === 1 ? '' : 's'}` : 'Session saved');
   };
 
   const editSession = (w: Workout) => {
@@ -193,10 +193,10 @@ export default function Train() {
 
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-20 bg-hx-base/95 backdrop-blur px-4 pt-4 pb-3 flex flex-col gap-2">
+      <header className="sticky top-0 z-20 bg-hx-base/90 backdrop-blur px-4 pt-5 pb-3 flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h1 className="text-[17px] leading-6 font-semibold text-hx-text">Train</h1>
-          <p className="text-[12px] leading-4 text-hx-muted">{status}</p>
+          <h1 className="hx-display text-[22px] leading-7 font-semibold text-hx-text">Train</h1>
+          <p className="text-[13px] leading-[18px] text-hx-muted truncate">{status}</p>
         </div>
         <SegmentedControl<TrainView>
           options={VIEWS}
@@ -250,8 +250,8 @@ export default function Train() {
         {view === 'analysis' && <AnalysisView model={model} onStart={startSession} />}
       </section>
 
-      <footer className="px-4 pb-2 text-center">
-        <p className="text-[11px] leading-4 text-hx-muted">Wellness information only — not medical advice.</p>
+      <footer className="px-4 pt-1 pb-2 text-left">
+        <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
       </footer>
     </div>
   );
@@ -261,18 +261,20 @@ export default function Train() {
 function StartPrompt({ model, onStart }: { model: ReturnType<typeof useTrainModel>; onStart: (k: WorkoutKind) => void }) {
   const session = model.training.todaySession;
   return (
-    <div className="flex flex-col gap-4">
-      <EmptyState
-        icon={<Dumbbell />}
-        title="No session in progress"
-        hint={
-          session === 'rest'
-            ? 'Today is a rest day on your split. Start anything below if you want it logged anyway — nothing here is locked to the plan.'
-            : `Start ${sessionLabel(session).toLowerCase()} and the planned exercises come with it, ready for sets.`
-        }
-        action={{ label: `Start ${session === 'rest' ? 'a session' : sessionLabel(session).toLowerCase()}`, onClick: () => onStart('strength') }}
-      />
-      <div className="grid grid-cols-3 gap-2">
+    <div className="hx-bento">
+      <div className="hx-span-2">
+        <EmptyState
+          icon={<Dumbbell />}
+          title="No session in progress"
+          hint={
+            session === 'rest'
+              ? 'Today is a rest day on your split. Start anything below if you want it logged anyway — nothing here is locked to the plan.'
+              : `Start ${sessionLabel(session).toLowerCase()} and the planned exercises come with it, ready for sets.`
+          }
+          action={{ label: `Start ${session === 'rest' ? 'a session' : sessionLabel(session).toLowerCase()}`, onClick: () => onStart('strength') }}
+        />
+      </div>
+      <section aria-label="Log another kind of session" className="hx-span-2 grid grid-cols-3 gap-2">
         <Button variant="secondary" size="sm" icon={<Bike aria-hidden />} aria-label="Log cardio" onClick={() => onStart('cardio')}>
           Cardio
         </Button>
@@ -288,7 +290,7 @@ function StartPrompt({ model, onStart }: { model: ReturnType<typeof useTrainMode
         <Button variant="secondary" size="sm" icon={<HeartPulse aria-hidden />} aria-label="Log sport" onClick={() => onStart('sport')}>
           Sport
         </Button>
-      </div>
+      </section>
     </div>
   );
 }

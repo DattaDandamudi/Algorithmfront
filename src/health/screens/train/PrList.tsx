@@ -1,5 +1,6 @@
 /**
- * Personal records in the last 90 days.
+ * Personal records in the last 90 days, as a span-2 tile in the Analysis
+ * bento.
  *
  * Three kinds, all from `detectPRs`: heaviest weight, most reps at a weight,
  * and best estimated max. Each has to beat the previous best by 1%
@@ -28,27 +29,27 @@ const KIND_WORD: Record<PersonalRecord['kind'], string> = {
 
 export default function PrList({ prs, units, days }: PrListProps) {
   return (
-    <TrainCard title="Personal records" caption={`Last ${days} days`}>
+    <TrainCard tile title="Personal records" caption={`Last ${days} days`}>
       {prs.length === 0 ? (
         <Note>
           No PRs in this window. A record has to beat the previous best by at least 1%, and an exercise with no earlier
           history sets none — the first session is the baseline.
         </Note>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-3">
           {prs.map((pr) => (
             <li key={`${pr.exerciseId}-${pr.kind}-${pr.d}`} className="flex items-baseline gap-2">
               <Trophy className="w-4 h-4 shrink-0 self-center text-hx-green" aria-hidden />
               <span className="min-w-0">
-                <span className="block text-[14px] leading-5 text-hx-text truncate">{pr.name}</span>
-                <span className="block text-[12px] leading-4 text-hx-muted">
-                  {KIND_WORD[pr.kind]} · {formatDateShort(pr.d)}
+                <span className="block text-[15px] leading-[22px] text-hx-text truncate">{pr.name}</span>
+                <span className="block text-[13px] leading-[18px] text-hx-muted">
+                  {KIND_WORD[pr.kind]}, {formatDateShort(pr.d)}
                   {pr.previous === null
                     ? ''
-                    : ` · was ${pr.kind === 'reps' ? `${fmt(pr.previous, 0)} reps` : formatLoad(pr.previous, units)}`}
+                    : `, was ${pr.kind === 'reps' ? `${fmt(pr.previous, 0)} reps` : formatLoad(pr.previous, units)}`}
                 </span>
               </span>
-              <span className="ml-auto shrink-0 text-[14px] leading-5 text-hx-text tabular-nums">
+              <span className="hx-display ml-auto shrink-0 text-[15px] leading-[22px] font-semibold text-hx-text">
                 {pr.kind === 'reps' ? `${fmt(pr.value, 0)} reps` : formatLoad(pr.value, units)}
               </span>
             </li>
