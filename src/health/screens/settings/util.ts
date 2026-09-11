@@ -228,10 +228,10 @@ export const CHECK_IN_ITEMS: Array<{ key: CheckInItem; label: string; hint: stri
   { key: 'qo', label: 'Muscle soreness', hint: 'What the last session left behind' },
 ];
 
-/** "Upper 7 · Lower 6" — what a program actually prescribes, never invented. */
+/** "Upper 7, Lower 6" — what a program actually prescribes, never invented. */
 export function programSummary(program: Program): string {
   const parts = (Object.keys(program.sessions) as SessionType[])
     .filter((k) => (program.sessions[k]?.length ?? 0) > 0)
     .map((k) => `${SESSION_OPTIONS.find((o) => o.value === k)?.label ?? k} ${program.sessions[k]?.length ?? 0}`);
-  return parts.length ? parts.join(' · ') : 'No exercises yet';
+  return parts.length ? parts.join(', ') : 'No exercises yet';
 }

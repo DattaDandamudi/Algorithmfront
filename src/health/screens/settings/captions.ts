@@ -2,6 +2,10 @@
  * One-line live summaries shown under each Settings section title (so the
  * collapsed list still tells the user what is set). Pure functions of state;
  * every number is read from settings / storage, never invented.
+ *
+ * Each one reads as a sentence or a comma list — no middle dots (DESIGN.md
+ * "Copy rules") — and is written to survive being truncated on a narrow tile,
+ * so the part that identifies the section comes first.
  */
 import { isAIConfigured, MODEL_OPTIONS } from '../../ai/config';
 import type { AppSettings, DailyRecord, ISODate, StorageStatus } from '../../data/types';
@@ -16,14 +20,21 @@ const PHASE_LABEL: Record<AppSettings['profile']['goalPhase'], string> = {
   'muscle-gain': 'muscle gain',
 };
 
+/** ["Indian", "Western"] → "Indian and Western". */
+function andList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/** "Sam, 26, 172.0 lb, fat loss" — a comma list, in the order the form asks. */
 export function profileCaption(s: AppSettings): string {
   const p = s.profile;
-  return `${p.name || 'You'} · ${p.age} · ${fmtWeight(p.weightLb, p.units)} · ${PHASE_LABEL[p.goalPhase]}`;
+  return `${p.name || 'You'}, ${p.age}, ${fmtWeight(p.weightLb, p.units)}, ${PHASE_LABEL[p.goalPhase]}`;
 }
 
 export function targetsCaption(s: AppSettings): string {
   const t = s.targets;
-  return `${fmt(t.kcal)} kcal · ${t.protein} g protein · ${t.fatFloor} g fat floor · α ${t.ewmaAlpha.toFixed(2)}`;
+  return `${fmt(t.kcal)} kcal, ${t.protein} g protein, ${t.fatFloor} g fat floor, α ${t.ewmaAlpha.toFixed(2)}`;
 }
 
 export function splitCaption(s: AppSettings): string {
@@ -31,7 +42,7 @@ export function splitCaption(s: AppSettings): string {
   const days = ([0, 1, 2, 3, 4, 5, 6] as const).map((w) => split[w]);
   const lifts = days.filter(isLiftSession).length;
   const kinds = Array.from(new Set(days.filter(isLiftSession))).map((k) => SESSION_OPTIONS.find((o) => o.value === k)?.label.toLowerCase() ?? k);
-  return lifts === 0 ? 'No lift days set' : `${lifts} lift day${lifts === 1 ? '' : 's'}/wk · ${kinds.join('/')}`;
+  return lifts === 0 ? 'No lift days set' : `${lifts} lift day${lifts === 1 ? '' : 's'} a week, ${kinds.join('/')}`;
 }
 
 export function bloodworkCaption(s: AppSettings, today: ISODate): string {
@@ -44,36 +55,38 @@ export function bloodworkCaption(s: AppSettings, today: ISODate): string {
   if (overdue) parts.push(`${overdue} retest${overdue === 1 ? '' : 's'} overdue`);
   else if (due.length) parts.push(`${due.length} retest${due.length === 1 ? '' : 's'} due soon`);
   else if (undated.length) parts.push(`${undated.length} need${undated.length === 1 ? 's' : ''} a test date`);
-  return parts.join(' · ');
+  return parts.join(', ');
 }
 
 export function foodCaption(s: AppSettings): string {
   const cuisines = s.profile.cuisines.map((c) => CUISINE_OPTIONS.find((o) => o.value === c)?.label ?? c);
   const n = s.favorites.length;
-  return `${cuisines.length ? cuisines.join(', ') : 'No cuisine priors'} · ${n} favorite${n === 1 ? '' : 's'}`;
+  // The cuisines are themselves a comma list, so they are joined with "and"
+  // and the favourites count follows as its own clause.
+  return `${cuisines.length ? andList(cuisines) : 'No cuisine priors'}, ${n} favorite${n === 1 ? '' : 's'}`;
 }
 
 export function whoopCaption(s: AppSettings, now: number): string {
   const w = s.whoop;
-  if (!w.connected) return 'Not connected · CSV import or manual entry';
+  if (!w.connected) return 'Not connected, import a CSV or type the numbers in';
   const src = w.source === 'csv' ? 'CSV import' : 'manual entry';
-  return w.lastImportAt ? `Connected · ${src} · ${relativeTime(w.lastImportAt, now)}` : `Connected · ${src}`;
+  return w.lastImportAt ? `Connected by ${src}, ${relativeTime(w.lastImportAt, now)}` : `Connected by ${src}`;
 }
 
 export function coachCaption(s: AppSettings): string {
   const ai = s.ai;
-  if (ai.provider === 'none') return 'Offline coach · local food DB';
+  if (ai.provider === 'none') return 'Offline coach, local food database';
   const model = MODEL_OPTIONS.find((m) => m.id === ai.model)?.label.replace(/\s*\(.*\)$/, '') ?? ai.model;
   const via = ai.provider === 'proxy' ? 'Proxy' : 'API key';
-  return isAIConfigured(ai) ? `${via} · ${model} · ${ai.tone}` : `${via} not set — offline until configured`;
+  return isAIConfigured(ai) ? `${via}, ${model}, ${ai.tone}` : `${via} not set — offline until configured`;
 }
 
 export function dataCaption(storage: StorageStatus, records: DailyRecord[], now: number): string {
   const pct = (storage.bytesUsed / QUOTA_BYTES) * 100;
   const used = `${formatBytes(storage.bytesUsed)} (${fmt(pct, pct < 1 ? 1 : 0)}%)`;
-  if (!storage.available) return `${used} · storage unavailable`;
-  if (storage.lastError) return `${used} · last write failed`;
-  return `${records.length} day${records.length === 1 ? '' : 's'} · ${used} · saved ${relativeTime(storage.lastSavedAt, now)}`;
+  if (!storage.available) return `${used}, storage unavailable`;
+  if (storage.lastError) return `${used}, last write failed`;
+  return `${records.length} day${records.length === 1 ? '' : 's'}, ${used}, saved ${relativeTime(storage.lastSavedAt, now)}`;
 }
 
 export function trainingCaption(s: AppSettings): string {
@@ -82,23 +95,23 @@ export function trainingCaption(s: AppSettings): string {
   const custom = t.customExercises.length;
   const parts = [t.units, `rest ${restLabel(t.restTimerSec)}`, `RPE ${p.targetRpe[0]}–${p.targetRpe[1]}`, `+${p.loadStepPctUpper}/${p.loadStepPctLower}%`];
   if (custom) parts.push(`${custom} custom`);
-  return parts.join(' · ');
+  return parts.join(', ');
 }
 
 export function checkInCaption(s: AppSettings): string {
   const c = s.checkIn;
   if (!c.enabled) return 'Prompt off — nothing is asked';
   const extra = [c.weeklySrss ? 'SRSS' : null, c.monthlyPss ? 'PSS-4' : null].filter(Boolean).join(' + ');
-  return `${c.items.length} item${c.items.length === 1 ? '' : 's'} from ${c.promptAfter}${extra ? ` · ${extra}` : ''}`;
+  return `${c.items.length} item${c.items.length === 1 ? '' : 's'} from ${c.promptAfter}${extra ? `, plus ${extra}` : ''}`;
 }
 
 /** `count` is the number of sessions stored — the honest measure of an import. */
 export function importsCaption(s: AppSettings, count: number, now: number): string {
   const last = Math.max(s.training.imports?.whoopAt ?? 0, s.training.imports?.stravaAt ?? 0, s.training.imports?.appleAt ?? 0);
   const sessions = `${count} session${count === 1 ? '' : 's'}`;
-  return last ? `${sessions} · last import ${relativeTime(last, now)}` : `${sessions} · WHOOP, Strava, Apple Health`;
+  return last ? `${sessions}, last import ${relativeTime(last, now)}` : `${sessions}, import from WHOOP, Strava or Apple Health`;
 }
 
 export function aboutCaption(): string {
-  return `Pulse v${APP_VERSION} · evidence anchors · disclaimer`;
+  return `Pulse v${APP_VERSION}, evidence anchors and the disclaimer`;
 }

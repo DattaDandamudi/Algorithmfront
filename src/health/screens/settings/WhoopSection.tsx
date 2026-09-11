@@ -70,7 +70,7 @@ export default function WhoopSection({ today, now }: { today: ISODate; now: numb
   const whoopDays = useMemo(() => records.filter((r) => r.rec !== undefined || r.hrv !== undefined || r.strn !== undefined).length, [records]);
   const latest = useMemo(() => [...records].reverse().find((r) => r.rec !== undefined || r.hrv !== undefined), [records]);
 
-  const statusLabel = whoop.connected ? (whoop.source === 'csv' ? 'Connected · CSV import' : 'Connected · manual entry') : 'Not connected';
+  const statusLabel = whoop.connected ? (whoop.source === 'csv' ? 'Connected by CSV import' : 'Connected by manual entry') : 'Not connected';
 
   // --- CSV import -----------------------------------------------------------
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -106,11 +106,11 @@ export default function WhoopSection({ today, now }: { today: ISODate; now: numb
     <>
       <div className="flex items-center justify-between gap-3">
         <Pill tone={whoop.connected ? 'green' : 'neutral'}>{statusLabel}</Pill>
-        <span className="text-[12px] text-hx-muted">{whoop.lastImportAt ? `Last import ${relativeTime(whoop.lastImportAt, now)}` : ''}</span>
+        <span className="text-[13px] leading-[18px] text-hx-muted">{whoop.lastImportAt ? `Last import ${relativeTime(whoop.lastImportAt, now)}` : ''}</span>
       </div>
       <div>
         <KV k="Days with WHOOP data" v={whoopDays} />
-        <KV k="Latest" v={latest ? `${formatDateShort(latest.d)} · ${latest.rec !== undefined ? `${latest.rec}% recovery` : `${latest.hrv} ms HRV`}` : '—'} />
+        <KV k="Latest" v={latest ? `${formatDateShort(latest.d)}, ${latest.rec !== undefined ? `${latest.rec}% recovery` : `${latest.hrv} ms HRV`}` : '—'} />
         <KV k="Readiness source" v={whoop.connected && state.settings.profile.wearable === 'whoop' ? 'WHOOP recovery %' : 'HRV band (no recovery %)'} />
       </div>
 
@@ -143,7 +143,7 @@ function ImportResultCard({ summary, onDismiss }: { summary: ImportSummary; onDi
     <Banner kind={ok ? (parsed.skipped > 0 || errors.length > 0 ? 'warn' : 'success') : 'error'} onDismiss={onDismiss}>
       <p className="font-semibold truncate">{fileName}</p>
       <p className="text-hx-text2">
-        {parsed.records.length} day{parsed.records.length === 1 ? '' : 's'} parsed · {updated} updated · {created} new · {parsed.skipped} skipped
+        {parsed.records.length} day{parsed.records.length === 1 ? '' : 's'} parsed, {updated} updated, {created} new, {parsed.skipped} skipped
       </p>
       {parsed.columnsFound.length > 0 && (
         <p className="mt-1 text-hx-text2">

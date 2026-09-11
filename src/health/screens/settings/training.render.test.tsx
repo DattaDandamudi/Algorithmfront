@@ -125,7 +125,7 @@ describe('TrainingSection', () => {
     fireEvent.change(screen.getByLabelText('Equipment'), { target: { value: 'machine' } });
     await click(screen.getByRole('button', { name: 'Add exercise' }));
     expect(screen.getByText('Pendulum Squat')).toBeTruthy();
-    expect(screen.getByText(/Quads · Machine/)).toBeTruthy();
+    expect(screen.getByText(/Quads, Machine/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Delete Pendulum Squat' })).toBeTruthy();
   });
 
@@ -143,7 +143,7 @@ describe('TrainingSection', () => {
     expect(screen.getAllByText('Upper / Lower — 4 day (A)')).toHaveLength(2);
     expect(screen.getAllByText('Upper / Lower — 4 day (B)')).toHaveLength(2);
     expect(screen.getAllByText('Built-in')).toHaveLength(2);
-    expect(screen.getAllByText('Upper 7 · Lower 6')).toHaveLength(2);
+    expect(screen.getAllByText('Upper 7, Lower 6')).toHaveLength(2);
 
     await click(screen.getAllByRole('button', { name: 'Make an editable copy' })[0]);
     expect(screen.getAllByText('Upper / Lower — 4 day (A) (my copy)').length).toBeGreaterThan(0);

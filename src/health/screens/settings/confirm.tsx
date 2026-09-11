@@ -66,8 +66,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         }
       >
         {opts && (
-          <div className="space-y-3">
-            <div className="text-[14px] leading-6 text-hx-text2">{opts.body}</div>
+          <div className="flex flex-col gap-3">
+            <div className="text-[15px] leading-[22px] text-hx-text2">{opts.body}</div>
             {needsText && (
               <label className="block">
                 <span className="hx-label">Type {opts.requireText} to continue</span>
@@ -79,7 +79,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                   autoCapitalize="characters"
                   spellCheck={false}
                   placeholder={opts.requireText}
-                  className="mt-1.5 h-11 w-full px-3 text-[15px] tracking-widest"
+                  className="mt-2 h-11 w-full px-3 font-mono"
                 />
               </label>
             )}

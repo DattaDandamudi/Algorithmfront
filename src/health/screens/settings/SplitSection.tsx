@@ -31,7 +31,7 @@ export default function SplitSection() {
   const reset = async () => {
     const ok = await confirm({
       title: 'Reset to the 4-day upper/lower split?',
-      body: 'Mon upper · Tue lower · Thu upper · Fri lower; Wed, Sat and Sun rest.',
+      body: 'Monday upper, Tuesday lower, Thursday upper, Friday lower. Wednesday, Saturday and Sunday rest.',
       confirmLabel: 'Reset',
     });
     if (!ok) return;
@@ -41,9 +41,9 @@ export default function SplitSection() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3 -mt-1">
+      <div className="flex items-start justify-between gap-3">
         <Note>
-          {liftDays} lift day{liftDays === 1 ? '' : 's'}/wk · lift days get {t.carbsLift[0]}–{t.carbsLift[1]} g carbs, rest and cardio days {t.carbsRest[0]}–{t.carbsRest[1]} g.
+          {liftDays} lift day{liftDays === 1 ? '' : 's'} a week. Lift days get {t.carbsLift[0]}–{t.carbsLift[1]} g carbs, rest and cardio days {t.carbsRest[0]}–{t.carbsRest[1]} g.
         </Note>
         <Button variant="ghost" size="sm" icon={<RotateCcw aria-hidden />} onClick={reset} disabled={isDefault}>
           Reset
@@ -55,7 +55,7 @@ export default function SplitSection() {
           const lift = isLiftSession(s);
           return (
             <li key={w} className="flex items-center gap-3 py-2">
-              <span className="w-10 shrink-0 text-[14px] font-medium text-hx-text">{weekdayShort(w)}</span>
+              <span className="w-10 shrink-0 text-[15px] leading-[22px] font-medium text-hx-text">{weekdayShort(w)}</span>
               <span className={`w-2 h-2 rounded-full shrink-0 ${lift ? 'bg-hx-green' : 'bg-hx-neutral/60'}`} aria-hidden />
               <SelectField<SessionType> label={`${weekdayShort(w)} session`} hideLabel value={s} options={SESSION_OPTIONS} onChange={(v) => set(w, v)} className="flex-1" />
             </li>

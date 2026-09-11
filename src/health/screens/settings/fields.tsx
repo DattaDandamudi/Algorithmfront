@@ -1,5 +1,5 @@
 /**
- * Settings form primitives (SPEC §5).
+ * Settings form primitives (SPEC §5, DESIGN.md material system).
  *
  * Every component here is declared at module level so React never remounts a
  * control between keystrokes — an input that loses focus while typing is the
@@ -8,6 +8,13 @@
  * values never reach the store and out-of-range values are explained inline
  * instead of being clamped silently. Text fields are bound straight to the
  * store (the writer debounces the localStorage flush).
+ *
+ * This is also the Settings screen's whole visual vocabulary: restyle a
+ * primitive here and all twelve sections follow. The materials are the ones in
+ * DESIGN.md and nothing is hand-rolled — a section is an `.hx-card` tile, the
+ * header of the section you are acting on is `.hx-raised`, inputs are wells
+ * (health.css does that globally), a toggle is a raised thumb on a well track,
+ * numerals are in the display face, and labels are sentence case at 13 px.
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
@@ -33,7 +40,14 @@ export interface SectionProps {
   children: ReactNode;
 }
 
-/** Collapsible `hx-card`. Content unmounts while collapsed (drafts are cheap to rebuild). */
+/**
+ * One span-2 tile in the Settings bento. Closed it is a plain `.hx-card` row —
+ * title, one-line summary, chevron. Open, the same tile grows its form and its
+ * header row lifts to `.hx-raised`, because that header is the control you are
+ * currently acting on. Content unmounts while collapsed (drafts are cheap to
+ * rebuild). The button's accessible name starts with the section title, which
+ * is how both the tests and the deep links find it.
+ */
 export function Section({ id, title, icon, caption, defaultOpen = false, openSignal, children }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   const ref = useRef<HTMLElement>(null);
@@ -48,25 +62,26 @@ export function Section({ id, title, icon, caption, defaultOpen = false, openSig
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [openSignal]);
   return (
-    <section ref={ref} className="hx-card overflow-hidden scroll-mt-16" aria-labelledby={headId}>
+    <section ref={ref} className="hx-card hx-span-2 overflow-hidden scroll-mt-16" aria-labelledby={headId}>
       <h2 id={headId} className="m-0">
+        {/* Open, the header slab is raised glass: square-cornered (the tile's own radius clips it) with only its bottom bezel left. */}
         <button
           type="button"
           aria-expanded={open}
           aria-controls={open ? bodyId : undefined}
           onClick={() => setOpen((o) => !o)}
-          className="w-full min-h-[60px] flex items-center gap-3 px-4 py-3 text-left hover:bg-hx-card2/60 transition-colors"
+          className={`hx-press w-full min-h-[64px] flex items-center gap-3 px-4 py-3 text-left ${open ? 'hx-raised !rounded-none !border-x-0 !border-t-0 !border-b-hx-border' : 'hover:bg-hx-card2/50 transition-colors'}`}
         >
-          {icon && <span className="w-9 h-9 shrink-0 rounded-xl bg-hx-card2 border border-hx-border inline-flex items-center justify-center text-hx-text2 [&>svg]:w-[18px] [&>svg]:h-[18px]">{icon}</span>}
+          {icon && <span className="hx-well !rounded-ctl w-9 h-9 shrink-0 inline-flex items-center justify-center text-hx-text2 [&>svg]:w-[18px] [&>svg]:h-[18px]">{icon}</span>}
           <span className="flex-1 min-w-0">
-            <span className="block text-[15px] font-semibold leading-5 text-hx-text">{title}</span>
-            {caption && <span className="block text-[12px] leading-4 text-hx-muted truncate mt-0.5">{caption}</span>}
+            <span className="hx-display block text-[17px] leading-6 font-semibold text-hx-text">{title}</span>
+            {caption && <span className="block text-[13px] leading-[18px] text-hx-muted truncate">{caption}</span>}
           </span>
           <ChevronDown className={`w-5 h-5 shrink-0 text-hx-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
         </button>
       </h2>
       {open && (
-        <div id={bodyId} className="px-4 pb-4 pt-4 space-y-4 border-t border-hx-border">
+        <div id={bodyId} className="px-4 pb-4 pt-4 flex flex-col gap-4">
           {children}
         </div>
       )}
@@ -76,39 +91,40 @@ export function Section({ id, title, icon, caption, defaultOpen = false, openSig
 
 export function Field({ label, htmlFor, hint, error, children, className = '' }: { label: string; htmlFor?: string; hint?: ReactNode; error?: string | null; children: ReactNode; className?: string }) {
   return (
-    <div className={`flex flex-col gap-1.5 ${className}`}>
+    <div className={`flex flex-col gap-2 ${className}`}>
       <label htmlFor={htmlFor} className="hx-label">
         {label}
       </label>
       {children}
       {error ? (
-        <p className="text-[12px] leading-4 text-hx-red" role="alert">
+        <p className="text-[13px] leading-[18px] text-hx-red" role="alert">
           {error}
         </p>
       ) : hint ? (
-        <p className="text-[12px] leading-4 text-hx-muted">{hint}</p>
+        <p className="text-[13px] leading-[18px] text-hx-muted">{hint}</p>
       ) : null}
     </div>
   );
 }
 
-/** Muted paragraph for explanatory copy inside a section. */
+/** Explanatory copy inside a section — body text, so 15/22 (DESIGN.md "Type"). */
 export function Note({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <p className={`text-[13px] leading-5 text-hx-text2 ${className}`}>{children}</p>;
+  return <p className={`text-[15px] leading-[22px] text-hx-text2 ${className}`}>{children}</p>;
 }
 
-/** `.hx-label` sub-heading inside a section body. */
+/** A tile's own sub-heading: display face, 15/20, sentence case. */
 export function SubHeading({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 min-h-6">
-      <h3 className="hx-label">{children}</h3>
+    <div className="flex items-center justify-between gap-3 min-h-7">
+      <h3 className="hx-display text-[15px] leading-5 font-semibold text-hx-text">{children}</h3>
       {action}
     </div>
   );
 }
 
+/** A state word in its own tone wash: sentence case, 13 px, no letter-spacing. */
 export function Pill({ tone, children, className = '' }: { tone: Tone; children: ReactNode; className?: string }) {
-  return <span className={`inline-flex items-center h-6 px-2 rounded-full text-[11px] font-semibold uppercase tracking-wide ${bandSoftBg(tone)} ${bandText(tone)} ${className}`}>{children}</span>;
+  return <span className={`inline-flex items-center h-7 px-2.5 rounded-full text-[13px] leading-[18px] font-medium whitespace-nowrap ${bandSoftBg(tone)} ${bandText(tone)} ${className}`}>{children}</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -217,9 +233,9 @@ export function NumberField({ label, value, onCommit, onClear, min, max, step = 
         }}
         onBlur={commit}
         onKeyDown={onKey}
-        className={`${CONTROL} ${unit ? 'pr-14' : ''} ${error ? 'border-hx-red' : ''}`}
+        className={`hx-display ${CONTROL} ${unit ? 'pr-14' : ''} ${error ? '!border-hx-red' : ''}`}
       />
-      {unit && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-hx-muted pointer-events-none">{unit}</span>}
+      {unit && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] leading-[18px] text-hx-muted pointer-events-none">{unit}</span>}
     </div>
   );
 
@@ -228,7 +244,7 @@ export function NumberField({ label, value, onCommit, onClear, min, max, step = 
       <div className={className}>
         {control}
         {error && (
-          <p className="mt-1 text-[12px] leading-4 text-hx-red" role="alert">
+          <p className="mt-1 text-[13px] leading-[18px] text-hx-red" role="alert">
             {error}
           </p>
         )}
@@ -359,27 +375,27 @@ export function DateField({ label, value, onChange, hint, max, className = '' }:
   );
 }
 
+/**
+ * A switch: a raised thumb sliding on a well track. Off is a glass knob sunk
+ * at the left of a dark track; on lights the track and turns the knob to lume.
+ * Position, the lit track and `aria-checked` all carry the state — never a hue
+ * on its own, and nothing decorative is coloured (DESIGN.md "the accent is light").
+ */
 export function Toggle({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: ReactNode }) {
   const id = useId();
   return (
     <div className="flex items-center justify-between gap-4 min-h-[44px]">
       <div className="min-w-0">
-        <label htmlFor={id} className="text-[15px] text-hx-text">
+        <label htmlFor={id} className="text-[15px] leading-[22px] text-hx-text">
           {label}
         </label>
-        {hint && <p className="text-[12px] leading-4 text-hx-muted">{hint}</p>}
+        {hint && <p className="text-[13px] leading-[18px] text-hx-muted">{hint}</p>}
       </div>
       {/* 44 px hit area (h-11, side padding) around the 48×28 track (review R6-2). */}
-      <button
-        id={id}
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className="shrink-0 h-11 px-1 -mr-1 inline-flex items-center rounded-xl"
-      >
-        <span className={`relative block w-12 h-7 rounded-full border transition-colors ${checked ? 'bg-hx-green/80 border-hx-green' : 'bg-hx-card2 border-hx-border'}`} aria-hidden>
-          <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-hx-text shadow transition-transform ${checked ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+      <button id={id} type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="hx-press shrink-0 h-11 px-1 -mr-1 inline-flex items-center rounded-ctl">
+        <span className="hx-well relative block w-12 h-7 rounded-full" aria-hidden>
+          <span className={`absolute inset-0 rounded-full bg-hx-lume/15 transition-opacity ${checked ? 'opacity-100' : 'opacity-0'}`} />
+          <span className={`hx-raised !absolute !rounded-full left-0 top-0.5 w-6 h-6 transition-transform ${checked ? 'translate-x-[22px] !bg-hx-lume' : 'translate-x-0.5'}`} />
         </span>
       </button>
     </div>
@@ -389,9 +405,9 @@ export function Toggle({ label, checked, onChange, hint }: { label: string; chec
 /** Label + value line used in read-only summaries (storage, integrity, about). */
 export function KV({ k, v }: { k: string; v: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5 border-b border-hx-border/60 last:border-b-0">
-      <span className="text-[13px] text-hx-text2">{k}</span>
-      <span className="text-[13px] text-hx-text text-right">{v}</span>
+    <div className="flex items-baseline justify-between gap-4 py-2 border-b border-hx-border/60 last:border-b-0">
+      <span className="text-[13px] leading-[18px] text-hx-text2">{k}</span>
+      <span className="hx-display text-[15px] leading-5 text-hx-text text-right">{v}</span>
     </div>
   );
 }

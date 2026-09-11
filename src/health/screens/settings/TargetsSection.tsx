@@ -45,7 +45,7 @@ export default function TargetsSection() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3 -mt-1">
+      <div className="flex items-start justify-between gap-3">
         <Note>Validated on blur; nothing saves until a value passes.</Note>
         <Button variant="ghost" size="sm" icon={<RotateCcw aria-hidden />} onClick={reset}>
           Reset
@@ -79,7 +79,7 @@ export default function TargetsSection() {
           step={5}
           unit="g"
           validate={(n) => (n > t.fatTarget ? `Cannot exceed the ${t.fatTarget} g target.` : null)}
-          hint={`${fmt(t.fatFloor / kg, 2)} g/kg · never below 40`}
+          hint={`${fmt(t.fatFloor / kg, 2)} g/kg, never below 40`}
           onCommit={(fatFloor) => actions.updateTargets({ fatFloor })}
         />
       </div>
@@ -102,7 +102,7 @@ export default function TargetsSection() {
           min={20}
           max={60}
           unit="ml/kg"
-          hint={`≈ ${fmt((t.waterMlPerKg * kg) / 1000, 1)} L · ${Math.round((t.waterMlPerKg * kg) / 250)} cups`}
+          hint={`≈ ${fmt((t.waterMlPerKg * kg) / 1000, 1)} L, ${Math.round((t.waterMlPerKg * kg) / 250)} cups`}
           onCommit={(waterMlPerKg) => actions.updateTargets({ waterMlPerKg })}
         />
         <NumberField label="Steps min" value={t.stepsMin} min={1000} max={50000} step={500} validate={(n) => (n > t.stepsMax ? `Must be ≤ ${t.stepsMax.toLocaleString()}.` : null)} onCommit={(stepsMin) => actions.updateTargets({ stepsMin })} />
@@ -138,7 +138,7 @@ export default function TargetsSection() {
       </div>
       <Field label={`EWMA smoothing α = ${t.ewmaAlpha.toFixed(2)}`} htmlFor="hx-alpha" hint="0.10 ≈ 20-day smoothing (Hacker's Diet default) — higher tracks faster but shows more water-weight noise. Changing α recomputes every trend point.">
         <div className="flex items-center gap-3">
-          <span className="text-[12px] text-hx-muted w-8">0.10</span>
+          <span className="hx-display text-[13px] leading-[18px] text-hx-muted w-8">0.10</span>
           <input
             id="hx-alpha"
             type="range"
@@ -147,10 +147,10 @@ export default function TargetsSection() {
             step={0.01}
             value={t.ewmaAlpha}
             onChange={(e) => actions.updateTargets({ ewmaAlpha: round(Number(e.target.value), 2) })}
-            className="flex-1 h-11 accent-[var(--hx-blue)] !border-0 !bg-transparent"
+            className="flex-1 h-11 accent-[var(--hx-lume)] !border-0 !bg-transparent !shadow-none"
             aria-valuetext={`${t.ewmaAlpha.toFixed(2)}`}
           />
-          <span className="text-[12px] text-hx-muted w-8 text-right">0.25</span>
+          <span className="hx-display text-[13px] leading-[18px] text-hx-muted w-8 text-right">0.25</span>
         </div>
       </Field>
 

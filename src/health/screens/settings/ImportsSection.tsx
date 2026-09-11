@@ -146,11 +146,11 @@ export default function ImportsSection({ now }: { now: number }) {
               ? (Object.keys(bySource) as WorkoutSource[])
                   .sort()
                   .map((s) => `${bySource[s]} ${s}`)
-                  .join(' · ')
+                  .join(', ')
               : '—'
           }
         />
-        <KV k="Most recent" v={latest ? `${formatDateShort(latest.d)} · ${latest.title ?? latest.kind}` : '—'} />
+        <KV k="Most recent" v={latest ? `${formatDateShort(latest.d)}, ${latest.title ?? latest.kind}` : '—'} />
       </div>
 
       <Note>
@@ -163,7 +163,7 @@ export default function ImportsSection({ now }: { now: number }) {
         const at = imports[spec.stamp];
         return (
           <div key={spec.key}>
-            <SubHeading action={<span className="text-[12px] text-hx-muted">{at ? relativeTime(at, now) : 'never'}</span>}>{spec.label}</SubHeading>
+            <SubHeading action={<span className="text-[13px] leading-[18px] text-hx-muted">{at ? relativeTime(at, now) : 'never'}</span>}>{spec.label}</SubHeading>
             <Note className="text-hx-muted mb-2">
               {spec.where} → <span className="text-hx-text">{spec.file}</span>
               {spec.key === 'apple'
@@ -177,7 +177,7 @@ export default function ImportsSection({ now }: { now: number }) {
               Choose {spec.file}
             </Button>
             {busy === spec.key && progress && (
-              <p role="status" className="mt-1.5 text-[12px] leading-4 text-hx-muted">
+              <p role="status" className="mt-2 text-[13px] leading-[18px] text-hx-muted">
                 Read {formatBytes(progress.read)} of {formatBytes(progress.total)}…
               </p>
             )}
@@ -212,11 +212,11 @@ function ImportSummaryCard({ summary, onDismiss }: { summary: Summary; onDismiss
     <Banner kind={kind} onDismiss={onDismiss}>
       <p className="font-semibold truncate">
         {fileName}
-        {source ? ` · ${source}` : ''}
+        {source ? `, ${source}` : ''}
       </p>
       <p className="text-hx-text2">
-        {read} session{read === 1 ? '' : 's'} read · {added} added · {skipped} already here
-        {parsed.skipped > 0 ? ` · ${parsed.skipped} unreadable` : ''}
+        {read} session{read === 1 ? '' : 's'} read, {added} added, {skipped} already here
+        {parsed.skipped > 0 ? `, ${parsed.skipped} unreadable` : ''}
       </p>
       {scan && (
         <p className="mt-1 text-hx-muted">

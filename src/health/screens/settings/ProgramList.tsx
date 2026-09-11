@@ -93,11 +93,11 @@ export default function ProgramList() {
           const mine = !p.builtIn;
           const open = openId === p.id;
           return (
-            <li key={p.id} className="rounded-xl border border-hx-border bg-hx-card2/40 px-3 py-2.5">
+            <li key={p.id} className="hx-well !rounded-ctl px-3 py-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[14px] leading-5 text-hx-text truncate">{p.name}</p>
-                  <p className="text-[12px] leading-4 text-hx-muted">{programSummary(p)}</p>
+                  <p className="text-[15px] leading-[22px] text-hx-text truncate">{p.name}</p>
+                  <p className="text-[13px] leading-[18px] text-hx-muted">{programSummary(p)}</p>
                 </div>
                 <Pill tone={mine ? 'blue' : 'neutral'}>{mine ? 'Yours' : 'Built-in'}</Pill>
               </div>
@@ -164,12 +164,12 @@ function ProgramEditor({ program, onChange, onConfirm }: { program: Program; onC
           <h4 className="hx-label mb-1">{SESSION_OPTIONS.find((o) => o.value === key)?.label ?? key}</h4>
           <ul className="flex flex-col gap-2">
             {(program.sessions[key] ?? []).map((e, i) => (
-              <li key={`${e.exerciseId}-${i}`} className="rounded-lg border border-hx-border/70 px-2 py-2">
+              <li key={`${e.exerciseId}-${i}`} className="rounded-ctl border border-hx-border/70 px-2.5 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[13px] leading-5 text-hx-text truncate">{exerciseName(e.exerciseId, customExercises)}</span>
+                  <span className="text-[15px] leading-[22px] text-hx-text truncate">{exerciseName(e.exerciseId, customExercises)}</span>
                   <Button variant="ghost" size="sm" aria-label={`Remove ${exerciseName(e.exerciseId, customExercises)} from ${key}`} icon={<Trash2 aria-hidden />} onClick={() => removeExercise(key, i)} />
                 </div>
-                <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+                <div className="mt-2 grid grid-cols-4 gap-1.5">
                   <MiniField label="Sets">
                     <NumberField label={`${exerciseName(e.exerciseId, customExercises)} sets`} hideLabel value={e.sets} min={1} max={12} onCommit={(sets) => setExercise(key, i, { sets })} />
                   </MiniField>
@@ -226,7 +226,7 @@ function ProgramEditor({ program, onChange, onConfirm }: { program: Program; onC
 function MiniField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <span className="block text-[11px] leading-4 text-hx-muted mb-0.5">{label}</span>
+      <span className="block text-[13px] leading-[18px] text-hx-muted mb-1">{label}</span>
       {children}
     </div>
   );

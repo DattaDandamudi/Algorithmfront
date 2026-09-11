@@ -71,13 +71,15 @@ export default function LandmarkTable() {
 
       <Note>{VOLUME_ADVISORY_NOTE}</Note>
 
-      <div role="table" aria-label="Weekly set landmarks per muscle" className="text-[12px]">
-        <div role="row" className="grid grid-cols-[minmax(0,1fr)_54px_54px_54px] gap-1 items-end pb-1">
+      {/* A real table: the volume grid reads these cells as its hidden data. */}
+      <div role="table" aria-label="Weekly set landmarks per muscle">
+        <div role="row" className="grid grid-cols-[minmax(0,1fr)_54px_54px_54px] gap-1.5 items-end pb-1.5">
           <span role="columnheader" className="hx-label">
             Muscle
           </span>
           {COLUMNS.map((c) => (
-            <span key={c.key} role="columnheader" className="hx-label text-center" title={c.full}>
+            // pl-3 lines the head up with the first digit of the cell below it.
+            <span key={c.key} role="columnheader" className="hx-label block pl-3" title={c.full}>
               {c.head}
             </span>
           ))}
@@ -85,8 +87,8 @@ export default function LandmarkTable() {
         {MUSCLES.map((m) => {
           const row = landmarks[m];
           return (
-            <div role="row" key={m} className="grid grid-cols-[minmax(0,1fr)_54px_54px_54px] gap-1 items-start py-1 border-t border-hx-border/60">
-              <span role="rowheader" className="text-[13px] leading-[44px] text-hx-text truncate">
+            <div role="row" key={m} className="grid grid-cols-[minmax(0,1fr)_54px_54px_54px] gap-1.5 items-start py-1 border-t border-hx-border/60">
+              <span role="rowheader" className="text-[15px] leading-[44px] text-hx-text truncate">
                 {muscleLabel(m)}
               </span>
               {COLUMNS.map((c) => (

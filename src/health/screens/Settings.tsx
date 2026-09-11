@@ -1,5 +1,6 @@
 /**
- * Settings — SPEC §5 and §10. Twelve collapsible cards, top → bottom:
+ * Settings — SPEC §5 and §10. Twelve collapsible span-2 tiles in one bento
+ * (DESIGN.md "Bento rules"), top → bottom:
  *   1 Profile & goals   2 Targets    3 Training split  4 Training
  *   5 Daily check-in    6 Bloodwork  7 Food preferences
  *   8 WHOOP             9 Imports   10 Coach & AI     11 Data     12 About
@@ -88,11 +89,11 @@ export default function Settings() {
     <ConfirmProvider>
       <div className="flex flex-col">
         <header className="sticky top-0 z-20 bg-hx-base/95 backdrop-blur px-4 pt-4 pb-3">
-          <h1 className="text-[17px] leading-6 font-semibold text-hx-text">Settings</h1>
-          <p className="text-[12px] leading-4 text-hx-muted">Saves as you edit · stored only in this browser</p>
+          <h1 className="hx-display text-[22px] leading-7 font-semibold text-hx-text">Settings</h1>
+          <p className="text-[13px] leading-[18px] text-hx-muted">Saves as you edit, stored only in this browser.</p>
         </header>
 
-        <div className="px-4 pt-1 pb-5 flex flex-col gap-3">
+        <div className="hx-bento px-4 pt-1 pb-5">
           <Section id="hx-set-profile" title="Profile & goals" icon={<User aria-hidden />} caption={profileCaption(settings)} defaultOpen openSignal={signal('profile')}>
             <ProfileSection />
           </Section>
@@ -142,8 +143,8 @@ export default function Settings() {
           </Section>
         </div>
 
-        <footer className="px-4 pb-2 text-center">
-          <p className="text-[11px] leading-4 text-hx-muted">Wellness information only — not medical advice.</p>
+        <footer className="px-4 pb-2 text-left">
+          <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
         </footer>
       </div>
     </ConfirmProvider>

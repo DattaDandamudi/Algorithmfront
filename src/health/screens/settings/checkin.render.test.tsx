@@ -46,7 +46,7 @@ describe('CheckInSection (settings)', () => {
     for (const label of ['Sleep quality', 'Fatigue', 'Stress', 'Muscle soreness']) {
       expect(screen.getByRole('button', { name: label, pressed: true })).toBeTruthy();
     }
-    expect(screen.getByText('4 of 4 · about 20 seconds.')).toBeTruthy();
+    expect(screen.getByText('4 of 4, about 20 seconds.')).toBeTruthy();
     expect(screen.getByText(/How restful last night felt, 1–7/)).toBeTruthy();
   });
 
@@ -64,7 +64,7 @@ describe('CheckInSection (settings)', () => {
     mount(<CheckInSection />);
     await click(screen.getByRole('button', { name: 'Stress' }));
     expect(screen.getByRole('button', { name: 'Stress', pressed: false })).toBeTruthy();
-    expect(screen.getByText('3 of 4 · about 15 seconds.')).toBeTruthy();
+    expect(screen.getByText('3 of 4, about 15 seconds.')).toBeTruthy();
     expect(screen.queryByText(/Life stress, not training stress/)).toBeNull();
     // Turning it back on restores the canonical order, not the click order.
     await click(screen.getByRole('button', { name: 'Stress' }));

@@ -5,7 +5,7 @@
  * The count line is the contract: an import must say what it read, what it
  * added and what it recognised as already here. The re-import case is the one
  * that has to be honest — the store dedupes by `externalId`, so choosing the
- * same export twice must report "0 added · N already here" rather than
+ * same export twice must report "0 added, N already here" rather than
  * claiming a second successful import.
  */
 import type { ReactNode } from 'react';
@@ -49,11 +49,11 @@ async function choose(input: HTMLInputElement, name: string, text: string, type 
   });
   // The banner is role=status when everything landed and role=alert when
   // something was skipped, so wait on the count line rather than on a role.
-  await waitFor(() => expect(screen.getByText(/sessions? read ·/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/sessions? read,/)).toBeTruthy());
 }
 
-/** "2 sessions read · 2 added · 0 already here" */
-const countLine = () => screen.getByText(/sessions? read ·/).textContent ?? '';
+/** "2 sessions read, 2 added, 0 already here" */
+const countLine = () => screen.getByText(/sessions? read,/).textContent ?? '';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -84,13 +84,13 @@ describe('ImportsSection', () => {
     const whoop = fileInputs(container)[0];
 
     await choose(whoop, 'workouts.csv', WHOOP_CSV);
-    expect(countLine()).toBe('2 sessions read · 2 added · 0 already here');
-    expect(screen.getByText('workouts.csv · whoop')).toBeTruthy();
+    expect(countLine()).toBe('2 sessions read, 2 added, 0 already here');
+    expect(screen.getByText('workouts.csv, whoop')).toBeTruthy();
     expect(screen.getByText('2')).toBeTruthy(); // Sessions stored
 
     // The same export again: the store recognises both by their externalId.
     await choose(whoop, 'workouts.csv', WHOOP_CSV);
-    expect(countLine()).toBe('2 sessions read · 0 added · 2 already here');
+    expect(countLine()).toBe('2 sessions read, 0 added, 2 already here');
     expect(screen.getByText('2 whoop')).toBeTruthy();
   });
 
@@ -98,31 +98,31 @@ describe('ImportsSection', () => {
     const { container } = mount(<ImportsSection now={NOW} />);
     await choose(fileInputs(container)[0], 'workouts.csv', WHOOP_CSV);
     await choose(fileInputs(container)[1], 'activities.csv', STRAVA_CSV);
-    expect(countLine()).toBe('1 session read · 1 added · 0 already here');
-    expect(screen.getByText('1 strava · 2 whoop')).toBeTruthy();
+    expect(countLine()).toBe('1 session read, 1 added, 0 already here');
+    expect(screen.getByText('1 strava, 2 whoop')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Export workouts CSV' }) as HTMLButtonElement).disabled).toBe(false);
 
     // Strava dedupes on its own Activity ID, so a second pass adds nothing.
     await choose(fileInputs(container)[1], 'activities.csv', STRAVA_CSV);
-    expect(countLine()).toBe('1 session read · 0 added · 1 already here');
+    expect(countLine()).toBe('1 session read, 0 added, 1 already here');
     expect(screen.getByText('3')).toBeTruthy(); // still three sessions stored
   });
 
   it('streams the Apple export, skipping the record samples', async () => {
     const { container } = mount(<ImportsSection now={NOW} />);
     await choose(fileInputs(container)[2], 'export.xml', APPLE_XML, 'text/xml');
-    expect(countLine()).toBe('1 session read · 1 added · 0 already here');
+    expect(countLine()).toBe('1 session read, 1 added, 0 already here');
     expect(screen.getByText(/2 record samples skipped/)).toBeTruthy();
     expect(screen.getByText(/in 1 chunk/)).toBeTruthy();
 
     await choose(fileInputs(container)[2], 'export.xml', APPLE_XML, 'text/xml');
-    expect(countLine()).toBe('1 session read · 0 added · 1 already here');
+    expect(countLine()).toBe('1 session read, 0 added, 1 already here');
   });
 
   it('says a file is not what it claims instead of importing nothing quietly', async () => {
     const { container } = mount(<ImportsSection now={NOW} />);
     await choose(fileInputs(container)[0], 'notes.txt', 'dear diary\n', 'text/plain');
-    expect(countLine()).toBe('0 sessions read · 0 added · 0 already here');
+    expect(countLine()).toBe('0 sessions read, 0 added, 0 already here');
     expect(screen.getByText(/Could not tell what "notes.txt" is/)).toBeTruthy();
   });
 
@@ -130,7 +130,7 @@ describe('ImportsSection', () => {
     const { container } = mount(<ImportsSection now={NOW} />);
     const csv = ['Workout start time,Duration (min),Activity name', 'nope,60,Running', '2026-09-05 10:00:00,30,Running'].join('\n');
     await choose(fileInputs(container)[0], 'workouts.csv', csv);
-    expect(countLine()).toBe('1 session read · 1 added · 0 already here · 1 unreadable');
+    expect(countLine()).toBe('1 session read, 1 added, 0 already here, 1 unreadable');
     expect(screen.getByText(/Row 2: unreadable start time/)).toBeTruthy();
   });
 });

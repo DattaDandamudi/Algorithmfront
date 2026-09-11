@@ -56,7 +56,7 @@ export default function CheckInSection() {
         onChange={(enabled) => set({ enabled })}
       />
 
-      <Field label="Items to ask" hint={c.items.length === 1 ? 'One item left — turn the prompt off above if you would rather not be asked at all.' : `${c.items.length} of 4 · about ${c.items.length * 5} seconds.`}>
+      <Field label="Items to ask" hint={c.items.length === 1 ? 'One item left — turn the prompt off above if you would rather not be asked at all.' : `${c.items.length} of 4, about ${c.items.length * 5} seconds.`}>
         <div className="flex flex-wrap gap-2">
           {CHECK_IN_ITEMS.map((item) => {
             const on = c.items.includes(item.key);
@@ -69,10 +69,10 @@ export default function CheckInSection() {
           })}
         </div>
       </Field>
-      <ul className="text-[12px] leading-4 text-hx-muted space-y-0.5">
+      <ul className="flex flex-col gap-1 text-[13px] leading-[18px] text-hx-muted">
         {CHECK_IN_ITEMS.filter((i) => c.items.includes(i.key)).map((i) => (
           <li key={i.key}>
-            <span className="text-hx-text2">{i.label}</span> — {i.hint}, 1–7
+            <span className="text-hx-text2">{i.label}</span>: {i.hint}, 1–7
           </li>
         ))}
       </ul>

@@ -109,23 +109,23 @@ function FavoriteRow({ item, onGrams, onUnstar }: { item: FoodItem; onGrams: (g:
   const g = item.defaultGrams > 0 ? item.defaultGrams : 100;
   const kcal = (item.per100.kc * g) / 100;
   const protein = (item.per100.p * g) / 100;
-  const unit = item.unitName && item.unitGrams ? ` · 1 ${item.unitName} = ${fmt(item.unitGrams)} g` : '';
+  const unit = item.unitName && item.unitGrams ? `, 1 ${item.unitName} = ${fmt(item.unitGrams)} g` : '';
   return (
     <li className="flex items-center gap-3 py-2.5">
       <div className="flex-1 min-w-0">
-        <p className="text-[14px] font-medium text-hx-text truncate">{item.name}</p>
-        <p className="text-[12px] leading-4 text-hx-muted truncate">
-          {fmt(kcal)} kcal · {fmt(protein)} g P per portion{item.cuisine ? ` · ${cuisineName(item.cuisine)}` : ''}
+        <p className="text-[15px] leading-[22px] font-medium text-hx-text truncate">{item.name}</p>
+        <p className="text-[13px] leading-[18px] text-hx-muted truncate">
+          {fmt(kcal)} kcal, {fmt(protein)} g protein per portion{item.cuisine ? `, ${cuisineName(item.cuisine)}` : ''}
           {unit}
         </p>
       </div>
-      <NumberField label={`${item.name} portion`} hideLabel value={item.defaultGrams} min={5} max={2000} step={5} unit="g" className="w-28 shrink-0" onCommit={onGrams} />
+      <NumberField label={`${item.name} portion`} hideLabel value={item.defaultGrams} min={5} max={2000} step={5} unit="g" className="w-24 shrink-0" onCommit={onGrams} />
       <button
         type="button"
         onClick={onUnstar}
         aria-label={`Remove ${item.name} from favorites`}
         aria-pressed
-        className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-xl text-hx-yellow hover:bg-hx-card2"
+        className="hx-press w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-ctl text-hx-yellow hover:bg-hx-card2"
       >
         <Star className="w-[18px] h-[18px]" fill="currentColor" aria-hidden />
       </button>

@@ -1,7 +1,7 @@
 /**
  * Settings §4 — Bloodwork summary (SPEC §6.7, display-only).
  *
- * Rows show label · value+unit · status pill (low/high/elevated red,
+ * Rows show the label, the value with its unit and a status pill (low/high/elevated red,
  * low-normal yellow, normal green). Expanding a row edits value / unit /
  * status / tested-on / retest dates and shows the engine's per-marker
  * guidance (`micronutrients.markerGuidance`): general ranges + habits with
@@ -140,21 +140,21 @@ function MarkerRow({ marker: m, open, reminder, today, onToggle, onChange, onRem
   return (
     <li>
       {/* aria-controls only while the panel exists — no dangling ARIA reference when collapsed (review R6-10). */}
-      <button type="button" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle} className="w-full min-h-[52px] flex items-center gap-3 px-1 py-2 text-left hover:bg-hx-card2/60 rounded-xl transition-colors">
+      <button type="button" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle} className="hx-press w-full min-h-[52px] flex items-center gap-3 px-1 py-2 text-left hover:bg-hx-card2/60 rounded-ctl transition-colors">
         <span className="flex-1 min-w-0">
-          <span className="block text-[14px] font-medium text-hx-text truncate">{m.label}</span>
-          <span className="block text-[12px] leading-4 text-hx-muted">
+          <span className="block text-[15px] leading-[22px] font-medium text-hx-text truncate">{m.label}</span>
+          <span className="block text-[13px] leading-[18px] text-hx-muted">
             {m.testedOn ? `Tested ${formatDateShort(m.testedOn)}` : 'Test date not set'}
-            {reminder?.overdue ? ' · retest overdue' : ''}
+            {reminder?.overdue ? ', retest overdue' : ''}
           </span>
         </span>
-        <span className="text-[15px] font-semibold text-hx-text whitespace-nowrap">{markerValueText(m)}</span>
+        <span className="hx-display text-[17px] leading-6 font-semibold text-hx-text whitespace-nowrap">{markerValueText(m)}</span>
         <Pill tone={tone}>{statusLabel}</Pill>
         <ChevronDown className={`w-4 h-4 shrink-0 text-hx-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
       </button>
 
       {open && (
-        <div id={panelId} className="px-1 pb-4 pt-1 space-y-4">
+        <div id={panelId} className="px-1 pb-4 pt-1 flex flex-col gap-4">
           <TextField label="Label" value={m.label} maxLength={40} onChange={(label) => onChange({ label })} />
           <div className="grid grid-cols-2 gap-3">
             <NumberField label="Value" value={Number.isFinite(m.value) && !(m.value === 0 && !m.unit) ? m.value : null} min={0} max={100000} dp={2} step={m.unit === '%' ? 0.1 : 1} placeholder="—" onCommit={(value) => onChange({ value })} onClear={() => onChange({ value: 0 })} />
@@ -185,11 +185,11 @@ function MarkerRow({ marker: m, open, reminder, today, onToggle, onChange, onRem
               )}
             </Banner>
           ) : (
-            <div className="rounded-xl border border-hx-border bg-hx-card2/60 px-3 py-3 space-y-2">
-              <p className="text-[13px] font-semibold text-hx-text">{guidance.headline}</p>
-              <p className="text-[13px] leading-5 text-hx-text2">{guidance.generalInfo}</p>
+            <div className="hx-well !rounded-ctl px-3 py-3 flex flex-col gap-2">
+              <p className="hx-display text-[15px] leading-5 font-semibold text-hx-text">{guidance.headline}</p>
+              <p className="text-[15px] leading-[22px] text-hx-text2">{guidance.generalInfo}</p>
               {guidance.habits.length > 0 && (
-                <ul className="list-disc pl-4 space-y-1 text-[13px] leading-5 text-hx-text2">
+                <ul className="list-disc pl-4 space-y-1 text-[15px] leading-[22px] text-hx-text2">
                   {guidance.habits.map((h) => (
                     <li key={h}>{h}</li>
                   ))}
@@ -225,7 +225,7 @@ function AddMarkerForm({ today, onAdd, onCancel }: { today: ISODate; onAdd: (m: 
   const [draft, setDraft] = useState<NewMarker>({ label: '', value: null, unit: '', status: 'normal', testedOn: today });
   const canAdd = draft.label.trim().length > 0;
   return (
-    <div className="rounded-xl border border-hx-border bg-hx-card2/40 px-3 py-3 space-y-3">
+    <div className="hx-raised !rounded-ctl px-3 py-3 flex flex-col gap-3">
       <SubHeading>New marker</SubHeading>
       <TextField label="Label" value={draft.label} maxLength={40} placeholder="e.g. HbA1c" onChange={(label) => setDraft((d) => ({ ...d, label }))} />
       <div className="grid grid-cols-2 gap-3">

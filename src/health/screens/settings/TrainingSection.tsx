@@ -172,12 +172,12 @@ function CustomExercises({ training, onConfirm }: { training: TrainingSettings; 
       {list.length > 0 && (
         <ul className="flex flex-col gap-2">
           {list.map((e) => (
-            <li key={e.id} className="flex items-center gap-2 rounded-xl border border-hx-border bg-hx-card2/40 px-3 py-2">
+            <li key={e.id} className="hx-well !rounded-ctl flex items-center gap-2 px-3 py-2">
               <span className="min-w-0 flex-1">
-                <span className="block text-[14px] leading-5 text-hx-text truncate">{e.name}</span>
-                <span className="block text-[12px] leading-4 text-hx-muted truncate">
-                  {e.muscles.primary.map(muscleLabel).join(', ')} · {EQUIPMENT_OPTIONS.find((o) => o.value === e.equipment)?.label ?? e.equipment}
-                  {e.unilateral ? ' · per side' : ''}
+                <span className="block text-[15px] leading-[22px] text-hx-text truncate">{e.name}</span>
+                <span className="block text-[13px] leading-[18px] text-hx-muted truncate">
+                  {e.muscles.primary.map(muscleLabel).join(', ')}, {EQUIPMENT_OPTIONS.find((o) => o.value === e.equipment)?.label ?? e.equipment}
+                  {e.unilateral ? ', per side' : ''}
                 </span>
               </span>
               <Button variant="ghost" size="sm" icon={<Trash2 aria-hidden />} aria-label={`Delete ${e.name}`} onClick={() => remove(e)} />
@@ -187,7 +187,7 @@ function CustomExercises({ training, onConfirm }: { training: TrainingSettings; 
       )}
 
       {adding ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-hx-border bg-hx-card2/40 p-3">
+        <div className="hx-raised !rounded-ctl flex flex-col gap-3 p-3">
           <TextField
             label="Name"
             value={draft.name}

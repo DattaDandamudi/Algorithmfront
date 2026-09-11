@@ -32,14 +32,14 @@ export default function AboutSection() {
         <KV k="Engine" v={`v${ENGINE_VERSION}`} />
         <KV k="Data schema" v={`v${SCHEMA_VERSION}`} />
         <KV k="Build" v={import.meta.env.MODE === 'production' ? 'production' : import.meta.env.MODE} />
-        <KV k="Storage" v="localStorage · month shards" />
+        <KV k="Storage" v="localStorage, month shards" />
       </div>
 
       <SubHeading>Evidence anchors</SubHeading>
-      <Note className="text-hx-muted -mt-2">The rules the tiles, insights and coach apply. Editable values (targets, α, split) live in the sections above.</Note>
-      <ul className="space-y-3">
+      <Note className="text-hx-muted -mt-2.5">The rules the tiles, insights and coach apply. Editable values (targets, α, split) live in the sections above.</Note>
+      <ul className="flex flex-col gap-3">
         {ANCHORS.map((a) => (
-          <li key={a.title} className="text-[13px] leading-5">
+          <li key={a.title} className="text-[15px] leading-[22px]">
             <span className="font-semibold text-hx-text">{a.title}. </span>
             <span className="text-hx-text2">{a.body}</span>
           </li>

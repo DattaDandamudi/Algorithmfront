@@ -180,11 +180,11 @@ export default function DataSection({ now }: { now: number }) {
           aria-valuemax={100}
           aria-valuenow={Math.round(ratio * 100)}
           aria-valuetext={`${formatBytes(storage.bytesUsed)} of ${formatBytes(QUOTA_BYTES)}`}
-          className="h-2.5 w-full rounded-full bg-hx-card2 border border-hx-border overflow-hidden"
+          className="hx-well h-2.5 w-full rounded-full overflow-hidden"
         >
           <div className={`h-full rounded-full ${tone === 'green' ? 'bg-hx-green' : tone === 'yellow' ? 'bg-hx-yellow' : 'bg-hx-red'}`} style={{ width: `${Math.max(1, ratio * 100)}%` }} />
         </div>
-        <div className="flex justify-between text-[12px] text-hx-muted">
+        <div className="flex justify-between text-[13px] leading-[18px] text-hx-muted">
           <span>
             {formatBytes(storage.bytesUsed)} of {formatBytes(QUOTA_BYTES)} ({fmt(ratio * 100, ratio < 0.01 ? 1 : 0)}%)
           </span>
@@ -192,7 +192,7 @@ export default function DataSection({ now }: { now: number }) {
         </div>
       </Field>
       <div>
-        <KV k="Records" v={`${records.length} day${records.length === 1 ? '' : 's'} · ${months} month shard${months === 1 ? '' : 's'}`} />
+        <KV k="Records" v={`${records.length} day${records.length === 1 ? '' : 's'} in ${months} month shard${months === 1 ? '' : 's'}`} />
         <KV k="Last saved" v={relativeTime(storage.lastSavedAt, now)} />
         <KV k="Last JSON export" v={relativeTime(settings.lastExportAt, now)} />
         <KV k="Chat messages" v={state.chat.length} />
@@ -212,7 +212,7 @@ export default function DataSection({ now }: { now: number }) {
       <SubHeading>Import JSON</SubHeading>
       <div className="flex items-center gap-3">
         <SegmentedControl<ImportMode> ariaLabel="Import mode" size="sm" options={MODE_OPTIONS} value={mode} onChange={setMode} />
-        <span className="text-[12px] leading-4 text-hx-muted">{mode === 'merge' ? 'Keeps your data; file wins on overlap.' : 'Wipes days, settings and chat, then loads the file.'}</span>
+        <span className="text-[13px] leading-[18px] text-hx-muted">{mode === 'merge' ? 'Keeps your data; file wins on overlap.' : 'Wipes days, settings and chat, then loads the file.'}</span>
       </div>
       <input ref={fileRef} type="file" accept=".json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={onFile} />
       <Button variant="secondary" fullWidth icon={<FileUp aria-hidden />} onClick={() => fileRef.current?.click()}>
@@ -245,14 +245,14 @@ export default function DataSection({ now }: { now: number }) {
         Run integrity check
       </Button>
       {report && (
-        <div className="rounded-xl border border-hx-border bg-hx-card2/40 px-3 py-1">
+        <div className="hx-well !rounded-ctl px-3 py-1">
           <KV k="Schema" v={`v${report.version}`} />
           <KV k="Shards" v={report.shards} />
           <KV k="Records" v={report.records} />
           <KV k="Checked" v={relativeTime(report.checkedAt, now)} />
           <KV k="Problems" v={report.problems.length === 0 ? <span className="text-hx-green">none</span> : <span className="text-hx-red">{report.problems.length}</span>} />
           {report.problems.length > 0 && (
-            <ul className="py-2 list-disc pl-4 text-[13px] leading-5 text-hx-text2 space-y-0.5">
+            <ul className="py-2 list-disc pl-4 text-[15px] leading-[22px] text-hx-text2 space-y-0.5">
               {report.problems.map((p, i) => (
                 <li key={i}>{p}</li>
               ))}

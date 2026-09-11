@@ -105,7 +105,7 @@ export default function ProfileSection() {
       />
       <SelectField label="Wearable" value={p.wearable} options={WEARABLE_OPTIONS} hint="With WHOOP the readiness ring mirrors recovery %; otherwise it uses your HRV band." onChange={(wearable) => actions.updateProfile({ wearable })} />
 
-      <div className="pt-1 space-y-3">
+      <div className="pt-1 flex flex-col gap-3">
         <SubHeading>Tobacco</SubHeading>
         <Toggle label="Quitting tobacco" checked={p.tobaccoQuitting} hint="Turns on the tobacco tile, streaks and HRV-vs-smoking feedback." onChange={(tobaccoQuitting) => actions.updateProfile({ tobaccoQuitting })} />
         <NumberField

@@ -1,9 +1,9 @@
 /**
  * Settings §7 — Coach & AI (SPEC §4/§5 "coach tone", ai/client.ts modes).
  *
- * provider: none (offline rule-based coach + local food DB) · anthropic-direct
+ * provider: none (offline rule-based coach + local food DB), anthropic-direct
  * (the user's own key, kept in this browser's localStorage and sent straight
- * to api.anthropic.com) · proxy (a URL that injects the key server-side — the
+ * to api.anthropic.com), or proxy (a URL that injects the key server-side — the
  * safer choice anywhere but the user's own machine). The key is never
  * rendered in full (guardrails.maskKey) and is entered via a draft + Save so
  * half-typed secrets never hit storage. "Test connection" sends one tiny turn
@@ -136,7 +136,7 @@ export default function CoachSection() {
       {ai.provider !== 'none' && (
         <>
           <SelectField label="Model" value={ai.model} options={modelOptions} hint="Opus 5 is the all-round default; Sonnet 5 is faster and cheaper for quick questions." onChange={(model) => actions.updateAI({ model })} />
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Button variant="secondary" fullWidth icon={<Wifi aria-hidden />} loading={testing} disabled={!configured} onClick={test}>
               {testing ? 'Testing…' : 'Test connection'}
             </Button>
@@ -184,7 +184,7 @@ function KeyEditor({ apiKey, onSave, onClear }: { apiKey: string | undefined; on
     return (
       <Field label="API key" hint="Only the last 4 characters are ever shown.">
         <div className="flex items-center gap-2">
-          <div className={`${CONTROL} flex-1 min-w-0 flex items-center gap-2 rounded-xl border border-hx-border bg-hx-card2 font-mono text-[14px] text-hx-text`}>
+          <div className={`hx-well !rounded-ctl ${CONTROL} flex-1 min-w-0 flex items-center gap-2 font-mono text-[15px] text-hx-text`}>
             <KeyRound className="w-4 h-4 text-hx-muted shrink-0" aria-hidden />
             <span className="truncate">{maskKey(apiKey)}</span>
           </div>
@@ -210,7 +210,7 @@ function KeyEditor({ apiKey, onSave, onClear }: { apiKey: string | undefined; on
       onChange={setDraft}
       trailing={
         <div className="flex items-center gap-1.5 shrink-0">
-          <button type="button" onClick={() => setReveal((r) => !r)} aria-label={reveal ? 'Hide key' : 'Show key'} aria-pressed={reveal} className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-hx-muted hover:text-hx-text hover:bg-hx-card2">
+          <button type="button" onClick={() => setReveal((r) => !r)} aria-label={reveal ? 'Hide key' : 'Show key'} aria-pressed={reveal} className="hx-press w-11 h-11 inline-flex items-center justify-center rounded-ctl text-hx-muted hover:text-hx-text hover:bg-hx-card2">
             {reveal ? <EyeOff className="w-[18px] h-[18px]" aria-hidden /> : <Eye className="w-[18px] h-[18px]" aria-hidden />}
           </button>
           <Button size="md" disabled={!draft.trim()} onClick={save}>
