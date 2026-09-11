@@ -1,6 +1,5 @@
 /**
- * StressStrip — the compact Today strip under the readiness hero (SPEC §1,
- * plan 2b).
+ * StressStrip — the span-2 tile under the readiness hero (SPEC §1, plan 2b).
  *
  * Two states, one job:
  *  - today's check-in is missing → a single ≥ 44 px prompt straight into
@@ -51,60 +50,57 @@ export default function StressStrip({ stress, onCheckIn, onOpenDetail, className
   const worse = worseRunLine(checkIn?.worseRun);
 
   return (
-    <section aria-label="Stress and recovery" className={`px-4 pb-5 ${className}`}>
-      <div className="hx-card p-4 flex flex-col gap-3">
-        {missing ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <p className="text-[15px] leading-5 font-semibold text-hx-text">{CHECK_IN_PROMPT}</p>
-              <p className="text-[13px] leading-5 text-hx-text2">{CHECK_IN_HINT}</p>
-            </div>
-            <Button size="lg" fullWidth icon={<ClipboardCheck aria-hidden />} onClick={onCheckIn}>
-              {CHECK_IN_CTA}
-            </Button>
+    <section aria-label="Stress and recovery" className={`hx-card hx-span-2 p-4 flex flex-col gap-3 ${className}`}>
+      {missing ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <p className="hx-display text-[17px] leading-6 font-semibold text-hx-text">{CHECK_IN_PROMPT}</p>
+            <p className="text-[13px] leading-[18px] text-hx-text2">{CHECK_IN_HINT}</p>
           </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <span className="hx-label">Today's check-in</span>
-                <p className={`mt-1 text-[17px] leading-6 font-semibold ${bandText(hooper.tone)}`}>
-                  <span className={`inline-block align-middle w-2 h-2 rounded-full mr-2 ${bandBg(hooper.tone)}`} aria-hidden />
-                  {hooper.label}
-                </p>
-                <p className="text-[12px] leading-4 text-hx-muted">Hooper {hooperTotalText(checkIn?.total ?? null)} · lower is better</p>
-              </div>
-              {onOpenDetail && (
-                <Button variant="ghost" size="sm" className="shrink-0" onClick={onOpenDetail}>
-                  See the detail
-                </Button>
-              )}
-            </div>
-            <p className="flex items-start gap-2 text-[13px] leading-5 text-hx-text2">
-              <span className={`mt-[7px] w-1.5 h-1.5 rounded-full shrink-0 ${bandBg(strain.tone)}`} aria-hidden />
-              <span className="min-w-0">
-                <span className="text-hx-text font-medium">{signals}</span>
-                {' · '}
-                {strain.label}
-              </span>
-            </p>
-            {worse && <p className="text-[12px] leading-4 text-hx-yellow">{worse}</p>}
-          </div>
-        )}
-
-        {stress?.calibrating && <p className="text-[12px] leading-4 text-hx-muted">{calibratingLine(stress.nRef)}</p>}
-
-        {illness?.flag && (
-          <div className="rounded-xl border border-hx-yellow/40 bg-hx-yellow/10 p-3 flex items-start gap-2" role="status">
-            <Thermometer className="w-4 h-4 mt-0.5 shrink-0 text-hx-yellow" aria-hidden />
+          <Button size="lg" fullWidth icon={<ClipboardCheck aria-hidden />} onClick={onCheckIn}>
+            {CHECK_IN_CTA}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[13px] leading-5 font-semibold text-hx-yellow">Your overnight signals look unusual</p>
-              {reasons.length > 0 && <p className="text-[12px] leading-4 text-hx-text2 mt-0.5">{reasons.join(' · ')}</p>}
-              <p className="text-[12px] leading-4 text-hx-text2 mt-0.5">{ILLNESS_NOTE}</p>
+              <span className="hx-label">Today's check-in</span>
+              <p className={`hx-display mt-1 text-[22px] leading-7 font-semibold ${bandText(hooper.tone)}`}>
+                <span className={`inline-block align-middle w-2 h-2 rounded-full mr-2 ${bandBg(hooper.tone)}`} aria-hidden />
+                {hooper.label}
+              </p>
+              <p className="text-[13px] leading-[18px] text-hx-muted">Hooper {hooperTotalText(checkIn?.total ?? null)}, lower is better</p>
             </div>
+            {onOpenDetail && (
+              <Button variant="ghost" size="sm" className="shrink-0" onClick={onOpenDetail}>
+                See the detail
+              </Button>
+            )}
           </div>
-        )}
-      </div>
+          <p className="flex items-start gap-2 text-[15px] leading-[22px] text-hx-text2">
+            <span className={`mt-[9px] w-1.5 h-1.5 rounded-full shrink-0 ${bandBg(strain.tone)}`} aria-hidden />
+            <span className="min-w-0">
+              <span className="text-hx-text font-medium">{signals}</span>
+              <span className="block text-[13px] leading-[18px]">{strain.label}</span>
+            </span>
+          </p>
+          {worse && <p className="text-[13px] leading-[18px] text-hx-yellow">{worse}</p>}
+        </div>
+      )}
+
+      {stress?.calibrating && <p className="text-[13px] leading-[18px] text-hx-muted">{calibratingLine(stress.nRef)}</p>}
+
+      {illness?.flag && (
+        <div className="rounded-ctl border border-hx-yellow/40 bg-hx-yellow/10 p-3 flex items-start gap-2" role="status">
+          <Thermometer className="w-4 h-4 mt-0.5 shrink-0 text-hx-yellow" aria-hidden />
+          <div className="min-w-0">
+            <p className="text-[13px] leading-[18px] font-semibold text-hx-yellow">Your overnight signals look unusual</p>
+            {reasons.length > 0 && <p className="text-[13px] leading-[18px] text-hx-text2 mt-0.5">{reasons.join(', ')}</p>}
+            <p className="text-[13px] leading-[18px] text-hx-text2 mt-0.5">{ILLNESS_NOTE}</p>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

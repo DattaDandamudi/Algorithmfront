@@ -44,7 +44,7 @@ function TabBar() {
   return (
     <nav
       aria-label="Primary"
-      className="hx-tabbar fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] border-t border-hx-border bg-hx-base/95 backdrop-blur px-2 pt-2 z-30"
+      className="hx-tabbar hx-raised !rounded-b-none !rounded-t-[22px] !border-b-0 !border-x-0 fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] px-2 pt-2 z-30"
     >
       <ul className="grid grid-cols-6">
         {TABS.map((t) => {
@@ -56,11 +56,11 @@ function TabBar() {
                 type="button"
                 onClick={() => setTab(t.id)}
                 aria-current={active ? 'page' : undefined}
-                className={`w-full min-h-[44px] flex flex-col items-center justify-center gap-1 py-1.5 rounded-xl transition-colors ${
-                  active ? 'text-hx-text' : 'text-hx-muted hover:text-hx-text2'
+                className={`w-full min-h-[44px] flex flex-col items-center justify-center gap-1 py-1.5 rounded-ctl transition-colors ${
+                  active ? 'text-hx-lume' : 'text-hx-muted hover:text-hx-text2'
                 }`}
               >
-                <Icon className="w-5 h-5" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
+                <Icon className={`w-5 h-5 ${active ? 'drop-shadow-[0_0_6px_rgba(233,241,255,0.55)]' : ''}`} strokeWidth={active ? 2.25 : 1.75} aria-hidden />
                 {/* 11 px, no tracking: six labels ("Settings" is the widest) fit a 390 px bar without wrapping. */}
                 <span className="text-[11px] leading-3 font-medium whitespace-nowrap">{t.label}</span>
               </button>
@@ -85,7 +85,7 @@ function Frame() {
   useEffect(() => {
     document.title = 'Pulse — Health Log';
     const prev = document.body.style.background;
-    document.body.style.background = '#0B0D0F';
+    document.body.style.background = '#070A0F';
     return () => {
       document.body.style.background = prev;
     };
@@ -106,12 +106,10 @@ function Frame() {
       <div className="w-full max-w-[390px] min-h-dvh pb-24">
         <Suspense
           fallback={
-            <div className="p-6 space-y-4" aria-busy="true">
-              <div className="h-48 rounded-2xl bg-hx-card hx-pulse" />
-              <div className="grid grid-cols-2 gap-3">
-                <div className="h-28 rounded-2xl bg-hx-card hx-pulse" />
-                <div className="h-28 rounded-2xl bg-hx-card hx-pulse" />
-              </div>
+            <div className="p-4 hx-bento" aria-busy="true">
+              <div className="hx-span-2 h-52 rounded-tile bg-hx-card hx-pulse" />
+              <div className="h-32 rounded-tile bg-hx-card hx-pulse" />
+              <div className="h-32 rounded-tile bg-hx-card hx-pulse" />
             </div>
           }
         >

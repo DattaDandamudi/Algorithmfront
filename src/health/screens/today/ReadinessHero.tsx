@@ -1,18 +1,20 @@
 /**
  * Readiness hero — SPEC §1 #1/#2, plus the v3 explanation (plan 2b).
  *
- * The ring and its number mirror WHOOP's bands from the SCORE ALONE
- * (`bandOf`: green ≥ 67, yellow 34–66, red < 34) — the score is the data and
- * is never recoloured (review R1-1). The engine's forcing rule (recovery
+ * The one hero on Today (DESIGN.md): a span-2 tile holding a real dial on the
+ * left and its data window on the right, the way an instrument pairs a gauge
+ * with a readout. The dial and its number mirror WHOOP's bands from the SCORE
+ * ALONE (`bandOf`: green ≥ 67, yellow 34–66, red < 34) — the score is the data
+ * and is never recoloured (review R1-1). The engine's forcing rule (recovery
  * < 34 % or the HRV 7-day mean below the lower SWC → "Light day", spec
  * "Thresholds that should change behavior") lives in `readiness.band` and is
- * carried only by the short verdict in the ring centre, the verdict line and
- * the training chip; when it downgrades the band a line under the hero says
- * why, so a green 72 with a red "Light day" is explained, not contradictory.
- * That same block carries the rule's own evidence line (the `hrvForcing`
- * modifier's reason, from `FORCING_EVIDENCE`): the 2 × SWC clause is a tunable
- * heuristic with no direct published support, and the one day a user most needs
- * to be told that is the day it took their training away.
+ * carried only by the short verdict, the verdict line and the training chip;
+ * when it downgrades the band a line under the row says why, so a green 72
+ * with a red "Light day" is explained, not contradictory. That same block
+ * carries the rule's own evidence line (the `hrvForcing` modifier's reason,
+ * from `FORCING_EVIDENCE`): the 2 × SWC clause is a tunable heuristic with no
+ * direct published support, and the one day a user most needs to be told that
+ * is the day it took their training away.
  *
  * The training chip is the §6.3 conversion (Progress / Train, hold loads /
  * Light day). It PRE-FILLS the Coach with "Should I train today?" without
@@ -36,7 +38,7 @@
  *    standard deviation: units on every number, a plain-English lead, and no
  *    symbol that is not explained beside it.
  * 3. **Calibrating.** Until the personal baseline is established the score has
- *    nothing trustworthy to stand on, so the hero shows the WORD "Calibrating"
+ *    nothing trustworthy to stand on, so the dial shows the WORD "Calibrating"
  *    where the number goes rather than a figure the user would take literally.
  *    The inputs are still listed underneath — they are what the score will be
  *    built from, and watching them fill in is the honest version of progress.
@@ -53,11 +55,11 @@ import { hooperTotalText } from '../stress';
 
 const SOURCE_CAPTION: Record<Readiness['source'], string> = {
   whoop: 'WHOOP recovery',
-  hrv: 'HRV-based',
-  none: 'no signal',
+  hrv: 'your HRV baseline',
+  none: 'no signal yet',
 };
 
-/** One word under the number (§1 "big number + one-line verdict"); the full sentence sits below the ring. */
+/** One word beside the dial (§1 "big number + one-line verdict"); the full sentence sits under it. */
 export const SHORT_VERDICT: Record<Band, string> = {
   green: 'Primed',
   yellow: 'Steady',
@@ -147,11 +149,14 @@ export interface ReadinessHeroProps {
   onAskCoach: (prompt: string, send?: boolean) => void;
 }
 
+/** An inset panel inside the hero: a note or a disclosure sits a step below the tile surface. */
+const INSET = 'w-full text-left rounded-ctl border border-hx-border/70 bg-hx-base/40';
+
 export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroProps) {
   const { score, band, verdict, training, source, detail, forced } = readiness;
   const calibrating = readiness.calibrating === true;
   const has = score !== null && !calibrating;
-  // Ring + number: the score's WHOOP band. Verdict + chip: the (possibly forced) engine band.
+  // Dial + number: the score's WHOOP band. Verdict + chip: the (possibly forced) engine band.
   const scoreBand = calibrating ? 'neutral' : bandOf(score);
   const chipLabel = training === '—' ? 'No verdict yet' : training;
   const ChipIcon = band === 'green' ? Dumbbell : band === 'red' ? Feather : Footprints;
@@ -159,64 +164,67 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
   const contributors = readiness.contributors ?? [];
   const confidence = readiness.confidence;
   const blend = readiness.blendWeight;
-  // The forcing rule already has its own block below the ring; listing it twice
+  // The forcing rule already has its own block under the row; listing it twice
   // reads as two separate findings. Its *evidence* is not dropped with it —
   // `forcingHedge` moves the modifier's reason into that block, so the clause
   // that turned a green score into a light day always says what it rests on.
   const modifiers = (readiness.modifiers ?? []).filter((m) => !(forced && m.key === 'hrvForcing'));
-  const forcingHedge = forced
-    ? (readiness.modifiers ?? []).find((m) => m.key === 'hrvForcing')?.reason ?? null
-    : null;
+  const forcingHedge = forced ? (readiness.modifiers ?? []).find((m) => m.key === 'hrvForcing')?.reason ?? null : null;
 
   return (
-    <section className="px-4 pt-2 pb-5 flex flex-col items-center text-center" aria-labelledby="hx-readiness-title">
-      <Ring value={calibrating ? null : score} band={scoreBand} size={216} stroke={14} label="Readiness">
-        {calibrating ? (
-          <span className="text-[26px] leading-8 font-semibold tracking-tight text-hx-text2">{CALIBRATING_WORD}</span>
-        ) : (
-          <span className={`text-[60px] leading-none font-semibold tracking-tight ${has ? 'text-hx-text' : 'text-hx-muted'}`}>
-            {has ? fmt(score) : '—'}
+    <section className="hx-card hx-span-2 p-5 flex flex-col gap-4 text-left" aria-labelledby="hx-readiness-title">
+      <div className="flex items-center gap-4">
+        <Ring value={calibrating ? null : score} band={scoreBand} size={150} stroke={12} label="Readiness" className="shrink-0">
+          {calibrating ? (
+            <span className="hx-display text-[18px] leading-6 font-semibold text-hx-text2">{CALIBRATING_WORD}</span>
+          ) : (
+            <span className={`hx-display hx-lume-text text-[48px] leading-none font-semibold ${has ? 'text-hx-text' : 'text-hx-muted'}`}>{has ? fmt(score) : '—'}</span>
+          )}
+          {/* The one word under the number, as on a gauge. Calibrating still has a
+              verdict — it just has no number, so the word stays and the colour does not. */}
+          <span className={`mt-1 text-[13px] leading-4 font-semibold ${has ? bandText(band) : 'text-hx-text2'}`}>{SHORT_VERDICT[has || calibrating ? band : 'neutral']}</span>
+          <span id="hx-readiness-title" className="text-[11px] leading-3 text-hx-muted mt-0.5">
+            Readiness
           </span>
-        )}
-        {/* Calibrating still has a verdict — it just has no number, so the word
-            stays and the band colour does not. */}
-        <span className={`mt-1 text-[15px] leading-5 font-semibold ${has ? bandText(band) : 'text-hx-text2'}`}>
-          {SHORT_VERDICT[has || calibrating ? band : 'neutral']}
-        </span>
-        <span id="hx-readiness-title" className="hx-label mt-1">
-          Readiness
-        </span>
-      </Ring>
+        </Ring>
 
-      <p className={`mt-4 text-[17px] leading-6 font-semibold ${has ? bandText(band) : 'text-hx-text2'}`}>{verdict}</p>
-      <p className="mt-1 text-[13px] leading-5 text-hx-muted max-w-[300px]">
-        The morning answer to how much strain your body can take today.
-      </p>
-      <p className="mt-1 text-[12px] leading-4 text-hx-muted">
-        Source: <span className="text-hx-text2">{SOURCE_CAPTION[source]}</span>
-      </p>
+        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+          <p className={`hx-display text-[20px] leading-6 font-semibold text-balance ${has ? bandText(band) : 'text-hx-text2'}`}>{verdict}</p>
+          <p className="text-[13px] leading-[18px] text-hx-muted">From {SOURCE_CAPTION[source]}</p>
+        </div>
+      </div>
+
+      <p className="text-[13px] leading-[18px] text-hx-muted -mt-1">The morning answer to how much strain your body can take today.</p>
+
+      <div className="flex flex-col items-start gap-1.5">
+        <Chip active color={band} icon={<ChipIcon aria-hidden />} onClick={() => onAskCoach(COACH_CHIPS[0], false)} aria-label={`Training verdict: ${chipLabel}. Ask the coach "Should I train today?"`}>
+          {chipLabel}
+        </Chip>
+        <span className="text-[12px] leading-4 text-hx-muted">Tap to ask the coach</span>
+      </div>
+
       {calibrating && (
-        <p className="mt-2 max-w-[330px] text-[13px] leading-5 text-hx-text2" role="note">
+        <p className="text-[13px] leading-[18px] text-hx-text2" role="note">
           {CALIBRATING_NOTE}
         </p>
       )}
       {forced && (
-        <div className="mt-2 max-w-[320px]" role="note">
-          <p className="text-[13px] leading-5 font-medium text-hx-text2">{FORCED_REASON}</p>
+        <div className={`${INSET} px-3.5 py-3`} role="note">
+          <p className="text-[13px] leading-[18px] font-medium text-hx-text2">{FORCED_REASON}</p>
           <p className="mt-0.5 text-[12px] leading-4 text-hx-muted">{detail}</p>
           {forcingHedge && <p className="mt-1 text-[12px] leading-4 text-hx-muted">{forcingHedge}</p>}
         </div>
       )}
 
       {modifiers.length > 0 && (
-        <div className="mt-3 w-full max-w-[334px] text-left rounded-2xl border border-hx-border bg-hx-card2 px-3.5 py-3" role="note">
+        <div className={`${INSET} px-3.5 py-3`} role="note">
           <p className="hx-label">{MODIFIERS_TITLE}</p>
           <ul className="mt-1.5 flex flex-col gap-2">
             {modifiers.map((m) => {
               const eff = MODIFIER_EFFECT[m.effect] ?? MODIFIER_EFFECT.note;
               return (
                 <li key={m.key}>
-                  <p className="text-[13px] leading-5">
+                  <p className="text-[13px] leading-[18px]">
                     <span className={`font-semibold ${bandText(eff.tone)}`}>{eff.text}</span>
                     <span className="text-hx-muted"> · </span>
                     <span className="font-medium text-hx-text">{m.label}</span>
@@ -230,8 +238,8 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
       )}
 
       {contributors.length > 0 && (
-        <details className="mt-3 w-full max-w-[334px] text-left rounded-2xl border border-hx-border bg-hx-card2 overflow-hidden group">
-          <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer min-h-11 px-3.5 py-3 flex items-center justify-between gap-2 text-[14px] leading-5 font-semibold text-hx-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hx-blue">
+        <details className={`${INSET} overflow-hidden group`}>
+          <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer min-h-11 px-3.5 py-3 flex items-center justify-between gap-2 text-[15px] leading-5 font-semibold text-hx-text">
             {WHY_SUMMARY}
             <ChevronDown className="w-4 h-4 shrink-0 text-hx-muted transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden />
           </summary>
@@ -241,10 +249,10 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
               {contributors.map((c) => {
                 const eff = CONTRIBUTOR_EFFECT[c.effect] ?? CONTRIBUTOR_EFFECT.flat;
                 return (
-                  <li key={c.key} className="py-2 border-b border-hx-border last:border-b-0">
+                  <li key={c.key} className="py-2 border-b border-hx-border/70 last:border-b-0">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="min-w-0 text-[13px] leading-5 font-medium text-hx-text">{c.label}</span>
-                      <span className={`shrink-0 text-[13px] leading-5 font-semibold tabular-nums ${bandText(eff.tone)}`}>{fmtSigned(c.points, 1)} pts</span>
+                      <span className="min-w-0 text-[13px] leading-[18px] font-medium text-hx-text">{c.label}</span>
+                      <span className={`hx-display shrink-0 text-[13px] leading-[18px] font-semibold ${bandText(eff.tone)}`}>{fmtSigned(c.points, 1)} pts</span>
                     </div>
                     <p className="mt-0.5 text-[12px] leading-4 text-hx-muted">{contributorFacts(c, eff.text)}</p>
                   </li>
@@ -256,7 +264,7 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
                 <span className="font-medium text-hx-text">
                   {calibrating ? 'Provisional' : 'Confidence'} {fmt(confidence.lo)}–{fmt(confidence.hi)}
                 </span>{' '}
-                · built from {fmt(confidence.nInputs)} of {fmt(contributors.length)} inputs. The band widens when an input is missing, because an unknown could have gone either way
+                , built from {fmt(confidence.nInputs)} of {fmt(contributors.length)} inputs. The band widens when an input is missing, because an unknown could have gone either way
                 {calibrating ? ', and it will settle as your baseline fills in' : ''}.
               </p>
             )}
@@ -271,19 +279,6 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
           </div>
         </details>
       )}
-
-      <div className="mt-4 flex flex-col items-center gap-1.5">
-        <Chip
-          active
-          color={band}
-          icon={<ChipIcon aria-hidden />}
-          onClick={() => onAskCoach(COACH_CHIPS[0], false)}
-          aria-label={`Training verdict: ${chipLabel}. Ask the coach "Should I train today?"`}
-        >
-          {chipLabel}
-        </Chip>
-        <span className="text-[12px] leading-4 text-hx-muted">Tap to ask the coach</span>
-      </div>
     </section>
   );
 }

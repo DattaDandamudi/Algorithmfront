@@ -1,8 +1,9 @@
 /**
- * Training tile — Today's answer to "what am I doing today?" (plan 2b).
+ * Training tile — Today's answer to "what am I doing today?" (plan 2b), as a
+ * span-2 action tile in the bento.
  *
- * Full width, straight after the metric tiles, and one tap from the Train tab
- * (`openTrain('today')`). It has four states and never invents a fifth:
+ * One tap from the Train tab (`openTrain('today')`). It has four states and
+ * never invents a fifth:
  *
  *  - **logged** — one or more sessions already recorded today: what each one
  *    was, how long, session RPE and the load it carried, plus any personal
@@ -59,7 +60,7 @@ function loadText(kg: number | null | undefined, units: 'lb' | 'kg'): string | n
   return `${fmt(kg, Number.isInteger(kg) ? 0 : 1)} kg`;
 }
 
-/** "Lower · 62 min · RPE 8 · 496 load" — only the parts the session actually has. */
+/** "62 min, RPE 8, 496 load" — only the parts the session actually has. */
 export function workoutLine(w: Workout): string {
   const parts: string[] = [];
   if (isNum(w.durationMin) && w.durationMin > 0) parts.push(`${fmt(w.durationMin)} min`);
@@ -67,7 +68,7 @@ export function workoutLine(w: Workout): string {
   if (isNum(w.load)) parts.push(`${fmt(w.load)} load`);
   if (isNum(w.cardio?.distanceKm)) parts.push(`${fmt(w.cardio.distanceKm, 1)} km`);
   if (isNum(w.cardio?.avgHr)) parts.push(`avg HR ${fmt(w.cardio.avgHr)}`);
-  return parts.join(' · ');
+  return parts.join(', ');
 }
 
 /** The session's own name: its title, else its split slot, else its kind. */
@@ -97,30 +98,30 @@ export default function TrainingTile({ training, today, units, onOpenTrain, onOp
   const load = training?.load;
   const deload = training?.deload;
 
-  const state: 'logged' | 'planned' | 'rest' | 'none' =
-    logged.length > 0 ? 'logged' : planned.length > 0 ? 'planned' : !training ? 'none' : session === 'rest' ? 'rest' : 'none';
+  const state: 'logged' | 'planned' | 'rest' | 'none' = logged.length > 0 ? 'logged' : planned.length > 0 ? 'planned' : !training ? 'none' : session === 'rest' ? 'rest' : 'none';
 
   const sessionName = !training ? 'Nothing logged yet' : session === 'rest' ? REST_TITLE : SESSION_LABEL[session];
   const Icon = state === 'logged' ? CheckCircle2 : state === 'rest' ? Moon : Dumbbell;
   const statusWord = state === 'logged' ? 'Logged' : state === 'planned' ? 'Planned' : state === 'rest' ? 'Rest' : 'No plan yet';
   const cta = state === 'logged' ? 'See today’s session' : state === 'planned' ? 'Open today’s session' : 'Log a session';
 
-  // "This week 2,394 load · +6% on last week" — both numbers straight from the engine.
+  // "This week 2,394 load, +6% on last week" — both numbers straight from the engine.
   let loadLine: string | null = null;
   if (load && load.source !== 'none' && isNum(load.weeklyLoad) && load.weeklyLoad > 0) {
     loadLine = `This week ${fmt(load.weeklyLoad)} load`;
     if (isNum(load.weekOverWeekPct)) {
       const pct = Math.round(load.weekOverWeekPct);
       // "+0%" is not a change; say so in words rather than printing a zero.
-      loadLine += pct === 0 ? ' · level with last week' : ` · ${pct > 0 ? '+' : '−'}${fmt(Math.abs(pct))}% on last week`;
+      loadLine += pct === 0 ? ', level with last week' : `, ${pct > 0 ? '+' : '−'}${fmt(Math.abs(pct))}% on last week`;
     }
   }
 
   return (
-    <section className="px-4 pb-5 flex flex-col gap-3" aria-label="Training">
+    <section className="hx-card hx-span-2 p-4 flex flex-col gap-3" aria-label="Training">
       <SectionHeader
+        as="h3"
         title="Training"
-        caption="Today’s session — planned, logged and what it cost you"
+        caption="Today’s session, planned, logged and what it cost you"
         action={
           onOpenCoach ? (
             <Button variant="ghost" size="sm" onClick={() => onOpenCoach(COACH_CHIPS[8])}>
@@ -129,81 +130,73 @@ export default function TrainingTile({ training, today, units, onOpenTrain, onOp
           ) : undefined
         }
       />
-      <div className="hx-card p-4 flex flex-col gap-3">
-        <div className="min-w-0 flex items-start gap-2">
-          <Icon className={`w-5 h-5 mt-0.5 shrink-0 ${state === 'logged' ? 'text-hx-green' : state === 'rest' ? 'text-hx-neutral' : 'text-hx-blue'}`} aria-hidden />
-          <div className="min-w-0">
-            <p className="text-[17px] leading-6 font-semibold text-hx-text truncate">{state === 'logged' ? workoutTitle(logged[0]) : sessionName}</p>
-            <p className="text-[12px] leading-4 text-hx-muted">
-              {statusWord}
-              {state === 'planned' && ` · ${planned.length} exercise${planned.length === 1 ? '' : 's'}`}
-              {state === 'logged' && logged.length > 1 && ` · ${logged.length} sessions`}
-            </p>
-          </div>
-        </div>
-
-        {state === 'logged' && (
-          <ul className="flex flex-col gap-1.5">
-            {logged.map((w) => (
-              <li key={w.id} className="text-[13px] leading-5 text-hx-text2">
-                {logged.length > 1 && <span className="text-hx-text font-medium">{workoutTitle(w)} · </span>}
-                {workoutLine(w) || 'Logged'}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {state === 'planned' && (
-          <ul className="flex flex-col gap-2">
-            {planned.slice(0, PLANNED_PREVIEW).map((ex) => {
-              const mode = MODE_WORD[ex.mode] ?? MODE_WORD.hold;
-              const kg = loadText(ex.loadKg, units);
-              return (
-                <li key={ex.exerciseId} className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 text-[13px] leading-5 text-hx-text truncate">
-                    {ex.name}
-                    <span className="text-hx-muted">
-                      {' '}
-                      {ex.sets} × {ex.reps[0]}–{ex.reps[1]}
-                      {kg ? ` @ ${kg}` : ''}
-                    </span>
-                  </span>
-                  <span className={`shrink-0 text-[12px] leading-4 font-medium ${bandText(mode.tone)}`}>{mode.text}</span>
-                </li>
-              );
-            })}
-            {planned.length > PLANNED_PREVIEW && (
-              <li className="text-[12px] leading-4 text-hx-muted">+{planned.length - PLANNED_PREVIEW} more in Train</li>
-            )}
-          </ul>
-        )}
-
-        {state === 'planned' && planned[0]?.reason && <p className="text-[12px] leading-4 text-hx-text2">{planned[0].reason}</p>}
-        {state === 'rest' && <p className="text-[13px] leading-5 text-hx-text2">{REST_HINT}</p>}
-        {state === 'none' && <p className="text-[13px] leading-5 text-hx-text2">{training ? NO_PLAN_HINT : EMPTY_HINT}</p>}
-
-        {prsToday.length > 0 && (
-          <p className="flex items-start gap-2 text-[13px] leading-5 text-hx-green" role="status">
-            <Trophy className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
-            <span className="min-w-0">
-              Personal record ·{' '}
-              {prsToday
-                .map((pr) => `${pr.name} ${pr.kind === 'reps' ? `${fmt(pr.value)} reps` : (loadText(pr.value, units) ?? fmt(pr.value, 1))}`)
-                .join(', ')}
-            </span>
+      <div className="min-w-0 flex items-start gap-2.5">
+        <Icon className={`w-5 h-5 mt-1 shrink-0 ${state === 'logged' ? 'text-hx-green' : state === 'rest' ? 'text-hx-neutral' : 'text-hx-blue'}`} aria-hidden />
+        <div className="min-w-0">
+          <p className="hx-display text-[22px] leading-7 font-semibold text-hx-text truncate">{state === 'logged' ? workoutTitle(logged[0]) : sessionName}</p>
+          <p className="text-[13px] leading-[18px] text-hx-muted">
+            {statusWord}
+            {state === 'planned' && `, ${planned.length} exercise${planned.length === 1 ? '' : 's'}`}
+            {state === 'logged' && logged.length > 1 && `, ${logged.length} sessions`}
           </p>
-        )}
-
-        {deload?.recommended && (
-          <p className="text-[12px] leading-4 text-hx-yellow">Deload suggested{deload.reasons.length > 0 ? ` — ${deload.reasons.join(' · ')}` : ''}</p>
-        )}
-
-        {loadLine && <p className="text-[12px] leading-4 text-hx-muted">{loadLine}</p>}
-
-        <Button size="lg" fullWidth variant={state === 'planned' ? 'primary' : 'secondary'} icon={<Dumbbell aria-hidden />} onClick={onOpenTrain}>
-          {cta}
-        </Button>
+        </div>
       </div>
+
+      {state === 'logged' && (
+        <ul className="flex flex-col gap-1.5">
+          {logged.map((w) => (
+            <li key={w.id} className="text-[15px] leading-[22px] text-hx-text2">
+              {logged.length > 1 && <span className="text-hx-text font-medium">{workoutTitle(w)}, </span>}
+              {workoutLine(w) || 'Logged'}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {state === 'planned' && (
+        <ul className="flex flex-col gap-2">
+          {planned.slice(0, PLANNED_PREVIEW).map((ex) => {
+            const mode = MODE_WORD[ex.mode] ?? MODE_WORD.hold;
+            const kg = loadText(ex.loadKg, units);
+            return (
+              <li key={ex.exerciseId} className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 text-[15px] leading-[22px] text-hx-text truncate">
+                  {ex.name}
+                  <span className="text-hx-muted">
+                    {' '}
+                    {ex.sets} × {ex.reps[0]}–{ex.reps[1]}
+                    {kg ? ` @ ${kg}` : ''}
+                  </span>
+                </span>
+                <span className={`shrink-0 text-[13px] leading-[18px] font-medium ${bandText(mode.tone)}`}>{mode.text}</span>
+              </li>
+            );
+          })}
+          {planned.length > PLANNED_PREVIEW && <li className="text-[13px] leading-[18px] text-hx-muted">+{planned.length - PLANNED_PREVIEW} more in Train</li>}
+        </ul>
+      )}
+
+      {state === 'planned' && planned[0]?.reason && <p className="text-[13px] leading-[18px] text-hx-text2">{planned[0].reason}</p>}
+      {state === 'rest' && <p className="text-[15px] leading-[22px] text-hx-text2">{REST_HINT}</p>}
+      {state === 'none' && <p className="text-[15px] leading-[22px] text-hx-text2">{training ? NO_PLAN_HINT : EMPTY_HINT}</p>}
+
+      {prsToday.length > 0 && (
+        <p className="flex items-start gap-2 text-[13px] leading-[18px] text-hx-green" role="status">
+          <Trophy className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+          <span className="min-w-0">
+            Personal record:{' '}
+            {prsToday.map((pr) => `${pr.name} ${pr.kind === 'reps' ? `${fmt(pr.value)} reps` : (loadText(pr.value, units) ?? fmt(pr.value, 1))}`).join(', ')}
+          </span>
+        </p>
+      )}
+
+      {deload?.recommended && <p className="text-[13px] leading-[18px] text-hx-yellow">Deload suggested{deload.reasons.length > 0 ? ` — ${deload.reasons.join(', ')}` : ''}</p>}
+
+      {loadLine && <p className="text-[13px] leading-[18px] text-hx-muted">{loadLine}</p>}
+
+      <Button size="lg" fullWidth variant={state === 'planned' ? 'primary' : 'secondary'} icon={<Dumbbell aria-hidden />} onClick={onOpenTrain}>
+        {cta}
+      </Button>
     </section>
   );
 }

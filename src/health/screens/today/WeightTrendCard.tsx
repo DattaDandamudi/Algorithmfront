@@ -1,5 +1,5 @@
 /**
- * Weight trend card — SPEC §1 #6 / §6.1.
+ * Weight trend — SPEC §1 #6 / §6.1, as a span-2 tile.
  *
  * Faint daily scale dots under the EWMA trend line (α from settings, "trust
  * the trend line, never a single dot"), the trend value, and the weekly rate
@@ -83,45 +83,48 @@ export default function WeightTrendCard({ weight, series, units, calibrationHint
       ? `90% chance your true rate is between ${signed(weight.rateLow90)} and ${signed(weight.rateHigh90)} ${unitLabel}/wk — one scale reading cannot narrow that, more weigh-ins can.`
       : null;
 
+  const header = (
+    <SectionHeader
+      as="h3"
+      title="Weight trend"
+      caption={`Smoothed trend over daily scale weights, last ${series.dots.length} days`}
+      action={
+        <Button variant="ghost" size="sm" onClick={() => onOpenCoach(COACH_CHIPS[3])}>
+          Ask the coach
+        </Button>
+      }
+    />
+  );
+
   return (
-    <section className="px-4 pb-5 flex flex-col gap-3" aria-label="Weight trend">
-      <SectionHeader
-        title="Weight trend"
-        caption={`EWMA trend over daily scale weights, last ${series.dots.length} days`}
-        action={
-          <Button variant="ghost" size="sm" onClick={() => onOpenCoach(COACH_CHIPS[3])}>
-            Ask the coach
-          </Button>
-        }
-      />
+    <section className="hx-span-2 flex flex-col gap-3" aria-label="Weight trend">
       {!enough ? (
-        <EmptyState
-          icon={<Scale />}
-          title="Not enough weigh-ins"
-          hint="Weigh in 5+ days this week so your trend and expenditure calibrate."
-          action={{ label: 'Log weight', onClick: onLogWeight }}
-        />
+        <>
+          {header}
+          <EmptyState icon={<Scale />} title="Not enough weigh-ins" hint="Weigh in 5+ days this week so your trend and expenditure calibrate." action={{ label: 'Log weight', onClick: onLogWeight }} />
+        </>
       ) : (
         <div className="hx-card p-4 flex flex-col gap-3">
+          {header}
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
               <span className="hx-label">Trend</span>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-[28px] leading-8 font-semibold tracking-tight text-hx-text">{weight.trend === null ? '—' : fmt(toUnit(weight.trend), 1)}</span>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="hx-display text-[28px] leading-8 font-semibold text-hx-text">{weight.trend === null ? '—' : fmt(toUnit(weight.trend), 1)}</span>
                 {weight.trend !== null && <span className="text-[13px] font-medium text-hx-text2">{unitLabel}</span>}
               </div>
-              {weight.latest !== null && <span className="text-[12px] leading-4 text-hx-muted">Latest scale {fmtWeight(weight.latest, units)}</span>}
+              {weight.latest !== null && <span className="text-[13px] leading-[18px] text-hx-muted">Latest scale {fmtWeight(weight.latest, units)}</span>}
             </div>
             <div className="text-right shrink-0">
               <span className="hx-label">Weekly rate</span>
-              <div className="mt-1 text-[15px] leading-5 font-semibold text-hx-text">{rateLine ?? '—'}</div>
-              <div className={`text-[12px] leading-4 font-medium ${verdict ? bandText(verdict.band) : 'text-hx-muted'}`}>
+              <div className="hx-display mt-1 text-[17px] leading-6 font-semibold text-hx-text">{rateLine ?? '—'}</div>
+              <div className={`text-[13px] leading-[18px] font-medium ${verdict ? bandText(verdict.band) : 'text-hx-muted'}`}>
                 {verdict ? verdict.text : rateUnavailable ? 'not published yet' : 'rate needs 8+ days of weigh-ins'}
               </div>
             </div>
           </div>
-          {intervalLine && <p className="text-[12px] leading-4 text-hx-muted">{intervalLine}</p>}
-          {rateUnavailable && <p className="text-[12px] leading-4 text-hx-text2">{rateReason || RATE_UNAVAILABLE_FALLBACK}</p>}
+          {intervalLine && <p className="text-[13px] leading-[18px] text-hx-muted">{intervalLine}</p>}
+          {rateUnavailable && <p className="text-[13px] leading-[18px] text-hx-text2">{rateReason || RATE_UNAVAILABLE_FALLBACK}</p>}
           <TimeSeriesChart
             ariaLabel={`Weight, last ${series.dots.length} days`}
             range="30D"
@@ -136,19 +139,19 @@ export default function WeightTrendCard({ weight, series, units, calibrationHint
             emptyText="Weigh in to start your trend."
           />
           {calibrationHint && (
-            <p className="text-[12px] leading-4 text-hx-muted">
+            <p className="text-[13px] leading-[18px] text-hx-muted">
               {calibrationHint} <span className="text-hx-text2">({weight.weighInsThisWeek}/7 this week)</span>
             </p>
           )}
         </div>
       )}
       {weight.suspectToday === true && (
-        <div className="rounded-2xl border border-hx-yellow/40 bg-hx-yellow/10 p-3 flex items-start gap-2" role="status">
+        <div className="rounded-ctl border border-hx-yellow/40 bg-hx-yellow/10 p-3 flex items-start gap-2" role="status">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-hx-yellow" aria-hidden />
           <div className="min-w-0 flex flex-col items-start gap-2">
             <div>
-              <p className="text-[13px] leading-5 font-semibold text-hx-yellow">{SUSPECT_HEADLINE}</p>
-              <p className="text-[12px] leading-4 text-hx-text2 mt-0.5">
+              <p className="text-[13px] leading-[18px] font-semibold text-hx-yellow">{SUSPECT_HEADLINE}</p>
+              <p className="text-[13px] leading-[18px] text-hx-text2 mt-0.5">
                 {weight.latest === null ? "Today's weigh-in" : `Today's ${fmtWeight(weight.latest, units)}`} is far enough from your trend that it barely moved it. Keep it if it is real — fix it if a digit slipped.
               </p>
             </div>

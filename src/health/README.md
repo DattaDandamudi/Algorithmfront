@@ -10,7 +10,8 @@ local food database.
 src/health/
   HealthApp.tsx        shell: providers, 6-tab bottom nav, onboarding gate
   nav.tsx              tab state + deep links (open Coach pre-filled, open Log section, open Train view/session)
-  health.css           design tokens (#0B0D0F / #14181C / #1E252B, WHOOP green/yellow/red)
+  health.css           design tokens and the material system (obsidian / graphite / slate, lume, semantic states) — see DESIGN.md
+  DESIGN.md            the visual specification every screen is built to
   data/
     types.ts           THE contract: DailyRecord (compact short-key schema), Profile, Targets, CoachContext…
     defaults.ts        spec persona defaults (1,950 kcal, 180 g protein, 60 g fat floor, 4-day split, labs)
@@ -55,12 +56,25 @@ src/health/
     foodDb.ts          Indian / Middle-Eastern / basics food database (per 100 g)
     barcode.ts         Open Food Facts lookup for barcodes (the app's only non-AI third-party call, made only on a scan/lookup)
     foodImage.ts       photo estimation through Claude vision (same strict JSON schema, confidence capped at 0.6)
-  ui/                  design-system primitives (Ring, Tile, Sparkline, MacroBar, Sheet, …) and charts/
+  ui/                  design-system primitives (Ring dial, bento Tile, Sparkline, MacroBar, Sheet, …) and charts/
   screens/             Today, Log, Train, Trends, Coach, Settings, Onboarding
     Train.tsx          the sixth tab: Today / Log / History / Analysis sub-views
-    train/             session logger, exercise picker, history list, e1RM · volume · load analysis
+    train/             session logger, exercise picker, history list, e1RM, volume and load analysis
     stress/            check-in strip, stress & resilience cards, predicted-energy curve, behaviour-impact card
 ```
+
+## Design
+
+The interface is an instrument panel under glass — `DESIGN.md` is the spec and every
+screen is built to it. Two ideas carry it: **the accent is light** (nothing decorative is
+coloured; the only saturated hues are the semantic states, so if something is coloured it
+means something) and **depth is structural** (three elevations that each mean something:
+a tile is a reading, a raised surface is something you act on, a well is a gauge track).
+Layout is a bento grid where tile size encodes importance; the readiness dial is the
+largest thing on Today because it is the answer. Type is Bricolage Grotesque for
+numerals and headings, Figtree for everything you read; labels are sentence case, and
+there are no middle-dot meta strings. Tailwind token names (`text-hx-red`, `.hx-label`)
+are unchanged because tests pin them; only their values moved.
 
 ## Running
 

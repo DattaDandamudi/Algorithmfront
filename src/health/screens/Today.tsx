@@ -1,17 +1,24 @@
 /**
- * Today / Dashboard — SPEC §1 with the v3 stack folded in, top → bottom:
- *  1. header (date · day-type chip · banners: escalation / storage / retest)
- *  2. Readiness hero ring + modifiers + "Why this score"
- *  3. stress strip (check-in prompt, or the Hooper band and the overnight
- *     signal count) — directly under the hero, because it is the other half of
- *     "how am I today" and the check-in is the input the hero is missing
- *  4. morning weigh-in prompt      5. metric tiles (2-col)
- *  6. training tile → Train        7. predicted-energy curve
- *     (6 and 7 are the day ahead: what you are doing, and when you will have
- *     the energy for it)
- *  8. macro remaining bars         9. insight cards (max 3)
- * 10. weight trend card           11. tobacco tile
- * 12. bedtime / caffeine nudges   +  the wellness-only footer.
+ * Today / Dashboard — SPEC §1 with the v3 stack folded in, laid out as the
+ * bento in DESIGN.md. One grid, tile size encoding importance:
+ *
+ *  header               type on the ground: the date and the day-type pill,
+ *                       then any banners (escalation / storage / retest)
+ *  readiness  span-2    THE hero: the dial and its data window
+ *  stress     span-2    the check-in prompt, or the Hooper band and the
+ *                       overnight signal count — the other half of "how am I"
+ *  weigh-in   span-2    the morning prompt, before noon, once a day
+ *  sleep · HRV          1×1 complications, two rows of two
+ *  RHR · steps
+ *  protein    span-2    protein-first (§6.5), with pacing
+ *  calories   span-2
+ *  training   span-2    what you are doing today → Train
+ *  energy     span-2    when you will have the energy for it
+ *  macros     span-2    the remaining bars
+ *  insights   span-2    at most three cards
+ *  weight     span-2    the trend, its interval and any suspect weigh-in
+ *  tobacco    span-2
+ *  nudges     span-2    bedtime countdown, caffeine cutoff, last meal
  *
  * Every number is read from `useTodayModel()` (store → engine context); this
  * file only wires navigation: tiles/cards → Coach pre-fills, prompts → Log
@@ -53,9 +60,7 @@ export default function Today() {
   const nowMin = hhmmToMinutes(ctx.nowHHMM);
   const askCheckIn = settings.checkIn.enabled && (promptAfter === null || nowMin === null || nowMin >= promptAfter);
   const stress =
-    ctx.stress && !askCheckIn && ctx.stress.checkIn.missingToday
-      ? { ...ctx.stress, checkIn: { ...ctx.stress.checkIn, missingToday: false } }
-      : ctx.stress;
+    ctx.stress && !askCheckIn && ctx.stress.checkIn.missingToday ? { ...ctx.stress, checkIn: { ...ctx.stress.checkIn, missingToday: false } } : ctx.stress;
 
   // Reference weight for the per-meal protein ceiling: latest scale → trend → profile.
   const bodyWeightLb = ctx.weight.latest ?? ctx.weight.trend ?? profile.weightLb;
@@ -85,68 +90,64 @@ export default function Today() {
     <div className="flex flex-col">
       <TodayHeader today={today} dayType={ctx.dayType} session={ctx.sessionType} banners={m.banners} onOpenSettings={openSettings} onDismissBanner={dismissBanner} />
 
-      <ReadinessHero readiness={ctx.readiness} onAskCoach={openCoach} />
+      <div className="hx-bento px-4 pb-6">
+        <ReadinessHero readiness={ctx.readiness} onAskCoach={openCoach} />
 
-      <StressStrip stress={stress} onCheckIn={() => openLog('checkin')} onOpenDetail={() => setTab('trends')} />
+        <StressStrip stress={stress} onCheckIn={() => openLog('checkin')} onOpenDetail={() => setTab('trends')} />
 
-      {showWeighIn && <WeighInPrompt onLog={() => openLog('weight')} onDismiss={() => actions.setSettings({ lastWeighPromptDate: today })} />}
+        {showWeighIn && <WeighInPrompt onLog={() => openLog('weight')} onDismiss={() => actions.setSettings({ lastWeighPromptDate: today })} />}
 
-      <MetricTiles
-        ctx={ctx}
-        prompts={m.prompts}
-        empty={m.empty}
-        hrv7={m.hrv7}
-        provisionalTdee={m.provisionalTdee}
-        bodyWeightLb={bodyWeightLb}
-        baseline={m.nutritionBaseline}
-        onOpenCoach={(p) => openCoach(p)}
-      />
+        <MetricTiles
+          ctx={ctx}
+          prompts={m.prompts}
+          empty={m.empty}
+          hrv7={m.hrv7}
+          provisionalTdee={m.provisionalTdee}
+          bodyWeightLb={bodyWeightLb}
+          baseline={m.nutritionBaseline}
+          onOpenCoach={(p) => openCoach(p)}
+        />
 
-      <TrainingTile
-        training={ctx.training}
-        today={today}
-        units={settings.training.units}
-        onOpenTrain={() => openTrain('today')}
-        onOpenCoach={(p) => openCoach(p)}
-      />
+        <TrainingTile training={ctx.training} today={today} units={settings.training.units} onOpenTrain={() => openTrain('today')} onOpenCoach={(p) => openCoach(p)} />
 
-      <EnergyCard energy={ctx.energy} nowHHMM={ctx.nowHHMM} onOpenCoach={(p) => openCoach(p)} coachPrompt={COACH_CHIPS[11]} />
+        <EnergyCard tile energy={ctx.energy} nowHHMM={ctx.nowHHMM} onOpenCoach={(p) => openCoach(p)} coachPrompt={COACH_CHIPS[11]} />
 
-      <MacroSection ctx={ctx} bodyWeightLb={bodyWeightLb} emptyText={m.empty.protein} onLogMeal={() => openLog('meal')} />
+        <MacroSection ctx={ctx} bodyWeightLb={bodyWeightLb} emptyText={m.empty.protein} onLogMeal={() => openLog('meal')} />
 
-      {m.insights.length > 0 && (
-        <section className="px-4 pb-5 flex flex-col gap-3" aria-label="Insights">
-          <SectionHeader title="Insights" caption="From your own numbers — tap to ask the coach" />
-          {m.insights.map((ins) => (
-            <InsightCard key={ins.id} insight={ins} onOpen={(prompt) => openCoach(prompt)} />
-          ))}
-        </section>
-      )}
+        {m.insights.length > 0 && (
+          <section className="hx-span-2 flex flex-col gap-3" aria-label="Insights">
+            <SectionHeader title="Insights" caption="From your own numbers. Tap one to ask the coach" />
+            {m.insights.map((ins) => (
+              <InsightCard key={ins.id} insight={ins} onOpen={(prompt) => openCoach(prompt)} />
+            ))}
+          </section>
+        )}
 
-      <WeightTrendCard
-        weight={ctx.weight}
-        series={m.weight}
-        units={profile.units}
-        calibrationHint={ctx.weight.weighInsThisWeek < 5 ? m.empty.weight : undefined}
-        rateReason={m.rateReason}
-        onLogWeight={() => openLog('weight')}
-        onOpenCoach={(p) => openCoach(p)}
-      />
+        <WeightTrendCard
+          weight={ctx.weight}
+          series={m.weight}
+          units={profile.units}
+          calibrationHint={ctx.weight.weighInsThisWeek < 5 ? m.empty.weight : undefined}
+          rateReason={m.rateReason}
+          onLogWeight={() => openLog('weight')}
+          onOpenCoach={(p) => openCoach(p)}
+        />
 
-      <TobaccoTile stats={m.tobacco} today={m.tobaccoToday} onPlusOne={plusOne} onSmokeFree={smokeFree} onOpenLog={() => openLog('tobacco')} />
+        <TobaccoTile stats={m.tobacco} today={m.tobaccoToday} onPlusOne={plusOne} onSmokeFree={smokeFree} onOpenLog={() => openLog('tobacco')} />
 
-      <NudgeStrip
-        countdown={m.countdown}
-        caffeineAfterCutoff={ctx.nutrition.caffeineAfterCutoff}
-        caffeineCutoff={profile.caffeineCutoff}
-        late={m.late}
-        mealsLeft={ctx.nutrition.mealsLeft}
-        onGoingToBed={() => openLog('bedtime')}
-        onAskCoach={(p) => openCoach(p)}
-      />
+        <NudgeStrip
+          countdown={m.countdown}
+          caffeineAfterCutoff={ctx.nutrition.caffeineAfterCutoff}
+          caffeineCutoff={profile.caffeineCutoff}
+          late={m.late}
+          mealsLeft={ctx.nutrition.mealsLeft}
+          onGoingToBed={() => openLog('bedtime')}
+          onAskCoach={(p) => openCoach(p)}
+        />
+      </div>
 
-      <footer className="px-4 pt-1 pb-2 text-center">
-        <p className="text-[11px] leading-4 text-hx-muted">Wellness information only — not medical advice.</p>
+      <footer className="px-4 pt-1 pb-2 text-left">
+        <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
       </footer>
     </div>
   );

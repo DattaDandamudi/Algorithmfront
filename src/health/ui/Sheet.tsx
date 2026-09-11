@@ -1,11 +1,12 @@
 /**
  * Sheet — bottom sheet for editors (macro card, weigh-in, settings pickers).
  *
- * role=dialog + aria-modal, ESC closes, backdrop tap closes, body scroll is
- * locked while open, focus moves into the panel on open and returns to the
- * opener on close, Tab is trapped inside. Slide-up/fade uses CSS transitions
- * with `motion-reduce:` so prefers-reduced-motion gets an instant show/hide.
- * Portalled into the `.hx` root so the design tokens resolve.
+ * The panel is raised slate glass — the surface you act on — lifting off the
+ * dimmed ground. role=dialog + aria-modal, ESC closes, backdrop tap closes,
+ * body scroll is locked while open, focus moves into the panel on open and
+ * returns to the opener on close, Tab is trapped inside. Slide-up/fade uses
+ * CSS transitions with `motion-reduce:` so prefers-reduced-motion gets an
+ * instant show/hide. Portalled into the `.hx` root so the tokens resolve.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -94,7 +95,7 @@ export default function Sheet({ open, onClose, title, children, footer, classNam
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center" aria-hidden={!open}>
       <div
-        className={`absolute inset-0 bg-black/60 transition-opacity duration-200 motion-reduce:transition-none ${shown ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-black/65 transition-opacity duration-200 motion-reduce:transition-none ${shown ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
         aria-hidden
       />
@@ -104,16 +105,16 @@ export default function Sheet({ open, onClose, title, children, footer, classNam
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
-        className={`relative w-full max-w-[390px] max-h-[88dvh] flex flex-col rounded-t-3xl border border-b-0 border-hx-border bg-hx-card text-hx-text shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+        className={`hx-raised !rounded-b-none !rounded-t-[28px] !border-b-0 relative w-full max-w-[390px] max-h-[88dvh] flex flex-col text-hx-text outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
           shown ? 'translate-y-0' : 'translate-y-full'
         } ${className}`}
       >
-        <div className="flex justify-center pt-2.5 pb-1" aria-hidden>
-          <span className="w-10 h-1 rounded-full bg-hx-border" />
+        <div className="flex justify-center pt-3 pb-1" aria-hidden>
+          <span className="w-10 h-1 rounded-full bg-hx-text2/40" />
         </div>
         <div className="flex items-center justify-between gap-3 px-5 pt-1 pb-3">
           {title ? (
-            <h2 id={titleId} className="text-[17px] font-semibold leading-6 truncate">
+            <h2 id={titleId} className="hx-display text-[22px] font-semibold leading-7 truncate">
               {title}
             </h2>
           ) : (
@@ -123,13 +124,13 @@ export default function Sheet({ open, onClose, title, children, footer, classNam
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="w-11 h-11 -mr-2 inline-flex items-center justify-center rounded-xl text-hx-text2 hover:text-hx-text hover:bg-hx-card2"
+            className="w-11 h-11 -mr-2 inline-flex items-center justify-center rounded-full text-hx-text2 hover:text-hx-text hover:bg-hx-card2"
           >
             <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
         <div className="hx-scroll flex-1 overflow-y-auto overscroll-contain px-5 pb-5">{children}</div>
-        {footer && <div className="border-t border-hx-border px-5 py-3 pb-[max(12px,env(safe-area-inset-bottom))]">{footer}</div>}
+        {footer && <div className="border-t border-hx-border/70 px-5 py-3 pb-[max(12px,env(safe-area-inset-bottom))]">{footer}</div>}
       </div>
     </div>,
     host,

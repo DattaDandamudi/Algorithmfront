@@ -40,9 +40,11 @@ export interface EnergyCardProps {
   height?: number;
   onOpenCoach?: (prompt: string) => void;
   coachPrompt?: string;
+  /** Render as a span-2 bento tile (Today) rather than a Trends section. */
+  tile?: boolean;
 }
 
-export default function EnergyCard({ energy, nowHHMM, height = 176, onOpenCoach, coachPrompt = 'When will my energy dip today?' }: EnergyCardProps) {
+export default function EnergyCard({ energy, nowHHMM, height = 176, onOpenCoach, coachPrompt = 'When will my energy dip today?', tile = false }: EnergyCardProps) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>();
 
   const forecast = energy?.forecast ?? [];
@@ -57,6 +59,7 @@ export default function EnergyCard({ energy, nowHHMM, height = 176, onOpenCoach,
   if (!geo) {
     return (
       <TrendCard
+        tile={tile}
         title="Predicted energy"
         caption="Two-process sleep model — a forecast, not a measurement"
         action={action}
@@ -89,6 +92,7 @@ export default function EnergyCard({ energy, nowHHMM, height = 176, onOpenCoach,
 
   return (
     <TrendCard
+      tile={tile}
       title="Predicted energy"
       caption="Two-process sleep model — a forecast, not a measurement"
       action={action}
@@ -164,7 +168,7 @@ export default function EnergyCard({ energy, nowHHMM, height = 176, onOpenCoach,
         {energy?.caffeineActiveMg !== null && energy?.caffeineActiveMg !== undefined && energy.caffeineActiveMg > 0 && (
           <Note tone="blue">About {fmt(energy.caffeineActiveMg)} mg of caffeine is still modelled as active — the curve already accounts for it.</Note>
         )}
-        {drivers.length > 0 && <Note tone="neutral">Driven by: {drivers.join(' · ')}.</Note>}
+        {drivers.length > 0 && <Note tone="neutral">Driven by {drivers.join(', ')}.</Note>}
       </div>
     </TrendCard>
   );

@@ -1,10 +1,12 @@
 /**
  * Stepper — "− [ value ] +" for grams, weight (±0.1) and tobacco +1 (SPEC §2).
  *
- * Both buttons are ≥ 44 px targets; the middle is a real text input
- * (inputMode decimal) so he can type "185" instead of tapping 30 times. Typed
- * values commit on blur/Enter, are rounded to `dp` and clamped to min/max;
- * garbage reverts to the last good value. Buttons disable at the bounds.
+ * The keys are raised glass; the field between them is a well (health.css
+ * styles every input as one). Both buttons are ≥ 44 px targets; the middle is
+ * a real text input (inputMode decimal) so "185" can be typed instead of
+ * tapped 30 times. Typed values commit on blur/Enter, are rounded to `dp` and
+ * clamped to min/max; garbage reverts to the last good value. Buttons disable
+ * at the bounds.
  */
 import { useEffect, useId, useState, type KeyboardEvent } from 'react';
 import { Minus, Plus } from 'lucide-react';
@@ -61,7 +63,7 @@ export default function Stepper({ value, onChange, step = 1, min = -Infinity, ma
   };
 
   const lg = size === 'lg';
-  const btn = `${lg ? 'w-14 h-14' : 'w-11 h-11'} shrink-0 inline-flex items-center justify-center rounded-xl bg-hx-card2 border border-hx-border text-hx-text hover:border-hx-neutral active:bg-hx-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors`;
+  const btn = `hx-raised hx-press ${lg ? 'w-14 h-14' : 'w-11 h-11'} !rounded-ctl shrink-0 inline-flex items-center justify-center text-hx-text hover:border-hx-neutral disabled:opacity-40 disabled:cursor-not-allowed`;
 
   return (
     <div role="group" aria-label={label} className={`inline-flex items-center gap-2 ${className}`}>
@@ -83,7 +85,7 @@ export default function Stepper({ value, onChange, step = 1, min = -Infinity, ma
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={onKey}
-          className={`w-full ${lg ? 'h-14 text-[28px]' : 'h-11 text-[18px]'} ${unit ? 'pr-8' : ''} text-center font-semibold`}
+          className={`hx-display w-full ${lg ? 'h-14 text-[28px]' : 'h-11 text-[18px]'} ${unit ? 'pr-8' : ''} text-center font-semibold`}
           aria-describedby={unit ? `${id}-unit` : undefined}
         />
         {unit && (

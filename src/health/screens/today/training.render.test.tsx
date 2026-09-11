@@ -48,7 +48,7 @@ describe('TrainingTile — planned session', () => {
   it('names the session, counts the exercises and lists sets × reps, load and the mode word', () => {
     setup();
     expect(text()).toContain('Lower');
-    expect(text()).toContain('Planned · 3 exercises');
+    expect(text()).toContain('Planned, 3 exercises');
     expect(text()).toContain('Back squat 4 × 5–8 @ 102.5 kg');
     expect(text()).toContain('Romanian deadlift 3 × 6–10 @ 90 kg');
     // Never a colour on its own: every mode ships its word.
@@ -65,7 +65,7 @@ describe('TrainingTile — planned session', () => {
 
   it('shows the week-on-week load line — the number advice leads on', () => {
     setup();
-    expect(text()).toContain('This week 2,394 load · +6% on last week');
+    expect(text()).toContain('This week 2,394 load, +6% on last week');
   });
 
   it('deep-links into the Train tab from one button', () => {
@@ -86,7 +86,7 @@ describe('TrainingTile — logged today', () => {
   it('reports what was logged, not what was planned', () => {
     setup({ training: training({ todayWorkouts: [session] }) });
     expect(text()).toContain('Logged');
-    expect(text()).toContain('62 min · RPE 8 · 496 load');
+    expect(text()).toContain('62 min, RPE 8, 496 load');
     expect(text()).not.toContain('Back squat 4 × 5–8');
     expect(screen.getByRole('button', { name: /See today/ })).toBeTruthy();
   });
@@ -99,7 +99,7 @@ describe('TrainingTile — logged today', () => {
 
     cleanup();
     setup({ training: { ...t, prs7d: [{ ...t.prs7d[0], d: TODAY }] } });
-    expect(text()).toContain('Personal record · Back squat 121.6 kg');
+    expect(text()).toContain('Personal record: Back squat 121.6 kg');
   });
 
   it('names each session when more than one was logged', () => {
@@ -108,9 +108,9 @@ describe('TrainingTile — logged today', () => {
         todayWorkouts: [session, { ...session, id: 'w2', kind: 'cardio', session: undefined, durationMin: 34, cardio: { distanceKm: 6.2, avgHr: 148 } }],
       }),
     });
-    expect(text()).toContain('Logged · 2 sessions');
-    expect(text()).toContain('Cardio · 34 min');
-    expect(text()).toContain('6.2 km · avg HR 148');
+    expect(text()).toContain('Logged, 2 sessions');
+    expect(text()).toContain('Cardio, 34 min');
+    expect(text()).toContain('6.2 km, avg HR 148');
   });
 });
 
@@ -137,6 +137,6 @@ describe('TrainingTile — nothing planned', () => {
 describe('TrainingTile — deload', () => {
   it('carries the engine reasons beside the recommendation', () => {
     setup({ training: training({ deload: { recommended: true, reasons: ['3 sessions of falling e1RM', 'form 32% below fitness'] } }) });
-    expect(text()).toContain('Deload suggested — 3 sessions of falling e1RM · form 32% below fitness');
+    expect(text()).toContain('Deload suggested — 3 sessions of falling e1RM, form 32% below fitness');
   });
 });

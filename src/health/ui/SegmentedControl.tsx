@@ -1,7 +1,8 @@
 /**
  * SegmentedControl — 7D / 30D / 90D / 1Y range toggle and the coach tone
- * toggle (SPEC §3, §4). Implemented as a radiogroup with roving tabindex:
- * ←/→ (and ↑/↓) move the selection, Home/End jump. md = 44 px, sm = 36 px.
+ * toggle (SPEC §3, §4). A sunken well with the checked segment raised out of
+ * it. Implemented as a radiogroup with roving tabindex: ←/→ (and ↑/↓) move
+ * the selection, Home/End jump. Every segment is 44 px tall.
  */
 import type { KeyboardEvent } from 'react';
 
@@ -38,10 +39,10 @@ export default function SegmentedControl<T extends string = string>({ options, v
     (e.currentTarget.querySelector(`[data-value="${target.value}"]`) as HTMLElement | null)?.focus();
   };
 
-  const h = size === 'sm' ? 'h-11 text-[13px]' : 'h-11 text-[14px]';
+  const h = size === 'sm' ? 'h-11 text-[13px]' : 'h-11 text-[15px]';
 
   return (
-    <div role="radiogroup" aria-label={ariaLabel} onKeyDown={onKey} className={`inline-flex p-1 rounded-xl bg-hx-card2 border border-hx-border ${className}`}>
+    <div role="radiogroup" aria-label={ariaLabel} onKeyDown={onKey} className={`hx-well inline-flex p-1 rounded-full ${className}`}>
       {options.map((o) => {
         const checked = o.value === value;
         return (
@@ -54,8 +55,8 @@ export default function SegmentedControl<T extends string = string>({ options, v
             tabIndex={checked ? 0 : -1}
             disabled={o.disabled}
             onClick={() => onChange(o.value)}
-            className={`${h} px-3 min-w-[44px] rounded-lg font-medium transition-colors disabled:opacity-40 ${
-              checked ? 'bg-hx-card text-hx-text shadow-sm border border-hx-border' : 'text-hx-text2 hover:text-hx-text border border-transparent'
+            className={`${h} px-3 min-w-[44px] rounded-full font-medium transition-colors disabled:opacity-40 ${
+              checked ? 'hx-raised !rounded-full text-hx-text' : 'text-hx-text2 hover:text-hx-text border border-transparent'
             }`}
           >
             {o.label}

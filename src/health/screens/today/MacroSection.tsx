@@ -1,10 +1,10 @@
 /**
- * Macro remaining bars — SPEC §1 #4: protein first, then carbs with the
- * day-type range (150–175 g lift / 70–100 g rest, §6.5), then fat with the
- * 60 g floor marker (Whittaker & Wu 2021), then fiber to 30 g. Values are the
- * engine's `nutrition.totals` / `nutrition.targets`, so the bars agree with the
- * tiles and the coach. With no meals logged the section is the §1 empty
- * state: "Log your first meal to see protein remaining."
+ * Macro remaining bars — SPEC §1 #4, as a span-2 tile: protein first, then
+ * carbs with the day-type range (150–175 g lift / 70–100 g rest, §6.5), then
+ * fat with the 60 g floor marker (Whittaker & Wu 2021), then fiber to 30 g.
+ * Values are the engine's `nutrition.totals` / `nutrition.targets`, so the
+ * bars agree with the tiles and the coach. With no meals logged the tile is the
+ * §1 empty state: "Log your first meal to see protein remaining."
  *
  * Bar tone follows STATE, never a fixed series hue (§0 "one semantic colour
  * per state", review R1-13):
@@ -63,31 +63,28 @@ export default function MacroSection({ ctx, bodyWeightLb, emptyText, onLogMeal }
   const dayWord = ctx.dayType === 'lift' ? 'lift day' : 'rest day';
   const tone = macroTones(ctx.nutrition, ctx.nowHHMM, bodyWeightLb);
 
+  if (nothingLogged) {
+    return (
+      <section className="hx-span-2" aria-label="Macros remaining">
+        <EmptyState icon={<UtensilsCrossed />} title="No meals yet" hint={emptyText ?? 'Log your first meal to see protein remaining.'} action={{ label: 'Log a meal', onClick: onLogMeal }} />
+      </section>
+    );
+  }
+
   return (
-    <section className="px-4 pb-5 flex flex-col gap-3" aria-label="Macros remaining">
-      <SectionHeader title="Macros remaining" caption={`Targets for a ${dayWord}`} />
-      {nothingLogged ? (
-        <EmptyState
-          icon={<UtensilsCrossed />}
-          title="No meals yet"
-          hint={emptyText ?? 'Log your first meal to see protein remaining.'}
-          action={{ label: 'Log a meal', onClick: onLogMeal }}
-        />
-      ) : (
-        <div className="hx-card p-4 flex flex-col gap-4">
-          <MacroBar label="Protein" value={totals.p} target={targets.p} color={tone.protein} />
-          <MacroBar
-            label={`Carbs · ${dayWord}`}
-            value={totals.c}
-            target={targets.carbsRange[1]}
-            targetLabel={`${targets.carbsRange[0]}–${targets.carbsRange[1]}`}
-            range={targets.carbsRange}
-            color={tone.carbs}
-          />
-          <MacroBar label="Fat" value={totals.f} target={targets.f} floor={targets.fatFloor} color={tone.fat} />
-          <MacroBar label="Fiber" value={totals.fi} target={targets.fi} color={tone.fiber} />
-        </div>
-      )}
+    <section className="hx-card hx-span-2 p-4 flex flex-col gap-4" aria-label="Macros remaining">
+      <SectionHeader as="h3" title="Macros remaining" caption={`Targets for a ${dayWord}`} />
+      <MacroBar label="Protein" value={totals.p} target={targets.p} color={tone.protein} />
+      <MacroBar
+        label={`Carbs, ${dayWord}`}
+        value={totals.c}
+        target={targets.carbsRange[1]}
+        targetLabel={`${targets.carbsRange[0]}–${targets.carbsRange[1]}`}
+        range={targets.carbsRange}
+        color={tone.carbs}
+      />
+      <MacroBar label="Fat" value={totals.f} target={targets.f} floor={targets.fatFloor} color={tone.fat} />
+      <MacroBar label="Fiber" value={totals.fi} target={targets.fi} color={tone.fiber} />
     </section>
   );
 }

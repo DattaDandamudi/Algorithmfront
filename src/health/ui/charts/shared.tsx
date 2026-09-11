@@ -93,7 +93,7 @@ export function ChartTooltip({ x, width, title, rows, top = 4 }: TooltipProps) {
   return (
     <div
       role="status"
-      className="pointer-events-none absolute z-10 max-w-[170px] rounded-lg border border-hx-border bg-hx-card2 px-2.5 py-1.5 text-[12px] leading-4 shadow-lg shadow-black/40"
+      className="hx-raised pointer-events-none absolute z-10 max-w-[170px] !rounded-ctl px-2.5 py-1.5 text-[12px] leading-4"
       style={style}
     >
       {title ? <div className="text-hx-muted mb-1 whitespace-nowrap">{title}</div> : null}
@@ -145,7 +145,7 @@ export function EmptyFrame({ height, text, ariaLabel }: { height: number; text: 
     <div
       role="img"
       aria-label={`${ariaLabel}: ${text}`}
-      className="flex items-center justify-center rounded-xl border border-hx-border bg-hx-card2/40 px-4 text-center text-[13px] leading-5 text-hx-text2"
+      className="hx-well flex items-center justify-center !rounded-ctl px-4 text-center text-[13px] leading-5 text-hx-text2"
       style={{ height }}
     >
       {text}
@@ -154,4 +154,4 @@ export function EmptyFrame({ height, text, ariaLabel }: { height: number; text: 
 }
 
 /** Shared focus ring + touch behaviour for the focusable SVG. */
-export const SVG_CLASS = 'block rounded-lg outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-hx-blue';
+export const SVG_CLASS = 'block rounded-ctl outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-hx-lume';

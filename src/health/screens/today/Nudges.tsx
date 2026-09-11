@@ -1,5 +1,6 @@
 /**
- * Today nudges — the behaviour-change strips from SPEC §2 and §6.4/§6.5.
+ * Today nudges — the behaviour-change strips from SPEC §2 and §6.4/§6.5, each
+ * a span-2 cell in the bento.
  *
  * - WeighInPrompt: §2 "prompts once each morning". Shown before noon while
  *   today has no scale weight and `settings.lastWeighPromptDate !== today`;
@@ -58,7 +59,7 @@ export interface WeighInPromptProps {
 
 export function WeighInPrompt({ onLog, onDismiss }: WeighInPromptProps) {
   return (
-    <div className="px-4 pb-4">
+    <div className="hx-span-2">
       <Banner kind="info" onDismiss={onDismiss}>
         <button type="button" onClick={onLog} className="text-left w-full min-h-[44px] -my-2.5 flex items-center font-medium text-hx-text hover:text-hx-blue transition-colors">
           Morning weigh-in — tap to log
@@ -83,7 +84,7 @@ export function NudgeStrip({ countdown, caffeineAfterCutoff, caffeineCutoff, lat
   if (!countdown && !caffeineAfterCutoff && !lateMeal) return null;
 
   return (
-    <section className="px-4 pb-5 flex flex-col gap-3" aria-label="Tonight">
+    <section className="hx-span-2 flex flex-col gap-3" aria-label="Tonight">
       {countdown && (
         <Banner kind="info" action={{ label: 'Going to bed', onClick: onGoingToBed }}>
           {countdown.message}

@@ -62,9 +62,9 @@ describe('hrvTileLabel (R1-9: neutral "Calibrating" until the 21-reading baselin
   });
 
   it('says Calibrating with the day count while the baseline is forming, even if the engine has a provisional band', () => {
-    expect(hrvTileLabel(hrv({ baselineEstablished: false, daysOfData: 12 }))).toEqual({ text: 'Calibrating · 12/21 days', band: 'neutral' });
+    expect(hrvTileLabel(hrv({ baselineEstablished: false, daysOfData: 12 }))).toEqual({ text: 'Calibrating, 12/21 days', band: 'neutral' });
     expect(hrvTileLabel(hrv({ band: 'low', baselineEstablished: false, daysOfData: 20 })).band).toBe('neutral');
-    expect(hrvTileLabel(hrv({ band: 'insufficient', baselineEstablished: true, daysOfData: 30 }))).toEqual({ text: 'Calibrating · 21/21 days', band: 'neutral' });
+    expect(hrvTileLabel(hrv({ band: 'insufficient', baselineEstablished: true, daysOfData: 30 }))).toEqual({ text: 'Calibrating, 21/21 days', band: 'neutral' });
   });
 
   it('shows the coloured Garmin-style band only once established', () => {
@@ -76,7 +76,7 @@ describe('hrvTileLabel (R1-9: neutral "Calibrating" until the 21-reading baselin
   it('falls back to the reading count against BASELINE_READINGS on legacy contexts', () => {
     expect(BASELINE_READINGS).toBe(21);
     expect(hrvTileLabel(hrv()).text).toBe('Balanced'); // delta.n 25
-    expect(hrvTileLabel(hrv({ delta: bd({ n: 10 }) })).text).toBe('Calibrating · 10/21 days');
+    expect(hrvTileLabel(hrv({ delta: bd({ n: 10 }) })).text).toBe('Calibrating, 10/21 days');
   });
 });
 

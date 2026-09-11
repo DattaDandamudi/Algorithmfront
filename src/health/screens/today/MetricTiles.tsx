@@ -1,6 +1,6 @@
 /**
  * Secondary metric tiles — SPEC §1 #3, in the spec's order:
- * Sleep · HRV · RHR · Steps · Protein remaining (lg, full width) · Calories.
+ * Sleep, HRV, RHR, Steps, then Protein remaining (lg, span-2) and Calories (span-2).
  *
  * Every tile shows "vs your 30-day average" (RHR: 28-day, §1) with a ▲/▼
  * coloured by the metric's good direction — the engine's BaselineDelta
@@ -15,6 +15,8 @@
  * (R7-8) — not the 30-day arithmetic mean.
  * Tapping a tile opens the Coach pre-filled with a contextual prompt from
  * `suggestedPrompts(ctx)` (WHOOP pattern: chips carry most coach traffic).
+ *
+ * Renders a fragment of `Tile`s: Today lays them out in its `.hx-bento`.
  */
 import type { ReactNode } from 'react';
 import type { Band, BaselineDelta, CoachContext, HrvBand } from '../../data/types';
@@ -71,7 +73,7 @@ export function hrvTileLabel(hrv: CoachContext['hrv']): { text: string; band: Ba
   const days = hrv.daysOfData ?? hrv.delta.n ?? 0;
   const established = hrv.baselineEstablished ?? days >= BASELINE_READINGS;
   if (!established || hrv.band === 'insufficient') {
-    return { text: `Calibrating · ${fmt(Math.min(days, BASELINE_READINGS))}/${BASELINE_READINGS} days`, band: 'neutral' };
+    return { text: `Calibrating, ${fmt(Math.min(days, BASELINE_READINGS))}/${BASELINE_READINGS} days`, band: 'neutral' };
   }
   return HRV_LABEL[hrv.band] ?? HRV_LABEL.insufficient;
 }
@@ -127,7 +129,7 @@ function SleepSub({ hours, need, debtMin }: { hours: number; need: number | null
       )}
       <span className="text-[12px] leading-4 text-hx-text2">
         {need !== null ? `of ${fmt(need, 1)} h need` : 'need unknown'}
-        {isNum(debtMin) && debtMin > 0 ? ` · ${fmtMinutes(debtMin)} debt` : ''}
+        {isNum(debtMin) && debtMin > 0 ? `, ${fmtMinutes(debtMin)} debt` : ''}
       </span>
     </div>
   );
@@ -190,10 +192,10 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, provisionalTdee
     proteinBand = aboveMax || lowSlot ? 'yellow' : undefined;
     // Colour is never the only carrier (R6-12): say the ceiling breach in words.
     const perMeal = `~${fmt(n.proteinPerMealNeeded)} g × ${mealsLeftText}${aboveMax ? ` — above your ${fmt(maxPerMeal)} g/meal max — spread across an extra meal` : ''}`;
-    pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor · ${perMeal}` : perMeal;
+    pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor, ${perMeal}` : perMeal;
   } else {
     proteinBand = lowSlot ? 'yellow' : undefined;
-    pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor · ${mealsLeftText}` : mealsLeftText;
+    pacing = lowSlot ? `Last meal ${fmt(n.lastMealProtein)} g — under your ${fmt(minPerMeal)} g floor, ${mealsLeftText}` : mealsLeftText;
   }
   const proteinPct = proteinTarget > 0 ? Math.round((soFar / proteinTarget) * 100) : 0;
   const proteinDelta = dayCompleteDelta(baseline.protein, baseline.dayComplete, 'g');
@@ -205,102 +207,104 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, provisionalTdee
   const tdee = ctx.expenditure.valid && isNum(ctx.expenditure.tdee) ? ctx.expenditure.tdee : null;
   let kcalSub: string;
   if (kcalOver) kcalSub = `over your ${fmt(n.targets.kc)} kcal target`;
-  else if (tdee !== null) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(tdee)}`;
-  else if (isNum(provisionalTdee)) kcalSub = `of ${fmt(n.targets.kc)} · TDEE ~${fmt(provisionalTdee)} (still calibrating)`;
+  else if (tdee !== null) kcalSub = `of ${fmt(n.targets.kc)}, TDEE about ${fmt(tdee)}`;
+  else if (isNum(provisionalTdee)) kcalSub = `of ${fmt(n.targets.kc)}, TDEE about ${fmt(provisionalTdee)} (still calibrating)`;
   else kcalSub = `of ${fmt(n.targets.kc)} kcal`;
   const kcalDelta = dayCompleteDelta(baseline.kcal, baseline.dayComplete, 'kcal');
   const kcalAvg = kcalDelta ? null : baselineCaption(baseline.kcal, 'kcal');
 
+  // Rendered as a fragment: the tiles are cells in the parent's `.hx-bento`,
+  // so Today decides the grid and this file decides only the readings. Four
+  // 1×1 complications make two full rows; protein and calories are span-2 so
+  // no tile is ever left alone in a row (DESIGN.md "Bento rules").
   return (
-    <section className="px-4 pb-5" aria-label="Today's metrics">
-      <div className="grid grid-cols-2 gap-3">
-        <Tile
-          label="Sleep"
-          value={sleepHours}
-          dp={1}
-          unit="h"
-          delta={{ value: ctx.sleep.delta.delta, good: ctx.sleep.delta.good, dp: 1, unit: 'h' }}
-          sub={sleepSub}
-          emptyHint={empty.sleep ?? "Log last night's sleep or connect WHOOP."}
-          onClick={open('sleep')}
-        />
-        <Tile
-          label="HRV"
-          value={ctx.hrv.today}
-          unit="ms"
-          band={hrvMeta.band}
-          sub={hrvMeta.text}
-          delta={hrvTileDelta(ctx.hrv)}
-          chart={hasHrvSpark ? <Sparkline values={hrv7} band={swc} highlightLast width={124} height={26} title="HRV, last 7 days" /> : undefined}
-          chartLayout="stack"
-          emptyHint={empty.hrv ?? 'Log HRV or connect WHOOP to start your baseline.'}
-          onClick={open('hrv')}
-        />
-        <Tile
-          label="RHR"
-          value={ctx.rhr.today}
-          unit="bpm"
-          delta={{ value: ctx.rhr.delta, good: ctx.rhr.good, unit: 'bpm', caption: 'vs 28-day avg' }}
-          sub={isNum(ctx.rhr.baseline) ? `Baseline ${fmt(ctx.rhr.baseline)} bpm` : undefined}
-          emptyHint="Log resting HR or connect WHOOP."
-          onClick={open('rhr')}
-        />
-        <Tile
-          label="Steps"
-          value={steps}
-          delta={stepsDelta}
-          sub={
-            <span className="flex flex-col gap-0.5">
-              <span>{stepsGoalLabel(ctx.steps.goalMin, ctx.steps.goalMax)}</span>
-              {stepsAvg && <span className="text-hx-muted font-normal">{stepsAvg}</span>}
+    <>
+      <Tile
+        label="Sleep"
+        value={sleepHours}
+        dp={1}
+        unit="h"
+        delta={{ value: ctx.sleep.delta.delta, good: ctx.sleep.delta.good, dp: 1, unit: 'h' }}
+        sub={sleepSub}
+        emptyHint={empty.sleep ?? "Log last night's sleep or connect WHOOP."}
+        onClick={open('sleep')}
+      />
+      <Tile
+        label="HRV"
+        value={ctx.hrv.today}
+        unit="ms"
+        band={hrvMeta.band}
+        sub={hrvMeta.text}
+        delta={hrvTileDelta(ctx.hrv)}
+        chart={hasHrvSpark ? <Sparkline values={hrv7} band={swc} highlightLast width={124} height={26} title="HRV, last 7 days" /> : undefined}
+        chartLayout="stack"
+        emptyHint={empty.hrv ?? 'Log HRV or connect WHOOP to start your baseline.'}
+        onClick={open('hrv')}
+      />
+      <Tile
+        label="Resting HR"
+        value={ctx.rhr.today}
+        unit="bpm"
+        delta={{ value: ctx.rhr.delta, good: ctx.rhr.good, unit: 'bpm', caption: 'vs 28-day avg' }}
+        sub={isNum(ctx.rhr.baseline) ? `Baseline ${fmt(ctx.rhr.baseline)} bpm` : undefined}
+        emptyHint="Log resting HR or connect WHOOP."
+        onClick={open('rhr')}
+      />
+      <Tile
+        label="Steps"
+        value={steps}
+        delta={stepsDelta}
+        sub={
+          <span className="flex flex-col gap-0.5">
+            <span>{stepsGoalLabel(ctx.steps.goalMin, ctx.steps.goalMax)}</span>
+            {stepsAvg && <span className="text-hx-muted font-normal">{stepsAvg}</span>}
+          </span>
+        }
+        band={stepsGoalHit ? 'green' : undefined}
+        chart={<ProgressRing value={steps} max={ctx.steps.goalMin} color={stepsGoalHit ? 'green' : 'blue'} size={44} stroke={5} label="Steps toward goal" />}
+        emptyHint="Log steps or connect WHOOP."
+        onClick={open('steps')}
+      />
+      <Tile
+        label="Protein remaining"
+        size="lg"
+        span={2}
+        value={proteinLeft}
+        unit="g"
+        band={proteinBand}
+        delta={proteinDelta}
+        sub={
+          <span className="flex flex-col gap-0.5">
+            <span>{pacing}</span>
+            <span className="text-hx-text2 font-normal">
+              {fmt(soFar)} g of {fmt(proteinTarget)} g eaten
+              {n.mealsLogged > 0 ? `, ${n.mealsLogged} ${n.mealsLogged === 1 ? 'meal' : 'meals'} logged` : ', nothing logged yet'}
             </span>
-          }
-          band={stepsGoalHit ? 'green' : undefined}
-          chart={<ProgressRing value={steps} max={ctx.steps.goalMin} color={stepsGoalHit ? 'green' : 'blue'} size={44} stroke={5} label="Steps toward goal" />}
-          emptyHint="Log steps or connect WHOOP."
-          onClick={open('steps')}
-        />
-        <Tile
-          label="Protein remaining"
-          size="lg"
-          className="col-span-2"
-          value={proteinLeft}
-          unit="g"
-          band={proteinBand}
-          delta={proteinDelta}
-          sub={
-            <span className="flex flex-col gap-0.5">
-              <span>{pacing}</span>
-              <span className="text-hx-text2 font-normal">
-                {fmt(soFar)} g of {fmt(proteinTarget)} g eaten
-                {n.mealsLogged > 0 ? ` · ${n.mealsLogged} ${n.mealsLogged === 1 ? 'meal' : 'meals'} logged` : ' · nothing logged yet'}
-              </span>
-              {proteinAvg && <span className="text-hx-muted font-normal">{proteinAvg}</span>}
-            </span>
-          }
-          chart={
-            <ProgressRing value={soFar} max={proteinTarget} color="green" size={52} stroke={6} label="Protein eaten">
-              <span className="text-[11px] font-semibold text-hx-text2">{proteinPct}%</span>
-            </ProgressRing>
-          }
-          onClick={open('protein')}
-        />
-        <Tile
-          label={kcalOver ? 'Calories over' : 'Calories remaining'}
-          className="col-span-2"
-          value={Math.abs(kcalLeft)}
-          unit={kcalOver ? 'kcal over' : 'kcal'}
-          band={kcalOver ? 'red' : undefined}
-          delta={kcalDelta}
-          sub={
-            <span className="flex flex-col gap-0.5">
-              <span>{kcalSub}</span>
-              {kcalAvg && <span className="text-hx-muted font-normal">{kcalAvg}</span>}
-            </span>
-          }
-          onClick={open('calories')}
-        />
-      </div>
-    </section>
+            {proteinAvg && <span className="text-hx-muted font-normal">{proteinAvg}</span>}
+          </span>
+        }
+        chart={
+          <ProgressRing value={soFar} max={proteinTarget} color="green" size={52} stroke={6} label="Protein eaten">
+            <span className="hx-display text-[11px] font-semibold text-hx-text2">{proteinPct}%</span>
+          </ProgressRing>
+        }
+        onClick={open('protein')}
+      />
+      <Tile
+        label={kcalOver ? 'Calories over' : 'Calories remaining'}
+        span={2}
+        value={Math.abs(kcalLeft)}
+        unit={kcalOver ? 'kcal over' : 'kcal'}
+        band={kcalOver ? 'red' : undefined}
+        delta={kcalDelta}
+        sub={
+          <span className="flex flex-col gap-0.5">
+            <span>{kcalSub}</span>
+            {kcalAvg && <span className="text-hx-muted font-normal">{kcalAvg}</span>}
+          </span>
+        }
+        onClick={open('calories')}
+      />
+    </>
   );
 }

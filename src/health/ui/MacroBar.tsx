@@ -2,10 +2,11 @@
  * MacroBar — thin remaining-macro bar (SPEC §1 #4): protein → carbs (day-type
  * range as a lighter zone) → fat (60 g floor tick) → fiber.
  *
- * Bar ≤ 10 px, rounded data end, numbers in text tokens (never coloured by the
- * series); over-target shows the overflow in red and flips the right-hand
- * label to "x g over". Scale = max(target, range hi, floor, value up to 125 %
- * of target) so a normal day fills the bar and a blow-out is still legible.
+ * The trough is a sunken well; the fill is the tone. Bar 8 px, rounded data
+ * end, numbers in text tokens (never coloured by the series); over-target shows
+ * the overflow in red and flips the right-hand label to "x g over". Scale =
+ * max(target, range hi, floor, value up to 125 % of target) so a normal day
+ * fills the bar and a blow-out is still legible.
  */
 import { fmt } from '../lib/format';
 import { bandBg, type Tone } from './bands';
@@ -37,20 +38,14 @@ export default function MacroBar({ label, value, target, range = null, targetLab
   const over = v > target;
   const inRange = rangeLo !== null && v >= rangeLo && !over;
   const remaining = target - v;
-  const right = !remainingLabel
-    ? null
-    : over
-      ? `${fmt(v - target)} ${unit} over`
-      : inRange
-        ? 'in range'
-        : `${fmt(remaining)} ${unit} left`;
+  const right = !remainingLabel ? null : over ? `${fmt(v - target)} ${unit} over` : inRange ? 'in range' : `${fmt(remaining)} ${unit} left`;
 
   return (
-    <div className={`flex flex-col gap-1.5 ${floor !== null && floor !== undefined ? 'pb-4' : ''} ${className}`}>
+    <div className={`flex flex-col gap-2 ${floor !== null && floor !== undefined ? 'pb-4' : ''} ${className}`}>
       <div className="flex items-baseline justify-between gap-3">
         <span className="hx-label">{label}</span>
-        <span className="text-[13px] leading-4 text-hx-text2">
-          <span className="text-hx-text font-semibold">{fmt(v)}</span> / {targetLabel ?? fmt(target)} {unit}
+        <span className="text-[13px] leading-[18px] text-hx-text2">
+          <span className="hx-display text-[15px] text-hx-text font-semibold">{fmt(v)}</span> / {targetLabel ?? fmt(target)} {unit}
           {right && <span className={`ml-2 ${over ? 'text-hx-red font-medium' : inRange ? 'text-hx-green' : 'text-hx-muted'}`}>{right}</span>}
         </span>
       </div>
@@ -61,7 +56,7 @@ export default function MacroBar({ label, value, target, range = null, targetLab
         aria-valuemax={target}
         aria-valuenow={Math.min(v, target)}
         aria-valuetext={`${fmt(v)} of ${fmt(target)} ${unit}${right ? `, ${right}` : ''}`}
-        className="relative h-2 rounded-full bg-hx-card2 overflow-visible"
+        className="hx-well relative h-2 overflow-visible"
       >
         {range && (
           <span
@@ -70,17 +65,9 @@ export default function MacroBar({ label, value, target, range = null, targetLab
             aria-hidden
           />
         )}
-        <span
-          className={`absolute inset-y-0 left-0 ${over ? 'rounded-l-full' : 'rounded-full'} ${bandBg(color)}`}
-          style={{ width: pct(Math.min(v, target), scale) }}
-          aria-hidden
-        />
+        <span className={`absolute inset-y-0 left-0 ${over ? 'rounded-l-full' : 'rounded-full'} ${bandBg(color)}`} style={{ width: pct(Math.min(v, target), scale) }} aria-hidden />
         {over && (
-          <span
-            className="absolute inset-y-0 rounded-r-full bg-hx-red"
-            style={{ left: pct(target, scale), width: pct(Math.min(v, scale) - target, scale) }}
-            aria-hidden
-          />
+          <span className="absolute inset-y-0 rounded-r-full bg-hx-red" style={{ left: pct(target, scale), width: pct(Math.min(v, scale) - target, scale) }} aria-hidden />
         )}
         {floor !== null && floor !== undefined && (
           <span className="absolute -top-1 bottom-0 flex flex-col items-center" style={{ left: pct(floor, scale) }} aria-hidden>

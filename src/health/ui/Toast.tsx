@@ -4,7 +4,9 @@
  * `toast(message, kind)` is a plain function backed by a module-level emitter
  * so stores/actions can call it without React context; `<ToastHost />` (mount
  * once in HealthApp) renders the queue in an aria-live=polite region above the
- * tab bar and auto-hides each toast after 2.5 s. Kind colours the icon only.
+ * tab bar and auto-hides each toast after 2.5 s. Raised glass, because it is
+ * the one thing floating over everything. Kind colours the icon only. The
+ * entrance is motion answering an action, so it keeps its rise.
  */
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, X } from 'lucide-react';
@@ -50,22 +52,19 @@ export function ToastHost() {
       role="status"
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 bottom-[calc(76px+env(safe-area-inset-bottom))]"
+      className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 bottom-[calc(80px+env(safe-area-inset-bottom))]"
     >
       {items.map((t) => {
         const { Icon, cls } = ICON[t.kind];
         return (
-          <div
-            key={t.id}
-            className="pointer-events-auto hx-fade-up flex items-center gap-2.5 w-full max-w-[358px] rounded-2xl border border-hx-border bg-hx-card2 text-hx-text shadow-2xl pl-3.5 pr-1.5 py-1.5"
-          >
+          <div key={t.id} className="hx-raised pointer-events-auto hx-fade-up flex items-center gap-2.5 w-full max-w-[358px] !rounded-full text-hx-text pl-4 pr-1.5 py-1.5">
             <Icon className={`w-5 h-5 shrink-0 ${cls}`} aria-hidden />
-            <span className="flex-1 text-[14px] leading-5 py-1.5">{t.message}</span>
+            <span className="flex-1 text-[15px] leading-5 py-1.5">{t.message}</span>
             <button
               type="button"
               aria-label="Dismiss"
               onClick={() => setItems((xs) => xs.filter((x) => x.id !== t.id))}
-              className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-hx-muted hover:text-hx-text"
+              className="w-11 h-11 inline-flex items-center justify-center rounded-full text-hx-muted hover:text-hx-text"
             >
               <X className="w-4 h-4" aria-hidden />
             </button>

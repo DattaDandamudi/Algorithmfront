@@ -1,10 +1,12 @@
 /**
  * Chip — pill button (training verdict, coach quick prompts, filters).
  *
- * Both sizes are 44 px tall (touch-target floor); `sm` only tightens the text
- * and padding. `active` is purely visual (a 15 % tone wash); pass `pressed`
- * on real toggles so aria-pressed is only announced where it is true (review
+ * Idle chips are sunken wells; an active chip lifts into a tone wash with a
+ * bezel in that tone. Both sizes are 44 px tall (touch-target floor); `sm` only
+ * tightens the text and padding. `active` is purely visual; pass `pressed` on
+ * real toggles so aria-pressed is only announced where it is true (review
  * R6-11: an action chip must not read as "pressed"). Colour is a semantic Tone.
+ * The wash class strings are pinned by hero.test.tsx (`bg-hx-red/15`).
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import type { Tone } from './bands';
@@ -27,16 +29,16 @@ const ACTIVE: Record<Tone, string> = {
   blue: 'bg-hx-blue/15 text-hx-blue border-hx-blue/40',
 };
 
-const IDLE = 'bg-hx-card2 text-hx-text2 border-hx-border hover:text-hx-text hover:border-hx-neutral';
+const IDLE = 'hx-well text-hx-text2 border-hx-border hover:text-hx-text hover:border-hx-neutral';
 
 export default function Chip({ children, active, pressed, color = 'neutral', icon, size = 'md', className = '', type = 'button', ...rest }: ChipProps) {
-  const h = size === 'sm' ? 'h-11 px-3 text-[13px] gap-1.5' : 'h-11 px-4 text-[14px] gap-2';
+  const h = size === 'sm' ? 'h-11 px-3 text-[13px] gap-1.5' : 'h-11 px-4 text-[15px] gap-2';
   return (
     <button
       type={type}
       aria-pressed={pressed === undefined ? undefined : pressed}
-      className={`inline-flex items-center justify-center rounded-full border font-medium whitespace-nowrap select-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${h} ${
-        active ? ACTIVE[color] : IDLE
+      className={`hx-press inline-flex items-center justify-center rounded-full border font-medium whitespace-nowrap select-none disabled:opacity-50 disabled:cursor-not-allowed ${h} ${
+        active ? `${ACTIVE[color]} shadow-[inset_0_1px_0_rgba(233,241,255,0.12)]` : IDLE
       } ${className}`}
       {...rest}
     >
