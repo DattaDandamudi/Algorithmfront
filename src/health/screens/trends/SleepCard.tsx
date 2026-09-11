@@ -62,7 +62,8 @@ export default function SleepCard({ sleep, series, consistency, offsets, win, be
     return (
       <TrendCard
         title="Sleep"
-        caption="Hours vs need · bedtime consistency"
+        tile
+        caption="Hours vs need, and how steady your bedtime is"
         action={action}
         empty={
           <EmptyState
@@ -103,7 +104,8 @@ export default function SleepCard({ sleep, series, consistency, offsets, win, be
   return (
     <TrendCard
       title="Sleep"
-      caption={`Hours vs need · 30-night range · bedtime consistency · ${win.label}`}
+      tile
+      caption={`Hours vs need, your 30-night range and bedtime consistency, ${win.label}`}
       action={action}
       meaning="Hours vs need is the debt you are building and the shaded band is your usual range (30-night mean ± SD); the bedtime row is regularity — a steady bedtime predicts recovery better than total hours."
     >
@@ -143,7 +145,7 @@ export default function SleepCard({ sleep, series, consistency, offsets, win, be
 
       <div className="flex flex-col gap-3 border-t border-hx-border pt-3">
         <div className="flex items-start justify-between gap-3">
-          <Readout label="Bedtime consistency" value={sd === null ? null : fmt(sd)} unit={sd === null ? undefined : 'min SD'} sub={`7-night SD · target ${target}`} />
+          <Readout label="Bedtime consistency" value={sd === null ? null : fmt(sd)} unit={sd === null ? undefined : 'min SD'} sub={`7-night SD, target ${target}`} />
           {sd === null && (
             <Button variant="secondary" size="sm" onClick={onLogBedtime}>
               Going to bed
@@ -173,8 +175,8 @@ export default function SleepCard({ sleep, series, consistency, offsets, win, be
           emptyText="No bedtimes logged in this range."
         />
         {hasOffsets && (
-          <p className="text-[11px] leading-4 text-hx-muted">
-            + minutes late · − minutes early{win.bucket === 'day' ? '' : ` · ${BUCKET_LABEL[win.bucket]}`}
+          <p className="text-[13px] leading-[18px] text-hx-muted">
+            Above the line is minutes late, below it is minutes early{win.bucket === 'day' ? '' : `, ${BUCKET_LABEL[win.bucket]}`}.
           </p>
         )}
       </div>

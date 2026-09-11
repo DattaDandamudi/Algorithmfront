@@ -113,14 +113,20 @@ export function rangeWindow(range: ChartRange, today: ISODate): RangeWindow {
   };
 }
 
-/** 'Last 30 days · daily · 8 Aug – 6 Sep' — the sticky header's second line. */
+/**
+ * 'Last 30 days, 8 Aug to 6 Sep' — the header's second line, on the ground
+ * under the range toggle. A sentence with commas, never middle dots
+ * (DESIGN.md "Copy rules"). The bucket word is named only when it is not the
+ * default daily one, because "weekly averages" changes what the dots mean.
+ */
 export function rangeCaption(win: RangeWindow): string {
   const day = (d: ISODate) => {
     const dt = parseISODate(d);
     return `${dt.getDate()} ${MONTH_SHORT[dt.getMonth()]}`;
   };
   const label = win.label.charAt(0).toUpperCase() + win.label.slice(1);
-  return `${label} · ${BUCKET_LABEL[win.bucket]} · ${day(win.start)} – ${day(win.end)}`;
+  const bucket = win.bucket === 'day' ? '' : `${BUCKET_LABEL[win.bucket]}, `;
+  return `${label}, ${bucket}${day(win.start)} to ${day(win.end)}`;
 }
 
 /** Tooltip date header per bucket: 'Sat 6 Sep' / 'Week of 1 Sep' / 'Sep 2026'. */
@@ -353,7 +359,7 @@ export function hrvSeries(records: DailyRecord[], win: RangeWindow): BandedSerie
 /**
  * Garmin-style band → semantic tone (SPEC §6.3). Matches the Today HRV tile
  * (screens/today/MetricTiles.tsx) so the two screens never disagree:
- * balanced green · unbalanced yellow · low / poor red · insufficient neutral.
+ * balanced green, unbalanced yellow, low / poor red, insufficient neutral.
  */
 export function hrvBandTone(band: HrvBand): Band {
   switch (band) {

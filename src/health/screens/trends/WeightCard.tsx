@@ -1,5 +1,7 @@
 /**
- * Weight card — SPEC §3 / §6.1, on §1a's filter.
+ * Weight card — SPEC §3 / §6.1, on §1a's filter. The HERO of Trends: a span-2
+ * tile, the tallest on the screen, with the smoothed level leading at 36 px
+ * because it is the answer the rest of the screen explains.
  *
  * Daily scale dots (neutral) under the **RTS-smoothed Kalman level** with its
  * 90% credible band as a 12% wash — "trust the trend line, never a single
@@ -70,7 +72,8 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
     return (
       <TrendCard
         title="Weight"
-        caption={`${weighInsText(series.totalWeighIns)} so far · needs ${MIN_WEIGH_INS}`}
+        tile
+        caption={`${weighInsText(series.totalWeighIns)} so far, needs ${MIN_WEIGH_INS}`}
         action={action}
         empty={
           <EmptyState
@@ -89,18 +92,26 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
   return (
     <TrendCard
       title="Weight"
-      caption={`Smoothed trend with its 90% band · ${weighInsText(series.weighIns)} in the ${win.label}`}
+      tile
+      caption={`Smoothed trend with its 90% band, ${weighInsText(series.weighIns)} in the ${win.label}`}
       action={action}
       meaning={`Trust the line, not the dots: the shaded ribbon is where your true weight sits ${bandText}, and day-to-day swings inside it are water and glycogen, not fat.`}
     >
-      <div className="grid grid-cols-2 gap-3">
-        <Readout
-          label="Trend"
-          value={trend}
-          dp={1}
-          unit={units}
-          sub={weight.latest === null ? undefined : `Latest scale ${fmt(conv(weight.latest), 1)} ${units}`}
-        />
+      {/* The hero lead: the level at 36 px (a section lead on the type ladder),
+          the rate beside it at the ordinary readout size. */}
+      <div className="grid grid-cols-2 gap-3 items-start">
+        <div className="min-w-0">
+          <span className="hx-label">Trend</span>
+          <div className="mt-1 flex items-baseline gap-1.5 min-w-0">
+            <span className="hx-display text-[36px] leading-10 font-semibold text-hx-text">{fmt(trend, 1)}</span>
+            <span className="text-[13px] font-medium text-hx-text2">{units}</span>
+          </div>
+          {weight.latest !== null && (
+            <span className="text-[13px] leading-[18px] text-hx-muted">
+              Latest scale {fmt(conv(weight.latest), 1)} {units}
+            </span>
+          )}
+        </div>
         <Readout
           label="Weekly rate"
           value={rate === null ? null : fmtSigned(rate, 2)}
@@ -122,7 +133,7 @@ export default function WeightCard({ weight, series, win, units, targets, onLogW
       />
 
       <div className="flex flex-col gap-1.5">
-        <p className="text-[12px] leading-4 text-hx-muted">
+        <p className="text-[13px] leading-[18px] text-hx-muted">
           Filled dots are weigh-ins the trend used. Hollow dots are readings the outlier check set aside — a typo, a different
           scale, or a day the number simply could not be right.
         </p>
@@ -168,18 +179,18 @@ function RateBand({ lo, hi, loss, unit, tone, pctBand, stateText }: RateBandProp
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
         <span className="hx-label">Target band</span>
-        <span className="text-[12px] leading-4 text-hx-text2">
-          {fmt(lo, 2)}–{fmt(hi, 2)} {unit}/wk · {pctBand[0]}–{pctBand[1]} %BW
+        <span className="text-[13px] leading-[18px] text-hx-text2">
+          {fmt(lo, 2)}–{fmt(hi, 2)} {unit}/wk, {pctBand[0]}–{pctBand[1]} %BW
         </span>
       </div>
       <div
         role="img"
         aria-label={`Weekly loss ${lossText} against a ${fmt(lo, 2)}–${fmt(hi, 2)} ${unit}/wk target band`}
-        className="relative h-2 rounded-full bg-hx-card2"
+        className="hx-well relative h-2.5"
       >
         <div className="absolute inset-y-0 rounded-full bg-hx-green/30" style={{ left: `${at(lo)}%`, width: `${Math.max(0, at(hi) - at(lo))}%` }} />
         {loss !== null && (
-          <div className={`absolute -top-1 h-4 w-1 rounded-full ${bandBg(tone)}`} style={{ left: `calc(${at(Math.max(0, loss))}% - 2px)` }} />
+          <div className={`absolute -top-[3px] h-4 w-1 rounded-full ${bandBg(tone)}`} style={{ left: `calc(${at(Math.max(0, loss))}% - 2px)` }} />
         )}
       </div>
       <Note tone={tone}>

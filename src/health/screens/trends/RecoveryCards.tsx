@@ -46,7 +46,8 @@ export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCa
     return (
       <TrendCard
         title="HRV"
-        caption="ln(rMSSD) baseline · smallest worthwhile change"
+        tile
+        caption="Your ln(rMSSD) baseline and its smallest worthwhile change"
         action={action}
         empty={
           <EmptyState
@@ -63,7 +64,8 @@ export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCa
   return (
     <TrendCard
       title="HRV"
-      caption={`Daily rMSSD · 7-day geometric mean · range = exp(ln mean ± 0.5 SD) · ${win.label}`}
+      tile
+      caption={`Daily rMSSD, 7-day geometric mean and your normal range, ${win.label}`}
       action={action}
       meaning="Dots are daily rMSSD in ms; the line is your 7-day geometric mean and the shaded band is your smallest worthwhile change, computed in ln(rMSSD) and shown back in ms (so it sits a little wider above the line than below). Below it, keep training light — and give the baseline ~30 days before acting on it."
     >
@@ -120,6 +122,7 @@ export function RhrCard({ rhr, series, band, win, onOpenSettings }: RhrCardProps
     return (
       <TrendCard
         title="Resting heart rate"
+        tile
         caption="Daily RHR vs your 28-day baseline"
         empty={
           <EmptyState
@@ -136,13 +139,14 @@ export function RhrCard({ rhr, series, band, win, onOpenSettings }: RhrCardProps
   return (
     <TrendCard
       title="Resting heart rate"
-      caption={`Daily RHR · 7-day mean · 28-day baseline ± SD · ${win.label}`}
+      tile
+      caption={`Daily RHR, 7-day mean and your 28-day baseline, ${win.label}`}
       meaning="The shaded band is your usual range (28-day mean ± SD) around the baseline line. A resting heart rate creeping above it usually means fatigue, short sleep or illness — read it together with HRV before adding load."
     >
       <div className="grid grid-cols-3 gap-3">
         <Readout label="Today" value={rhr.today} unit="bpm" sub={<DeltaSub value={rhr.delta} good={rhr.good} unit="bpm" caption="vs 28-day baseline" />} />
         <Readout label="7-day mean" value={series.meanLast} dp={1} unit="bpm" />
-        <Readout label="Baseline" value={rhr.baseline} dp={1} unit="bpm" sub={`28-day · ${rhr.n} readings`} />
+        <Readout label="Baseline" value={rhr.baseline} dp={1} unit="bpm" sub={`28-day, ${rhr.n} readings`} />
       </div>
 
       <TimeSeriesChart

@@ -519,11 +519,11 @@ export function ciText(lo95: number | null | undefined, hi95: number | null | un
   return `95% CI ${s(lo95)} to ${s(hi95)}`;
 }
 
-/** "12 days with · 41 without" — the counts behind the estimate. */
+/** "12 days with, 41 without" — the counts behind the estimate. */
 export function daysLine(nYes: number | null | undefined, nNo: number | null | undefined): string {
   const y = Number.isFinite(nYes) ? Math.round(nYes as number) : 0;
   const n = Number.isFinite(nNo) ? Math.round(nNo as number) : 0;
-  return `${y} ${y === 1 ? 'day' : 'days'} with · ${n} without`;
+  return `${y} ${y === 1 ? 'day' : 'days'} with, ${n} without`;
 }
 
 /** How strongly the estimate was pulled toward the published prior. */
@@ -576,5 +576,5 @@ export function strengthCaveat(effect: BehaviourEffect | null | undefined): stri
       `your own days went the other way (${effect.deltaMean > 0 ? 'lower' : 'higher'} on those days) before the published average pulled the estimate across zero`,
     );
   }
-  return parts.join(' · ');
+  return parts.join('; ');
 }

@@ -4,7 +4,7 @@
  *
  * Each signal gets a dot, its name, the reading, how far that reading sat from
  * the user's own normal and which way, the threshold that would flag it, and
- * the state in words ("Outside your range · 2.2 SD below your normal · flags
+ * the state in words ("Outside your range, 2.2 SD below your normal, flags
  * from 1.3 SD below"). A deviating signal is a FILLED dot, an in-range one is a
  * hollow ring — so the list still parses in greyscale, and every dot is
  * announced by its row text.
@@ -31,7 +31,7 @@ export interface SignalDotsProps {
 
 export default function SignalDots({ signals, emptyText = 'No overnight signals yet — HRV, resting heart rate, respiratory rate, skin temperature, blood oxygen and sleep debt appear here as they arrive.', className = '' }: SignalDotsProps) {
   if (!signals.length) {
-    return <p className={`text-[13px] leading-5 text-hx-muted ${className}`}>{emptyText}</p>;
+    return <p className={`text-[13px] leading-[18px] text-hx-muted ${className}`}>{emptyText}</p>;
   }
 
   return (
@@ -47,14 +47,14 @@ export default function SignalDots({ signals, emptyText = 'No overnight signals 
             />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-2 min-w-0">
-                <span className="text-[13px] leading-5 font-medium text-hx-text truncate">{signalLabel(s)}</span>
-                <span className="text-[13px] leading-5 text-hx-text2 shrink-0">{signalValueText(s)}</span>
+                <span className="text-[15px] leading-[22px] font-medium text-hx-text truncate">{signalLabel(s)}</span>
+                <span className="hx-display text-[15px] leading-[22px] font-semibold text-hx-text2 shrink-0">{signalValueText(s)}</span>
               </div>
-              <p className="text-[12px] leading-4 text-hx-muted">
+              <p className="text-[13px] leading-[18px] text-hx-muted">
                 <span className={`font-medium ${bandText(tone)}`}>{signalStateText(s)}</span>
-                {' · '}
+                {', '}
                 {signalZText(s)}
-                {signalThresholdText(s) ? ` · ${signalThresholdText(s)}` : ''}
+                {signalThresholdText(s) ? `, ${signalThresholdText(s)}` : ''}
               </p>
             </div>
           </li>

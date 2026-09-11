@@ -64,6 +64,7 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
     return (
       <TrendCard
         title="Training load"
+        tile
         caption="How much work you are doing, and how fast it is changing"
         empty={
           <EmptyState
@@ -80,12 +81,13 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
   const wow = load.weekOverWeekPct;
   const ramping = wow !== null && wow > WEEKLY_LOAD_SOFT_CAP_PCT;
   const wowTone: Tone | undefined = wow === null ? undefined : ramping ? 'yellow' : 'green';
-  const acwrText = load.acwr === null ? null : `${fmt(load.acwr, 2)} — ${load.acwrBand ? ACWR_WORD[load.acwrBand] : 'not yet established'}`;
+  const acwrWord = load.acwr === null ? null : load.acwrBand ? ACWR_WORD[load.acwrBand] : 'not yet established';
 
   return (
     <TrendCard
       title="Training load"
-      caption={`Acute load and its week-on-week change · ${plotted}`}
+      tile
+      caption={`Acute load and its week-on-week change, ${plotted}`}
       meaning="Load is effort × duration in one number, so a long easy session and a short brutal one can land in the same place. What matters is the size of the jump between weeks, not the exact figure."
     >
       <div className="grid grid-cols-2 gap-3">
@@ -93,7 +95,7 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
           label="Acute load (7 d)"
           value={load.acute7}
           unit="units"
-          sub={`Chronic 28 d ${fmt(load.chronic28)} · ${series.trainedDays} of ${series.days} days trained`}
+          sub={`Chronic 28 d ${fmt(load.chronic28)}, ${series.trainedDays} of ${series.days} days trained`}
         />
         <Readout
           label="Week on week"
@@ -118,14 +120,21 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
       />
 
       <Note tone={ramping ? 'yellow' : 'neutral'}>{LOAD_NOTES.weekOverWeek}</Note>
-      <p className="text-[12px] leading-4 text-hx-text2">{SOURCE_NOTE[load.source]}</p>
-      {load.source === 'mixed' && <p className="text-[12px] leading-4 text-hx-muted">{LOAD_NOTES.unitMix}</p>}
+      <p className="text-[13px] leading-[18px] text-hx-text2">{SOURCE_NOTE[load.source]}</p>
+      {load.source === 'mixed' && <p className="text-[13px] leading-[18px] text-hx-muted">{LOAD_NOTES.unitMix}</p>}
 
       {/* --- the ratio, deliberately subordinate: smaller, lower, and captioned --- */}
       <section aria-label="Acute:chronic ratio" className="border-t border-hx-border pt-3 flex flex-col gap-2">
-        <div className="flex items-baseline justify-between gap-3">
+        <div className="flex flex-col">
           <span className="hx-label">Acute:chronic ratio</span>
-          <span className="text-[13px] leading-5 font-semibold text-hx-text tabular-nums">{acwrText ?? 'Needs 28 days'}</span>
+          {load.acwr === null ? (
+            <span className="mt-1 text-[15px] leading-[22px] text-hx-muted">Needs 28 days</span>
+          ) : (
+            <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+              <span className="hx-display text-[17px] leading-6 font-semibold text-hx-text">{fmt(load.acwr, 2)}</span>
+              <span className="text-[13px] leading-[18px] text-hx-text2">{acwrWord}</span>
+            </div>
+          )}
         </div>
 
         <TimeSeriesChart
@@ -142,7 +151,7 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
           emptyText="The ratio needs 28 days of load before it means anything."
         />
 
-        <p className="text-[12px] leading-4 text-hx-muted">{LOAD_NOTES.acwrDescriptive}</p>
+        <p className="text-[13px] leading-[18px] text-hx-muted">{LOAD_NOTES.acwrDescriptive}</p>
       </section>
     </TrendCard>
   );

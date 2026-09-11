@@ -26,6 +26,7 @@ export default function StepsCard({ steps, series, stats, win }: StepsCardProps)
     return (
       <TrendCard
         title="Steps"
+        tile
         caption={`Daily steps against the ${goal} goal`}
         empty={<EmptyState icon={<Footprints />} title="No steps yet" hint={`Log steps or connect WHOOP to see your days against the ${goal} goal band.`} />}
       />
@@ -40,13 +41,14 @@ export default function StepsCard({ steps, series, stats, win }: StepsCardProps)
   return (
     <TrendCard
       title="Steps"
-      caption={`Daily steps · ${goal} goal band · ${win.label}`}
+      tile
+      caption={`Daily steps against the ${goal} goal band, ${win.label}`}
       meaning={`Steps are the cheapest expenditure lever in a deficit — days inside the ${goal} band keep your daily activity steady while calories come down.`}
     >
       <div className="grid grid-cols-3 gap-3">
         <Readout label="Today" value={steps.today} sub={<DeltaSub value={steps.delta} good={steps.good} />} />
         <Readout label="Average" value={stats.meanSteps} sub={`${stats.loggedDays} logged day${stats.loggedDays === 1 ? '' : 's'}`} />
-        <Readout label="Goal days" value={`${stats.goalDays}/${stats.loggedDays}`} sub={`${goalWord} · ≥ ${fmt(steps.goalMin)} steps`} tone={goalTone} />
+        <Readout label="Goal days" value={`${stats.goalDays}/${stats.loggedDays}`} sub={`${goalWord}, ≥ ${fmt(steps.goalMin)} steps`} tone={goalTone} />
       </div>
 
       <TimeSeriesChart

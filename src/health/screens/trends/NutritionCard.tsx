@@ -36,7 +36,8 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
     return (
       <TrendCard
         title="Food frequency"
-        caption="Red meat · fish · home-cooked · fiber"
+        tile
+        caption="Red meat, fish, home-cooked meals and fiber"
         action={action}
         empty={
           <EmptyState
@@ -51,12 +52,15 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
   }
 
   const showRange = win.days > 7;
-  const cell = 'py-2 text-right text-[15px] font-semibold tabular-nums';
+  // Sentence case in a column head: "last 30 days" is a fragment mid-sentence.
+  const rangeHeading = win.label.charAt(0).toUpperCase() + win.label.slice(1);
+  const cell = 'hx-display py-2 text-right text-[15px] leading-5 font-semibold';
 
   return (
     <TrendCard
       title="Food frequency"
-      caption={`${meals(week.totalMeals)} tagged this week${showRange ? ` · ${meals(range.totalMeals)} in the ${win.label}` : ''}`}
+      tile
+      caption={`${meals(week.totalMeals)} tagged this week${showRange ? `, ${meals(range.totalMeals)} in the ${win.label}` : ''}`}
       action={action}
       meaning="Counted from meal tags — these are the habits that move the labs you track: oily fish for the omega-3 index, iron-rich meals for ferritin, home cooking for lead and sodium exposure, fiber for the daily target."
     >
@@ -71,7 +75,7 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
             </th>
             {showRange && (
               <th scope="col" className="hx-label pb-2 text-right font-medium">
-                {win.label}
+                {rangeHeading}
               </th>
             )}
           </tr>
@@ -81,7 +85,7 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
             <tr key={r.key} className="border-t border-hx-border">
               <th scope="row" className="py-2 text-left font-medium text-hx-text">
                 {r.label}
-                <span className="block text-[11px] leading-4 font-normal text-hx-muted">{r.hint}</span>
+                <span className="block text-[12px] leading-4 font-normal text-hx-muted">{r.hint}</span>
               </th>
               <td className={`${cell} text-hx-text`}>{r.week}</td>
               {showRange && <td className={`${cell} text-hx-text2`}>{r.range}</td>}
@@ -93,14 +97,14 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
       {habits.length > 0 && (
         <ul className="flex flex-col gap-2" aria-label="Lab-linked habits">
           {habits.map((h) => (
-            <li key={h} className="rounded-xl border-l-2 border-hx-yellow bg-hx-card2 px-3 py-2 text-[13px] leading-5 text-hx-text2">
+            <li key={h} className="rounded-ctl border border-hx-border bg-hx-card2/60 px-3 py-2 text-[13px] leading-[18px] text-hx-text2">
               {h}
             </li>
           ))}
         </ul>
       )}
 
-      <p className="text-[11px] leading-4 text-hx-muted">General wellness information from your own labs. {DOCTOR_CUE}</p>
+      <p className="text-[13px] leading-[18px] text-hx-muted">General wellness information from your own labs. {DOCTOR_CUE}</p>
     </TrendCard>
   );
 }

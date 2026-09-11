@@ -61,6 +61,7 @@ export default function StressCard({
   const hooper = hooperBandWord(stress?.checkIn.band);
   const signals = signalsLine(stress?.signalsDeviating ?? 0, stress?.signalsAvailable ?? 0);
   const worse = worseRunLine(stress?.checkIn.worseRun);
+  const total = stress?.checkIn.total ?? null;
   const outliers = stress?.outliers ?? [];
   const illness = stress?.illness;
   const reasons = illness?.flag ? (illness.reasons ?? []).filter((r) => !!r) : [];
@@ -77,6 +78,7 @@ export default function StressCard({
     return (
       <TrendCard
         title="Overnight strain"
+        tile
         caption="Your own overnight signals vs your own baseline"
         action={action}
         empty={
@@ -94,7 +96,8 @@ export default function StressCard({
   return (
     <TrendCard
       title="Overnight strain"
-      caption={`Index 0–100 with its credible interval · check-in overlay · ${windowLabel}`}
+      tile
+      caption={`The index 0–100 with its credible interval, overlaid with your check-in, ${windowLabel}`}
       action={action}
       meaning="Read the signal count first: the index is only a summary of how many of your overnight readings sat outside your own range, and the shaded band is how sure that summary is. The lower panel is what you reported that morning. Neither one diagnoses anything — they say the night was unusual for you."
     >
@@ -120,7 +123,7 @@ export default function StressCard({
 
       {hasData(checkIn) && (
         <div className="flex flex-col gap-1">
-          <span className="hx-label">How you felt · Hooper {HOOPER_MAX}-point total, lower is better</span>
+          <span className="hx-label">How you felt, Hooper {HOOPER_MAX}-point total, lower is better</span>
           <TimeSeriesChart
             ariaLabel={`Daily check-in Hooper total, ${windowLabel}`}
             range={range}
@@ -143,14 +146,16 @@ export default function StressCard({
 
       <div className="flex flex-col gap-1">
         <Note tone={hooper.tone}>
-          Check-in: <span className="font-semibold text-hx-text">{hooper.label}</span> · Hooper {hooperTotalText(stress?.checkIn.total ?? null)}
-          {stress ? ` · ${stress.checkIn.nDays} ${stress.checkIn.nDays === 1 ? 'day' : 'days'} logged` : ''}
+          Check-in: <span className="font-semibold text-hx-text">{hooper.label}</span>
+          {/* "Hooper —" says nothing; name the total only when there is one. */}
+          {total === null ? '' : `, Hooper ${hooperTotalText(total)}`}
+          {stress ? `, ${stress.checkIn.nDays} ${stress.checkIn.nDays === 1 ? 'day' : 'days'} logged` : ''}
         </Note>
         {worse && <Note tone="yellow">{worse}</Note>}
         {stress?.calibrating && <Note tone="neutral">{calibratingLine(stress.nRef)}</Note>}
         {illness?.flag && (
           <Note tone="yellow">
-            {reasons.length > 0 ? `${reasons.join(' · ')}. ` : ''}
+            {reasons.length > 0 ? `${reasons.join(', ')}. ` : ''}
             {ILLNESS_NOTE}
           </Note>
         )}

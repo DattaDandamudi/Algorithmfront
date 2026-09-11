@@ -13,7 +13,8 @@
  */
 import { Activity } from 'lucide-react';
 import type { ISODate, StressContext } from '../../data/types';
-import { EmptyState } from '../../ui';
+import { clamp, fmt } from '../../lib/format';
+import { EmptyState, bandBg, type Tone } from '../../ui';
 import { TimeSeriesChart, type ChartRange, type TimeSeriesPoint } from '../../ui/charts';
 import { Note, Readout, TrendCard } from '../trends/TrendCard';
 import { balanceBand, balanceLine, resilienceBandWord } from './format';
@@ -22,6 +23,36 @@ export const AL_STYLE_NOTE =
   'The strain counter is a heuristic: it counts days several signals sat outside your range. It borrows the shape of allostatic load, which was built for blood markers — the wearable version is not a validated measure.';
 
 const hasData = (pts: TimeSeriesPoint[] | undefined) => !!pts?.some((p) => p.value !== null);
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * The balance as a gauge through zero: a sunken track with the marker where
+ * load − recovery actually sits, so the band word has something to point at.
+ * The domain is the reading's own (±25 % headroom, never under ±10), because
+ * the two EWMAs share a 0–100 scale but the gap between them rarely leaves
+ * single digits — a fixed ±100 track would pin every marker to the middle.
+ * The direction is in words underneath as well as in the `balanceLine` note,
+ * so nothing here is carried by position or colour alone.
+ */
+function BalanceBar({ balance, tone }: { balance: number | null | undefined; tone: Tone }) {
+  if (!isNum(balance)) return null;
+  const span = Math.max(10, Math.abs(balance) * 1.25);
+  const at = clamp((balance + span) / (2 * span), 0, 1) * 100;
+  const which = balance > 0 ? `load ${fmt(balance, 1)} above recovery` : balance < 0 ? `recovery ${fmt(-balance, 1)} above load` : 'load and recovery in step';
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="hx-label">Balance</span>
+      <div className="hx-well relative h-2.5" role="img" aria-label={`Balance: ${which}`}>
+        <div className="absolute inset-y-0 left-1/2 w-px bg-hx-border" aria-hidden />
+        <div className={`absolute -top-[3px] h-4 w-1 rounded-full ${bandBg(tone)}`} style={{ left: `calc(${at}% - 2px)` }} aria-hidden />
+      </div>
+      <div className="flex items-baseline justify-between gap-3 text-[12px] leading-4 text-hx-muted">
+        <span>Recovery ahead</span>
+        <span>Load ahead</span>
+      </div>
+    </div>
+  );
+}
 
 export interface ResilienceCardProps {
   /** Undefined while the engine has nothing to say. */
@@ -46,6 +77,7 @@ export default function ResilienceCard({ resilience, load, recovery, range = '30
     return (
       <TrendCard
         title="Resilience"
+        tile
         caption="Load vs recovery, both as exponentially weighted averages"
         empty={
           <EmptyState
@@ -61,7 +93,8 @@ export default function ResilienceCard({ resilience, load, recovery, range = '30
   return (
     <TrendCard
       title="Resilience"
-      caption={`Load and recovery EWMAs · balance = the gap between them · ${windowLabel}`}
+      tile
+      caption={`Load and recovery as weighted averages, and the balance between them, ${windowLabel}`}
       meaning="The shaded gap between the two curves is the balance the band word describes: load above recovery for several days is what turns 'Solid' into 'Limited'. It is a description of your last two weeks, not a prediction and not a diagnosis."
     >
       <div className="grid grid-cols-3 gap-3">
@@ -87,11 +120,13 @@ export default function ResilienceCard({ resilience, load, recovery, range = '30
         emptyText="Two weeks of training and check-ins fill both curves."
       />
 
+      <BalanceBar balance={resilience?.balance} tone={word.tone} />
+
       <div className="flex flex-col gap-1">
         <Note tone={word.tone}>{balanceLine(resilience?.balance, 1)}</Note>
         {resilience?.score !== null && resilience?.score !== undefined && (
           <Note tone="neutral">
-            Resilience score <span className="font-semibold text-hx-text">{Math.round(resilience.score)}</span> out of 100 — a summary of the gap above, not a separate measurement.
+            Resilience score <span className="hx-display font-semibold text-hx-text">{Math.round(resilience.score)}</span> out of 100 — a summary of the gap above, not a separate measurement.
           </Note>
         )}
         <Note tone="neutral">

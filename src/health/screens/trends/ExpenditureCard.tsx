@@ -65,7 +65,8 @@ export default function ExpenditureCard({ ctx, tdee, win, targets, onLogWeight, 
     return (
       <TrendCard
         title="Expenditure"
-        caption={nextUpdate ? `Calibrating · first measured block ${nextUpdate}` : 'Estimated weekly from intake and your weight trend'}
+        tile
+        caption={nextUpdate ? `Calibrating, first measured block ${nextUpdate}` : 'Estimated weekly from intake and your weight trend'}
         action={action}
         empty={
           <EmptyState
@@ -89,7 +90,8 @@ export default function ExpenditureCard({ ctx, tdee, win, targets, onLogWeight, 
   return (
     <TrendCard
       title="Expenditure"
-      caption={`${coverage} in the latest block · ${measured} of ${plotted} blocks measured${nextUpdate ? ` · next ${nextUpdate}` : ''}`}
+      tile
+      caption={`${coverage} in the latest block, ${measured} of ${plotted} blocks measured${nextUpdate ? `, next ${nextUpdate}` : ''}`}
       action={action}
       meaning={`Your intake minus the calories your trend change represents, folded into a running estimate rather than recomputed from scratch each week. A block needs ${MIN_BLOCK_WEIGH_INS}+ weigh-ins and ${MIN_BLOCK_LOG_DAYS}+ logged days to measure anything; without them the estimate holds and the band widens, which is the honest answer to a week you did not log.`}
     >
@@ -105,7 +107,7 @@ export default function ExpenditureCard({ ctx, tdee, win, targets, onLogWeight, 
           label="This block"
           value={`${block.weighIns}/7`}
           unit="weigh-ins"
-          sub={`${nextText} · ${block.intakeDays}/7 logged days so far`}
+          sub={`${nextText}, ${block.intakeDays}/7 logged days so far`}
           tone={block.tone === 'neutral' ? undefined : block.tone}
         />
       </div>
@@ -138,13 +140,13 @@ export default function ExpenditureCard({ ctx, tdee, win, targets, onLogWeight, 
             <Note tone={suggestion.tone}>
               <span className="font-semibold text-hx-text">{suggestion.text}</span>
             </Note>
-            <p className="pl-3.5 text-[12px] leading-4 text-hx-text2">{exp.reason}</p>
-            <p className="pl-3.5 text-[12px] leading-4 text-hx-muted">{TIER_NOTE[suggestion.tier]}</p>
+            <p className="pl-3.5 text-[13px] leading-[18px] text-hx-text2">{exp.reason}</p>
+            <p className="pl-3.5 text-[13px] leading-[18px] text-hx-muted">{TIER_NOTE[suggestion.tier]}</p>
           </>
         ) : (
           <Note tone="neutral">{exp.reason}</Note>
         )}
-        <p className="pl-3.5 text-[12px] leading-4 text-hx-muted">
+        <p className="pl-3.5 text-[13px] leading-[18px] text-hx-muted">
           Weight change is converted at {density.label} — the Forbes/Hall factor rather than the folk 3,500 kcal per lb, which is
           only right for a much fattier body than most.
           {density.source === 'assumed'

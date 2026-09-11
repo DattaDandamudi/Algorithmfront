@@ -44,6 +44,7 @@ export default function AdherenceCard({ today, heat, legend, loggingStreak, weig
     return (
       <TrendCard
         title="Adherence"
+        tile
         caption={`Hit days and streaks over the last ${HEAT_WEEKS} weeks`}
         empty={
           <EmptyState
@@ -60,7 +61,8 @@ export default function AdherenceCard({ today, heat, legend, loggingStreak, weig
   return (
     <TrendCard
       title="Adherence"
-      caption={`Last ${HEAT_WEEKS} weeks · ${TITLE[mode].toLowerCase()}`}
+      tile
+      caption={`${TITLE[mode]}, last ${HEAT_WEEKS} weeks`}
       meaning="Consistency beats precision — daily weigh-ins and logging on most days are what make the trend and expenditure trustworthy; breaks of a month or more risk regain."
     >
       <SegmentedControl<HeatMode> options={LENSES} value={mode} onChange={setMode} ariaLabel="Adherence lens" className="self-start" />

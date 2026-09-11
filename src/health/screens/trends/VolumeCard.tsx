@@ -40,6 +40,7 @@ export default function VolumeCard({ weeklySets, weeks, onOpenTrain }: VolumeCar
     return (
       <TrendCard
         title="Weekly volume"
+        tile
         caption="Hard sets per muscle against your landmark bands"
         empty={
           <EmptyState
@@ -61,12 +62,16 @@ export default function VolumeCard({ weeklySets, weeks, onOpenTrain }: VolumeCar
   return (
     <TrendCard
       title="Weekly volume"
-      caption={`${weeks.length} weeks · this week from ${formatDateShort(weekStart)}, still in progress`}
+      tile
+      caption={`${weeks.length} weeks, this week from ${formatDateShort(weekStart)} and still in progress`}
       meaning={`One hard set counts for the muscle it trains and half a set for each muscle that assists, which is why the counts land on halves. "${volumeStatusLabel('high')}" is the top of the scale, not a warning.`}
     >
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-col">
         <span className="hx-label">This week so far</span>
-        <span className="text-[15px] leading-5 font-semibold text-hx-text tabular-nums">{fmt(total, 1)} hard sets</span>
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="hx-display text-[22px] leading-7 font-semibold text-hx-text">{fmt(total, 1)}</span>
+          <span className="text-[13px] font-medium text-hx-text2">hard sets</span>
+        </div>
       </div>
 
       {/* The grid prints `VOLUME_ADVISORY_NOTE` itself — see its header. */}

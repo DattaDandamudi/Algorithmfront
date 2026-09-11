@@ -254,7 +254,7 @@ describe('ImpactCard', () => {
     const html = renderToStaticMarkup(<ImpactCard impact={impact()} />);
     expect(html).toContain('Association, not cause.');
     expect(html).toContain('95% CI −7.1 to −1.3');
-    expect(html).toContain('11 days with · 46 without');
+    expect(html).toContain('11 days with, 46 without');
     expect(html).toContain('35% of this estimate comes from published averages');
     expect(html).toContain('those days also had later bedtimes');
     expect(IMPACT_CAVEAT).toContain('Association, not cause.');

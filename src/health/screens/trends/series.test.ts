@@ -95,8 +95,8 @@ describe('rangeWindow / rangeCaption', () => {
     expect(rangeWindow('1Y', TODAY)).toMatchObject({ days: 365, bucket: 'month', tdeeWeeks: 52 });
   });
   it('writes the header caption', () => {
-    expect(rangeCaption(rangeWindow('30D', TODAY))).toBe('Last 30 days · daily · 8 Aug – 6 Sep');
-    expect(rangeCaption(rangeWindow('90D', TODAY))).toMatch(/^Last 90 days · weekly averages · /);
+    expect(rangeCaption(rangeWindow('30D', TODAY))).toBe('Last 30 days, 8 Aug to 6 Sep');
+    expect(rangeCaption(rangeWindow('90D', TODAY))).toMatch(/^Last 90 days, weekly averages, /);
   });
 });
 
@@ -445,18 +445,18 @@ describe('tdeeSeries (engine v3 posterior)', () => {
     expect(b.intakeDays).toBe(5);
     expect(b.met).toBe(true);
     expect(b.tone).toBe('green');
-    expect(b.text).toBe('Gate met — 5/7 weigh-ins, 5/7 logged days · 2 days left');
+    expect(b.text).toBe('Gate met — 5/7 weigh-ins, 5/7 logged days, 2 days left');
     // Day 2 of a block with no weigh-ins yet: neutral, never yellow.
     const early = v3BlockProgress({ ...t.result, firstWeighIn: addDays(TODAY, -8), weighInsThisWeek: 0, loggedDaysThisWeek: 2 }, TODAY);
     expect(early.daysLeft).toBe(5);
     expect(early).toMatchObject({ met: false, unreachable: false, tone: 'neutral' });
-    expect(early.text).toBe('0/7 weigh-ins, 2/7 logged days so far · 5 days left');
+    expect(early.text).toBe('0/7 weigh-ins, 2/7 logged days so far, 5 days left');
     // Day 7 of a block with no weigh-ins: today is the last chance, and one
     // weigh-in cannot reach three → yellow, and the estimate holds and widens.
     const late = v3BlockProgress({ ...t.result, firstWeighIn: addDays(TODAY, -13), weighInsThisWeek: 0, loggedDaysThisWeek: 6 }, TODAY);
     expect(late.daysLeft).toBe(0);
     expect(late).toMatchObject({ met: false, unreachable: true, tone: 'yellow' });
-    expect(late.text).toBe('Too few weigh-ins for a measured block — the estimate holds and widens · block closes tonight');
+    expect(late.text).toBe('Too few weigh-ins for a measured block — the estimate holds and widens, block closes tonight');
     // Before any weigh-in: no block, plain counts.
     expect(v3BlockProgress({ ...t.result, firstWeighIn: null, weighInsThisWeek: 0, loggedDaysThisWeek: 0 }, TODAY)).toMatchObject({
       daysLeft: null,

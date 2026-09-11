@@ -316,8 +316,8 @@ describe('impact CI bars', () => {
     expect(effectValueText({ deltaMean: NaN })).toBe('—');
     expect(ciText(-7.1, -1.3)).toBe('95% CI −7.1 to −1.3');
     expect(ciText(null, 2)).toBe('—');
-    expect(daysLine(1, 46)).toBe('1 day with · 46 without');
-    expect(daysLine(null, null)).toBe('0 days with · 0 without');
+    expect(daysLine(1, 46)).toBe('1 day with, 46 without');
+    expect(daysLine(null, null)).toBe('0 days with, 0 without');
   });
 
   it('says how much of the estimate is borrowed, and never says "confirmed"', () => {
@@ -371,7 +371,7 @@ describe('impact CI bars', () => {
 
 /** The row SignalDots renders, as one string. */
 const signalRow = (s: StressSignal): string =>
-  `${signalStateText(s)} · ${signalZText(s)}${signalThresholdText(s) ? ` · ${signalThresholdText(s)}` : ''}`;
+  `${signalStateText(s)}, ${signalZText(s)}${signalThresholdText(s) ? `, ${signalThresholdText(s)}` : ''}`;
 
 describe('overnight signal rows, from the engine', () => {
   const END = '2026-09-06';
@@ -390,9 +390,9 @@ describe('overnight signal rows, from the engine', () => {
     const rows = rowsFor({ hrv: 40, spo: 93 });
     // HRV 40 ms against a 60 ms normal, blood oxygen 93 % against 97 %.
     expect(signalValueText(rows.hrv)).toBe('40 ms');
-    expect(signalRow(rows.hrv)).toBe('Outside your range · 4.7 SD below your normal · flags from 1.3 SD below');
+    expect(signalRow(rows.hrv)).toBe('Outside your range, 4.7 SD below your normal, flags from 1.3 SD below');
     expect(signalValueText(rows.spo)).toBe('93 %');
-    expect(signalRow(rows.spo)).toBe('Outside your range · 5.3 SD below your normal · flags from 1.3 SD below');
+    expect(signalRow(rows.spo)).toBe('Outside your range, 5.3 SD below your normal, flags from 1.3 SD below');
     for (const key of ['hrv', 'spo'] as const) {
       expect(signalRow(rows[key])).not.toContain('above');
       expect(signalRow(rows[key])).not.toContain('±');
@@ -404,12 +404,12 @@ describe('overnight signal rows, from the engine', () => {
     // A night 2.3 SD ABOVE normal is inside the range: the rule is one-sided,
     // so a high HRV can never flag, and the copy must not imply it could.
     expect(rows.hrv.deviating).toBe(false);
-    expect(signalRow(rows.hrv)).toBe('Inside your range · 2.3 SD above your normal · flags from 1.3 SD below');
-    expect(signalRow(rows.spo)).toBe('Inside your range · 2.2 SD above your normal · flags from 1.3 SD below');
+    expect(signalRow(rows.hrv)).toBe('Inside your range, 2.3 SD above your normal, flags from 1.3 SD below');
+    expect(signalRow(rows.spo)).toBe('Inside your range, 2.2 SD above your normal, flags from 1.3 SD below');
   });
 
   it('says nothing about direction when there is no reading', () => {
     const rows = rowsFor({ hrv: 40 });
-    expect(signalRow(rows.rhr)).toBe('No reading · — · flags from 1.3 SD above');
+    expect(signalRow(rows.rhr)).toBe('No reading, —, flags from 1.3 SD above');
   });
 });

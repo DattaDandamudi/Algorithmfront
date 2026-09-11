@@ -1,15 +1,25 @@
 /**
- * Trends — SPEC §3, top → bottom:
- *  sticky range toggle (7D / 30D daily · 90D weekly · 1Y monthly) → Weight →
- *  Expenditure → Training load → Weekly volume → HRV → RHR → Overnight strain →
- *  Resilience → Sleep (+ bedtime consistency) → Steps → Behaviour impact →
- *  Adherence heatmap → Nutrition frequency counters → wellness footer.
+ * Trends — SPEC §3 laid out as the bento in DESIGN.md.
  *
- * Order is deliberate: body composition first (weight, then the expenditure
- * posterior that explains it), then the training that drives both, then the
- * recovery signals, then the behaviour evidence, then the logging record. The
- * stress stack sits with recovery rather than at the end, because the strain
- * index only means anything next to the HRV and RHR it is built from.
+ * Type on the ground at the top: the screen title, the range toggle (a well
+ * with the chosen segment raised out of it) and the window caption. Then one
+ * `.hx-bento`, every card a span-2 tile:
+ *
+ *  weight        HERO — span-2 and the tallest tile: the smoothed level leads
+ *                at 36 px, then the rate, the chart and the target band
+ *  expenditure   the posterior that explains the weight
+ *  HRV, RHR      recovery, the two signals a lifter reads together
+ *  sleep         hours vs need, then bedtime regularity
+ *  steps         the cheapest expenditure lever
+ *  load, volume  the training that drives both
+ *  stress        overnight strain and the check-in overlay
+ *  resilience    load vs recovery
+ *  impact        what moves your numbers
+ *  nutrition     food frequency for the labs
+ *  adherence     the logging record, last because it is the record
+ *
+ * Nothing here is a 1×1: every card carries a chart, a heatmap or a table
+ * wider than 140 px, which the bento rules make span-2.
  *
  * Every number comes from `useTrendsModel()` (store → engine → series); this
  * file only owns the range state and wires card actions to navigation
@@ -53,28 +63,32 @@ export default function Trends() {
 
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-20 bg-hx-base/95 backdrop-blur px-4 pt-4 pb-3 flex flex-col gap-1.5">
+      <header className="sticky top-0 z-20 bg-hx-base/90 backdrop-blur px-4 pt-5 pb-3 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-[17px] leading-6 font-semibold text-hx-text">Trends</h1>
-          <SegmentedControl<ChartRange> options={RANGES} value={range} onChange={setRange} ariaLabel="Date range" />
+          <h1 className="hx-display text-[22px] leading-7 font-semibold text-hx-text">Trends</h1>
+          <SegmentedControl<ChartRange> options={RANGES} value={range} onChange={setRange} size="sm" ariaLabel="Date range" />
         </div>
-        <p className="text-[12px] leading-4 text-hx-muted" aria-live="polite">
+        <p className="text-[13px] leading-[18px] text-hx-muted" aria-live="polite">
           {rangeCaption(win)}
         </p>
       </header>
 
-      <div className="pt-2 flex flex-col">
+      <div className="hx-bento px-4 pb-6">
         <WeightCard weight={ctx.weight} series={m.weight} win={win} units={profile.units} targets={targets} onLogWeight={() => openLog('weight')} onOpenCoach={openCoach} />
 
         <ExpenditureCard ctx={ctx} tdee={m.tdee} win={win} targets={targets} onLogWeight={() => openLog('weight')} onOpenCoach={openCoach} />
 
-        <LoadCard load={ctx.training?.load} series={m.load} win={win} onOpenTrain={() => openTrain('today')} />
-
-        <VolumeCard weeklySets={ctx.training?.weeklySets} weeks={m.volume} onOpenTrain={() => openTrain('today')} />
-
         <HrvCard hrv={ctx.hrv} series={m.hrv} win={win} onOpenCoach={openCoach} onOpenSettings={openWhoop} />
 
         <RhrCard rhr={ctx.rhr} series={m.rhr} band={m.rhrBand} win={win} onOpenSettings={openWhoop} />
+
+        <SleepCard sleep={ctx.sleep} series={m.sleep} consistency={m.bedSd} offsets={m.bedOffsets} win={win} bedTarget={profile.bedTarget} onLogBedtime={() => openLog('bedtime')} onOpenCoach={openCoach} />
+
+        <StepsCard steps={ctx.steps} series={m.steps.series} stats={m.steps.stats} win={win} />
+
+        <LoadCard load={ctx.training?.load} series={m.load} win={win} onOpenTrain={() => openTrain('today')} />
+
+        <VolumeCard weeklySets={ctx.training?.weeklySets} weeks={m.volume} onOpenTrain={() => openTrain('today')} />
 
         <StressCard
           stress={ctx.stress}
@@ -98,11 +112,9 @@ export default function Trends() {
           dateFormat={dateFormat}
         />
 
-        <SleepCard sleep={ctx.sleep} series={m.sleep} consistency={m.bedSd} offsets={m.bedOffsets} win={win} bedTarget={profile.bedTarget} onLogBedtime={() => openLog('bedtime')} onOpenCoach={openCoach} />
-
-        <StepsCard steps={ctx.steps} series={m.steps.series} stats={m.steps.stats} win={win} />
-
         <ImpactCard impact={ctx.impact} />
+
+        <NutritionCard rows={m.frequency.rows} habits={m.frequency.habits} week={m.frequency.week} range={m.frequency.range} win={win} onLogMeal={() => openLog('meal')} onOpenCoach={openCoach} />
 
         <AdherenceCard
           today={m.today}
@@ -113,12 +125,10 @@ export default function Trends() {
           counts={ctx.adherence}
           onLogMeal={() => openLog('meal')}
         />
-
-        <NutritionCard rows={m.frequency.rows} habits={m.frequency.habits} week={m.frequency.week} range={m.frequency.range} win={win} onLogMeal={() => openLog('meal')} onOpenCoach={openCoach} />
       </div>
 
-      <footer className="px-4 pt-1 pb-2 text-center">
-        <p className="text-[11px] leading-4 text-hx-muted">Wellness information only — not medical advice.</p>
+      <footer className="px-4 pt-1 pb-2 text-left">
+        <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
       </footer>
     </div>
   );

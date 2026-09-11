@@ -48,13 +48,13 @@ const level = (n: 0 | 1 | 2 | 3): HeatLevel => n;
 /** Heatmap cell for one day under the selected lens. Unlogged days are outlined (`null`). */
 export function heatDay(mode: HeatMode, cell: DayAdherence, rec: DailyRecord | undefined, targets: Targets): HeatmapDay {
   const kind = cell.dayType === 'lift' ? 'lift day' : 'rest day';
-  if (!cell.logged) return { d: cell.d, level: null, title: `Not logged · ${kind}` };
+  if (!cell.logged) return { d: cell.d, level: null, title: `Not logged, ${kind}` };
 
   if (mode === 'protein') {
     const p = cell.proteinG ?? 0;
     const t = targets.protein;
     const lv = p >= t ? 3 : p >= t - PROTEIN_HIT_TOLERANCE_G ? 2 : p >= t * 0.75 ? 1 : 0;
-    return { d: cell.d, level: level(lv), title: `${fmt(p)} g protein — ${cell.proteinHit ? 'hit' : 'missed'} · ${kind}` };
+    return { d: cell.d, level: level(lv), title: `${fmt(p)} g protein — ${cell.proteinHit ? 'hit' : 'missed'}, ${kind}` };
   }
 
   if (mode === 'kcal') {
@@ -67,14 +67,14 @@ export function heatDay(mode: HeatMode, cell: DayAdherence, rec: DailyRecord | u
     else lv = 0;
     const verdict =
       over > KCAL_HIT_OVER_G ? `${fmt(over)} over` : over < -KCAL_HIT_UNDER_G ? `${fmt(-over)} under` : 'on target';
-    return { d: cell.d, level: level(lv), title: `${fmt(kc)} kcal — ${verdict} · ${kind}` };
+    return { d: cell.d, level: level(lv), title: `${fmt(kc)} kcal — ${verdict}, ${kind}` };
   }
 
   // logging: how complete the day's log is (occasions, not entries — §6.5 "≥4 meals").
   const occasions = mealOccasions(rec?.meals).length;
   const lv = occasions >= 4 ? 3 : occasions >= 2 ? 2 : occasions === 1 ? 1 : 0;
   const what = occasions === 0 ? 'Totals logged' : `${occasions} meal${occasions === 1 ? '' : 's'} logged`;
-  return { d: cell.d, level: level(lv), title: `${what}${cell.weighed ? ' · weighed in' : ''}` };
+  return { d: cell.d, level: level(lv), title: `${what}${cell.weighed ? ', weighed in' : ''}` };
 }
 
 /** Legend labels for levels 0–3 under each lens. */
@@ -163,7 +163,7 @@ export function tdeeSeries(records: DailyRecord[], win: RangeWindow, opts: TdeeS
     points.push({ d: b.end, value: b.tdee });
     band.push({ d: b.end, lo: b.tdee - half, hi: b.tdee + half });
     if (b.valid) {
-      annotations.push({ d: b.end, label: `Updated · ${b.weighIns} weigh-ins, ${b.loggedDays} of ${b.spanDays} days logged` });
+      annotations.push({ d: b.end, label: `Updated with ${b.weighIns} weigh-ins, ${b.loggedDays} of ${b.spanDays} days logged` });
     }
   }
   if (win.range === '1Y' && annotations.length > 1) annotations = annotations.slice(-1);
@@ -231,7 +231,7 @@ export function blockProgress(result: BlockGateResult, today: ISODate, weighInGa
   const chances = daysLeft === null ? 7 : daysLeft + 1;
   const unreachable = !met && (w + chances < weighInGate || i + chances < logGate);
   const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
-  const tail = daysLeft === null ? '' : daysLeft === 0 ? ' · block closes tonight' : ` · ${days(daysLeft)} left`;
+  const tail = daysLeft === null ? '' : daysLeft === 0 ? ', block closes tonight' : `, ${days(daysLeft)} left`;
   const counts = `${w}/7 weigh-ins, ${i}/7 logged days`;
   if (met) return { weighIns: w, intakeDays: i, daysLeft, met, unreachable: false, tone: 'green', text: `Gate met — ${counts}${tail}` };
   if (unreachable) {
@@ -315,6 +315,6 @@ export function frequencyRows(week: FrequencyCounters, range: FrequencyCounters,
     { key: 'red-meat', label: 'Red meat', week: perWk(week.redMeatServings, week), range: perWk(range.redMeatServings, range), hint: 'servings' },
     { key: 'fish', label: 'Fish', week: perWk(week.fishServings, week), range: perWk(range.fishServings, range), hint: 'servings' },
     { key: 'home', label: 'Home-cooked', week: pct(week.homeCookedPct), range: pct(range.homeCookedPct), hint: 'of meals' },
-    { key: 'fiber', label: 'Fiber', week: fib(week.fiberAvg), range: fib(range.fiberAvg), hint: `avg/day · ${fmt(fiberTarget)} g target` },
+    { key: 'fiber', label: 'Fiber', week: fib(week.fiberAvg), range: fib(range.fiberAvg), hint: `avg/day, ${fmt(fiberTarget)} g target` },
   ];
 }
