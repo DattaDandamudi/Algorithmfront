@@ -73,8 +73,10 @@
 
 /* A reading. Graphite with a milled bezel: a 1 px specular on the top edge, a
    faint sheen where the glass catches light, and an ambient shadow below. */
+/* No `position` here: a utility class like `absolute` or `fixed` on the same
+   element has equal specificity and would lose to a rule loaded later. Set
+   position where it is needed (InsightCard, Ring do). */
 .hx-card {
-  position: relative;
   background:
     radial-gradient(120% 70% at 50% -30%, rgba(233, 241, 255, 0.055), transparent 60%),
     var(--hx-card);
@@ -88,7 +90,6 @@
 
 /* Something you act on. Slate glass: blurred, brighter edge, deeper shadow. */
 .hx-raised {
-  position: relative;
   background: rgba(26, 36, 51, 0.82);
   -webkit-backdrop-filter: blur(14px) saturate(120%);
   backdrop-filter: blur(14px) saturate(120%);
