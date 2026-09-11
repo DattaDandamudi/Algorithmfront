@@ -3,6 +3,9 @@
  * §6.6 counts/streak. The optional stamp appends "cig HH:MM" to record.note
  * so the coach can see spacing between cigarettes.
  *
+ * A span-2 RAISED tile: it is a control surface (a stepper, a +1 key and a
+ * toggle), not a reading (DESIGN.md "Material system").
+ *
  * A smoke-free day needs an explicit `tob: 0` (engine/tobacco.ts skips days
  * without a value; INTEGRATION_NOTES), so when nothing is logged yet the card
  * says "not logged" and offers "Smoke-free today" → adjustTobacco(d, 0).
@@ -32,12 +35,13 @@ export default function TobaccoCard({ ctx, todayRecord, onAdjust, onSmokeFree }:
   const caption = logged
     ? count === 0
       ? 'Smoke-free so far today.'
-      : `${count} today${avg7 !== null ? ` vs your ${fmt(avg7, 1)}/day average` : ''}`
+      : `${count} today${avg7 !== null ? `, against your ${fmt(avg7, 1)} a day average` : ''}`
     : 'Not logged yet today.';
 
   return (
-    <div className="hx-card p-4 space-y-3">
+    <div className="hx-raised h-full p-4 flex flex-col gap-3">
       <SectionHeader
+        as="h3"
         title="Tobacco"
         caption={caption}
         action={
@@ -53,7 +57,7 @@ export default function TobaccoCard({ ctx, todayRecord, onAdjust, onSmokeFree }:
           +1
         </Button>
       </div>
-      <div className="flex items-center justify-between gap-3 text-[13px] leading-5">
+      <div className="flex items-center justify-between gap-3 text-[13px] leading-[18px]">
         <div className="text-hx-text2">
           {streakDays > 0 ? (
             <span>
@@ -69,9 +73,7 @@ export default function TobaccoCard({ ctx, todayRecord, onAdjust, onSmokeFree }:
           </Button>
         )}
       </div>
-      {stamps.length > 0 && (
-        <p className="text-[12px] leading-4 text-hx-muted">Times: {stamps.join(' · ')}</p>
-      )}
+      {stamps.length > 0 && <p className="text-[13px] leading-[18px] text-hx-muted">Times: {stamps.join(', ')}</p>}
     </div>
   );
 }

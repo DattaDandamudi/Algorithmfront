@@ -123,7 +123,7 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
       footer={
         <div className="space-y-2">
           {blocker && rows.length > 0 && (
-            <p className="text-[12px] leading-4 text-hx-yellow" role="status">
+            <p className="text-[13px] leading-[18px] text-hx-yellow" role="status">
               {blocker}
             </p>
           )}
@@ -135,7 +135,7 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
                 type="time"
                 value={draftTime}
                 onChange={(e) => setDraftTime(normaliseTime(e.target.value, draftTime))}
-                className="h-11 px-2 text-[15px] font-semibold w-[136px]"
+                className="hx-display h-11 px-2 font-semibold w-[136px]"
                 aria-label="Time eaten"
               />
             </label>
@@ -152,11 +152,11 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
       }
     >
       <div className="space-y-3" aria-busy={busy || undefined}>
-        {note && <p className="text-[13px] leading-5 text-hx-yellow">{note}</p>}
+        {note && <p className="text-[15px] leading-[22px] text-hx-yellow">{note}</p>}
 
         {clarify && onClarify && (
-          <div className="rounded-2xl border border-hx-blue/40 bg-hx-blue/10 p-3">
-            <p className="text-[14px] leading-5 text-hx-text">{clarify}</p>
+          <div className="rounded-tile border border-hx-blue/40 bg-hx-blue/10 p-3.5">
+            <p className="text-[15px] leading-[22px] text-hx-text">{clarify}</p>
             <div className="mt-2 flex gap-1.5 flex-wrap" role="group" aria-label="Quick answers">
               {QUICK_ANSWERS.map((a) => (
                 <Chip key={a} size="sm" color="blue" onClick={() => onClarify(a)} disabled={busy}>
@@ -176,7 +176,7 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
                   }
                 }}
                 placeholder="e.g. about 300 g, home-cooked"
-                className="flex-1 h-11 px-3 text-[15px]"
+                className="flex-1 h-11 px-3"
                 aria-label="Answer to the clarifying question"
                 disabled={busy}
               />
@@ -187,7 +187,7 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
           </div>
         )}
 
-        {rows.length === 0 && <p className="text-[14px] text-hx-muted py-6 text-center">Nothing left to save.</p>}
+        {rows.length === 0 && <p className="text-[15px] leading-[22px] text-hx-muted py-6">Nothing left to save.</p>}
 
         {rows.map((row) => (
           <ItemEditor
@@ -202,10 +202,10 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
         ))}
 
         {rows.length > 1 && (
-          <div className="flex items-baseline justify-between px-1 pt-1 text-[13px]">
+          <div className="flex flex-col gap-0.5 px-1 pt-1">
             <span className="hx-label">Total</span>
-            <span className="text-hx-text font-semibold">
-              {fmt(totals.kc)} kcal · {fmt(totals.p)} g P · {fmt(totals.f)} g F · {fmt(totals.c)} g C · {fmt(totals.fi, 1)} g fiber
+            <span className="hx-display text-[15px] leading-[22px] font-semibold text-hx-text">
+              {fmt(totals.kc)} kcal, {fmt(totals.p)} g protein, {fmt(totals.f)} g fat, {fmt(totals.c)} g carbs, {fmt(totals.fi, 1)} g fiber
             </span>
           </div>
         )}
@@ -230,9 +230,9 @@ interface ItemEditorProps {
 
 const FIELDS: Array<{ key: MacroKey; label: string; aria: string; dp: number }> = [
   { key: 'kcal', label: 'kcal', aria: 'Calories', dp: 0 },
-  { key: 'protein_g', label: 'P g', aria: 'Protein grams', dp: 1 },
-  { key: 'fat_g', label: 'F g', aria: 'Fat grams', dp: 1 },
-  { key: 'carbs_g', label: 'C g', aria: 'Carb grams', dp: 1 },
+  { key: 'protein_g', label: 'Protein', aria: 'Protein grams', dp: 1 },
+  { key: 'fat_g', label: 'Fat', aria: 'Fat grams', dp: 1 },
+  { key: 'carbs_g', label: 'Carbs', aria: 'Carb grams', dp: 1 },
   { key: 'fiber_g', label: 'Fiber', aria: 'Fiber grams', dp: 1 },
 ];
 
@@ -252,7 +252,7 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
           type="text"
           value={item.name}
           onChange={(e) => onChange(setRowName(row, e.target.value))}
-          className="flex-1 min-w-0 h-11 px-3 text-[15px] font-semibold"
+          className="flex-1 min-w-0 h-11 px-3 font-semibold"
           aria-label="Food name"
           disabled={disabled}
         />
@@ -267,7 +267,7 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
             type="button"
             onClick={onRemove}
             aria-label={`Remove ${item.name || 'item'}`}
-            className="w-11 h-11 -mr-1.5 shrink-0 inline-flex items-center justify-center rounded-xl text-hx-muted hover:text-hx-text hover:bg-hx-card2"
+            className="w-11 h-11 -mr-1.5 shrink-0 inline-flex items-center justify-center rounded-ctl text-hx-muted hover:text-hx-text hover:bg-hx-card2"
             disabled={disabled}
           >
             <X className="w-4 h-4" aria-hidden />
@@ -280,7 +280,7 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="w-full flex items-start gap-1.5 text-left text-[13px] leading-5 text-hx-text2 min-h-[44px] py-2 -my-2"
+          className="w-full flex items-start gap-1.5 text-left text-[15px] leading-[22px] text-hx-text2 min-h-[44px] py-2 -my-2"
         >
           <span className={expanded ? '' : 'line-clamp-1'}>{item.assumptions}</span>
           {expanded ? <ChevronUp className="w-4 h-4 mt-0.5 shrink-0 text-hx-muted" aria-hidden /> : <ChevronDown className="w-4 h-4 mt-0.5 shrink-0 text-hx-muted" aria-hidden />}
@@ -289,7 +289,7 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Stepper value={item.grams} onChange={(g) => onChange(setRowGrams(row, g))} step={GRAM_STEP} min={GRAM_STEP} unit="g" label={`Grams of ${item.name || 'item'}`} disabled={disabled} />
-        {hint && <span className="text-[12px] leading-4 text-hx-text2">{hint}</span>}
+        {hint && <span className="text-[13px] leading-[18px] text-hx-text2">{hint}</span>}
       </div>
 
       {showRange && row.estimatedGrams > 0 && (
@@ -298,7 +298,7 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
             const selected = Math.abs(k - p.k) < 0.02 && (!forceRange || row.gramsConfirmed);
             return (
               <Chip key={p.label} size="sm" active={selected} pressed={selected} onClick={() => onChange(setRowGrams(row, row.estimatedGrams * p.k))} disabled={disabled}>
-                {p.label} · {fmt(round(row.estimatedGrams * p.k))} g
+                {p.label}, {fmt(round(row.estimatedGrams * p.k))} g
               </Chip>
             );
           })}
@@ -373,12 +373,12 @@ function NumField({ label, ariaLabel, value, dp, range, onCommit, disabled }: Nu
             (e.target as HTMLInputElement).blur();
           }
         }}
-        className="h-11 w-full px-1 text-center text-[15px] font-semibold"
+        className="hx-display h-11 w-full px-1 text-center font-semibold"
         aria-label={ariaLabel}
         aria-describedby={range !== undefined ? rangeId : undefined}
       />
       {range !== undefined && (
-        <span id={rangeId} className="text-[11px] leading-3 text-center text-hx-text2 truncate">
+        <span id={rangeId} className="hx-display text-[13px] leading-4 text-center text-hx-text2 truncate">
           ±{fmt(range, dp)}
         </span>
       )}

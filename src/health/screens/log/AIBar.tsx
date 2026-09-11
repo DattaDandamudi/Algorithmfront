@@ -1,11 +1,13 @@
 /**
- * AIBar — the pinned natural-language entry (SPEC §2 "Primary = natural-
- * language AI bar"). Purely presentational: the Log screen owns the estimate
- * call so the result can open the shared EstimateSheet. Shows a busy state
- * while estimating, an inline question when the parser found no food, and a
- * line saying who will answer — Claude, the offline parser (no key), or, for
- * a configured key whose SDK is still loading / failed to load, that state and
- * its reason (review R7-3: never "add an AI key" when one exists).
+ * AIBar — the natural-language entry (SPEC §2 "Primary = natural-language AI
+ * bar"), as the Log screen's hero: a span-2 RAISED tile, because it is the
+ * thing you act on (DESIGN.md "Material system"). Purely presentational: the
+ * Log screen owns the estimate call so the result can open the shared
+ * EstimateSheet. Shows a busy state while estimating, an inline question when
+ * the parser found no food, and a line saying who will answer — Claude, the
+ * offline parser (no key), or, for a configured key whose SDK is still loading
+ * / failed to load, that state and its reason (review R7-3: never "add an AI
+ * key" when one exists).
  *
  * While the SDK is 'loading' the button reads "Loading AI…" and submits are
  * held; after the Log's grace period ('slow') the local parser answers so a
@@ -16,7 +18,8 @@
  * place to return focus to on close (review R6-5).
  */
 import type { FormEvent, RefObject } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
+import { Button, SectionHeader } from '../../ui';
 import { AI_LOADING_LABEL, aiBarCaption, type AIStatus } from './aiStatus';
 
 export interface AIBarProps {
@@ -45,11 +48,11 @@ export default function AIBar({ inputRef, value: text, onChange: setText, busy, 
     if (!t || busy || waiting) return;
     onSubmit(t);
   };
-  const spinning = busy || waiting;
   const captionTone = aiStatus === 'error' ? 'text-hx-yellow' : 'text-hx-muted';
 
   return (
-    <form onSubmit={submit} className="space-y-1.5" aria-busy={busy || undefined}>
+    <form onSubmit={submit} className="hx-raised hx-span-2 p-4 flex flex-col gap-3" aria-busy={busy || undefined} aria-label="Log a meal">
+      <SectionHeader title="Log a meal" caption="Type what you ate, in your own words." />
       <div className="flex items-center gap-2">
         <div className="relative flex-1 min-w-0">
           <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-hx-blue pointer-events-none" aria-hidden />
@@ -63,26 +66,21 @@ export default function AIBar({ inputRef, value: text, onChange: setText, busy, 
             autoComplete="off"
             autoCorrect="off"
             aria-label="Describe what you ate"
-            className="w-full h-12 pl-9 pr-3 text-[15px] rounded-2xl"
+            className="w-full h-11 pl-9 pr-3"
             readOnly={busy}
             aria-busy={busy || undefined}
           />
         </div>
-        <button
-          type="submit"
-          disabled={busy || waiting || !text.trim()}
-          className="h-12 px-4 shrink-0 rounded-2xl bg-hx-text text-hx-base font-semibold text-[14px] inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-white transition-colors"
-        >
-          {spinning ? <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden /> : null}
+        <Button type="submit" size="md" loading={busy || waiting} disabled={!text.trim()} className="shrink-0">
           {busy ? 'Estimating' : waiting ? AI_LOADING_LABEL : 'Estimate'}
-        </button>
+        </Button>
       </div>
       {question ? (
-        <p className="text-[13px] leading-4 text-hx-yellow px-1" role="status">
+        <p className="text-[13px] leading-[18px] text-hx-yellow" role="status">
           {question}
         </p>
       ) : (
-        <p className={`text-[12px] leading-4 px-1 ${captionTone}`} role={aiStatus === 'error' ? 'status' : undefined}>
+        <p className={`text-[13px] leading-[18px] ${captionTone}`} role={aiStatus === 'error' ? 'status' : undefined}>
           {aiBarCaption(aiStatus, aiError)}
         </p>
       )}

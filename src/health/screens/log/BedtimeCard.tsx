@@ -2,6 +2,10 @@
  * BedtimeCard — SPEC §2 "a single 'Going to bed' button at night captures
  * actual bed time → feeds the consistency metric" (§6.4 bedtime SD).
  *
+ * A 1×1 RAISED tile in the Log bento: one number (the bedtime it knows) and
+ * one control (the button). It pairs with the water tile so neither is ever
+ * left alone in a row (DESIGN.md "Bento rules").
+ *
  * Record semantics (INTEGRATION_NOTES / engine/sleep.ts): `bt` on record D is
  * the bedtime of the sleep that ENDED on the morning of D. A press before
  * 04:00 counts as the PREVIOUS calendar day's night, so 23:10 on 6 Sep and
@@ -16,11 +20,10 @@
  * (`ctx.sleep.bedtimeNights`, shown from 3 — review R7-12: a 4-night SD must
  * not be labelled "7 nights") with the spec's empty-state copy.
  */
-import { Moon } from 'lucide-react';
 import { BEDTIME_SD_MIN_NIGHTS } from '../trends/series';
 import type { CoachContext, DailyRecord, Profile } from '../../data/types';
 import { bedtimeCountdown } from '../../engine/sleep';
-import { addDays, formatClock, formatDateShort, nowHHMM } from '../../lib/dates';
+import { addDays, formatClock, formatDateShort } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { Button, SectionHeader } from '../../ui';
 
@@ -51,37 +54,34 @@ export default function BedtimeCard({ ctx, now, profile, targetDate, targetRecor
   const nightOf = addDays(targetDate, -1);
 
   return (
-    <div className="hx-card p-4 space-y-3">
-      <SectionHeader title="Bedtime" caption={`Target ${formatClock(profile.bedTarget)} · wake ${formatClock(profile.wakeTarget)}`} />
+    <div className="hx-raised h-full p-4 flex flex-col gap-3">
+      <SectionHeader as="h3" title="Bedtime" caption={`Target ${formatClock(profile.bedTarget)}, wake ${formatClock(profile.wakeTarget)}`} />
+
+      <div className="min-w-0">
+        <div className="hx-display text-[28px] leading-8 font-semibold text-hx-text">{tonight ? formatClock(tonight) : lastKnown ? formatClock(lastKnown) : '—'}</div>
+        <div className="text-[13px] leading-[18px] text-hx-text2">{tonight ? `logged, night of ${formatDateShort(nightOf)}` : lastKnown ? 'last night' : 'nothing logged yet'}</div>
+      </div>
+
+      {tonight ? (
+        <Button variant="secondary" size="md" fullWidth onClick={onUndo}>
+          Undo
+        </Button>
+      ) : (
+        <Button size="md" fullWidth onClick={onGoingToBed}>
+          Going to bed
+        </Button>
+      )}
+
       {countdown && (
-        <p className={`text-[13px] leading-5 ${countdown.phase === 'past' ? 'text-hx-yellow' : 'text-hx-text2'}`}>
+        <p className={`text-[13px] leading-[18px] ${countdown.phase === 'past' ? 'text-hx-yellow' : 'text-hx-text2'}`}>
           {countdown.message}
           {countdown.phase === 'past' && ` — lights out now still gets you ${fmt(countdown.achievableHrs, 1)} h.`}
         </p>
       )}
-      {tonight ? (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[14px] leading-5 text-hx-text">
-            Tonight logged · <span className="font-semibold">{formatClock(tonight)}</span>
-            <span className="block text-[12px] text-hx-muted">night of {formatDateShort(nightOf)}</span>
-          </p>
-          <Button variant="secondary" size="sm" onClick={onUndo}>
-            Undo
-          </Button>
-        </div>
-      ) : (
-        <Button size="lg" fullWidth icon={<Moon aria-hidden />} onClick={onGoingToBed}>
-          Going to bed · {formatClock(nowHHMM(now))}
-        </Button>
-      )}
-      <div className="flex items-baseline justify-between gap-3 text-[13px] leading-5">
-        <span className="text-hx-text2">
-          Last night: <span className="text-hx-text font-semibold">{lastKnown ? formatClock(lastKnown) : '—'}</span>
-        </span>
-        <span className="text-hx-text2 text-right">
-          {sd === null ? 'Tap "Going to bed" nightly — consistency shows after 3 nights.' : `Bedtime swing ${fmt(sd)} min over the last ${nights} nights`}
-        </span>
-      </div>
+
+      <p className="mt-auto text-[13px] leading-[18px] text-hx-muted">
+        {sd === null ? 'Tap it nightly — consistency shows after 3 nights.' : `Bedtime swing ${fmt(sd)} min over the last ${nights} nights`}
+      </p>
     </div>
   );
 }

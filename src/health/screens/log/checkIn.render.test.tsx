@@ -71,10 +71,10 @@ describe('CheckInSection', () => {
     expect(screen.getByText('Fatigue')).toBeTruthy();
     expect(screen.getByText('Stress')).toBeTruthy();
     expect(screen.getByText('Muscle soreness')).toBeTruthy();
-    expect(screen.getByText('1 · Very restful')).toBeTruthy();
-    expect(screen.getByText('7 · Very restless')).toBeTruthy();
-    expect(screen.getByText('1 · No soreness')).toBeTruthy();
-    expect(screen.getByText('7 · Very sore')).toBeTruthy();
+    expect(screen.getByText('1, very restful')).toBeTruthy();
+    expect(screen.getByText('7, very restless')).toBeTruthy();
+    expect(screen.getByText('1, no soreness')).toBeTruthy();
+    expect(screen.getByText('7, very sore')).toBeTruthy();
     expect(screen.getAllByRole('radiogroup')).toHaveLength(4);
   });
 
@@ -89,7 +89,7 @@ describe('CheckInSection', () => {
   it('names the pick in words as soon as it is made', () => {
     setup();
     pick('Fatigue', 5);
-    expect(screen.getByText('Fairly tired · 5/7')).toBeTruthy();
+    expect(screen.getByText('Fairly tired, 5/7')).toBeTruthy();
     expect(screen.getAllByText(UNANSWERED)).toHaveLength(3);
   });
 
@@ -109,7 +109,7 @@ describe('CheckInSection', () => {
     pick('Fatigue', 4);
     pick('Stress', 2);
     pick('Muscle soreness', 5);
-    expect(screen.getByText('Hooper total 14 of 28 · lower is better.')).toBeTruthy();
+    expect(screen.getByText('Hooper total 14 of 28, lower is better.')).toBeTruthy();
   });
 
   it('will not save an empty check-in', () => {
@@ -132,8 +132,8 @@ describe('CheckInSection', () => {
   it('summarises a saved day and reopens the scales on Edit', () => {
     const record: DailyRecord = { d: DATE, qs: 3, qf: 4, qt: 2, qo: 5 };
     setup({ record });
-    expect(screen.getByText('Checked in · Hooper 14 of 28')).toBeTruthy();
-    expect(screen.getByText('Fairly restful · 3/7')).toBeTruthy();
+    expect(screen.getByText('Checked in, Hooper 14 of 28')).toBeTruthy();
+    expect(screen.getByText('Fairly restful, 3/7')).toBeTruthy();
     expect(screen.queryAllByRole('radiogroup')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getAllByRole('radiogroup')).toHaveLength(4);
@@ -178,7 +178,7 @@ describe('CheckInSection', () => {
 
 const srssOn = (patch: Partial<CheckInSettings> = {}) => settings({ weeklySrss: true, ...patch });
 
-/** Every SRSS item answered, recovery first: 6,5,4,3 → 18 · 2,1,2,1 → 6. */
+/** Every SRSS item answered, recovery first: 6,5,4,3 → 18, and 2,1,2,1 → 6. */
 function answerSrss(recovery: number[], stress: number[]) {
   const rec = ['Physical performance capability', 'Mental performance capability', 'Emotional balance', 'Overall recovery'];
   const str = ['Muscular stress', 'Lack of activation', 'Negative emotional state', 'Overall stress'];
@@ -186,7 +186,7 @@ function answerSrss(recovery: number[], stress: number[]) {
   stress.forEach((n, i) => pick(str[i], n));
 }
 
-describe('CheckInSection · weekly SRSS', () => {
+describe('CheckInSection, weekly SRSS', () => {
   it('asks eight items in two subscales of four, 0–6, with both anchors worded', () => {
     setup({ settings: srssOn() });
     expect(screen.getByText(SRSS_TITLE)).toBeTruthy();
@@ -204,8 +204,8 @@ describe('CheckInSection · weekly SRSS', () => {
     }
     // Four daily scales + eight SRSS ones.
     expect(screen.getAllByRole('radiogroup')).toHaveLength(12);
-    expect(screen.getAllByText('0 · Does not apply at all')).toHaveLength(8);
-    expect(screen.getAllByText('6 · Fully applies')).toHaveLength(8);
+    expect(screen.getAllByText('0, does not apply at all')).toHaveLength(8);
+    expect(screen.getAllByText('6, fully applies')).toHaveLength(8);
     expect(screen.getByText('Recovery: 0 of 4 answered — the subscale total needs all four.')).toBeTruthy();
     expect(screen.getByText('Stress: 0 of 4 answered — the subscale total needs all four.')).toBeTruthy();
   });
@@ -227,8 +227,8 @@ describe('CheckInSection · weekly SRSS', () => {
   it('stores the two subscale TOTALS, not the eight items, in one save', () => {
     const { onSave } = setup({ settings: srssOn() });
     answerSrss([6, 5, 4, 3], [2, 1, 2, 1]);
-    expect(screen.getByText('Recovery 18 of 24 · higher is better.')).toBeTruthy();
-    expect(screen.getByText('Stress 6 of 24 · lower is better.')).toBeTruthy();
+    expect(screen.getByText('Recovery 18 of 24, higher is better.')).toBeTruthy();
+    expect(screen.getByText('Stress 6 of 24, lower is better.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: SRSS_SAVE_LABEL }));
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave).toHaveBeenCalledWith({ srssR: 18, srssS: 6 });
@@ -266,7 +266,7 @@ describe('CheckInSection · weekly SRSS', () => {
 
   it('summarises the subscales once the week is answered', () => {
     setup({ settings: srssOn(), record: { d: DATE, srssR: 18, srssS: 6 } });
-    expect(screen.getByText('Recovery 18 · Stress 6 (of 24 each)')).toBeTruthy();
+    expect(screen.getByText('Recovery 18, stress 6, out of 24 each')).toBeTruthy();
     expect(screen.getAllByRole('radiogroup')).toHaveLength(4);
     fireEvent.click(screen.getByRole('button', { name: 'Answer again' }));
     expect(screen.getAllByRole('radiogroup')).toHaveLength(12);
@@ -324,7 +324,7 @@ const P4 = 'Felt difficulties were piling up so high you could not overcome them
 /** Answer all four in order p1…p4 with their RAW picks. */
 const answerPss = (raw: [number, number, number, number]) => [P1, P2, P3, P4].forEach((label, i) => pick(label, raw[i]));
 
-describe('CheckInSection · monthly PSS-4', () => {
+describe('CheckInSection, monthly PSS-4', () => {
   it('asks four items about the last month, 0–4, with both anchors worded', () => {
     setup({ settings: pssOn() });
     expect(screen.getByText(PSS_TITLE)).toBeTruthy();
@@ -332,8 +332,8 @@ describe('CheckInSection · monthly PSS-4', () => {
     expect(screen.getByText(/they ask about the last month, which is why they are never asked daily/)).toBeTruthy();
     for (const label of [P1, P2, P3, P4]) expect(screen.getByText(label)).toBeTruthy();
     expect(screen.getAllByRole('radiogroup')).toHaveLength(8); // four daily + four PSS-4
-    expect(screen.getAllByText('0 · Never')).toHaveLength(4);
-    expect(screen.getAllByText('4 · Very often')).toHaveLength(4);
+    expect(screen.getAllByText('0, never')).toHaveLength(4);
+    expect(screen.getAllByText('4, very often')).toHaveLength(4);
     expect(ariaLabels(P3)).toEqual(['0 — Never', '1 — Almost never', '2 — Sometimes', '3 — Fairly often', '4 — Very often']);
     expect(screen.queryAllByRole('radio', { checked: true })).toHaveLength(0);
   });
@@ -370,9 +370,9 @@ describe('CheckInSection · monthly PSS-4', () => {
   it('keeps the flip out of sight — the read-out names the raw pick', () => {
     setup({ settings: pssOn() });
     pick(P2, 4); // a reverse-scored item, answered "Very often"
-    // "Very often · 4/4", never the flipped "Never · 0/4".
-    expect(screen.getByText('Very often · 4/4')).toBeTruthy();
-    expect(screen.queryByText('Never · 0/4')).toBeNull();
+    // "Very often, 4/4", never the flipped "Never, 0/4".
+    expect(screen.getByText('Very often, 4/4')).toBeTruthy();
+    expect(screen.queryByText('Never, 0/4')).toBeNull();
     expect((within(group(P2)).getByRole('radio', { name: '4 — Very often' }) as HTMLInputElement).checked).toBe(true);
   });
 
@@ -445,7 +445,7 @@ describe('CheckInSection · monthly PSS-4', () => {
   });
 });
 
-describe('CheckInSection · both instruments', () => {
+describe('CheckInSection, both instruments', () => {
   it('stacks the daily card, the weekly scale and the monthly one', () => {
     setup({ settings: settings({ weeklySrss: true, monthlyPss: true }) });
     expect(screen.getByText('Daily check-in')).toBeTruthy();

@@ -3,11 +3,12 @@
  * in Log (SPEC §2 "logging must take seconds"; plan 2g).
  *
  * DAILY. Four 1–7 items (sleep quality, fatigue, stress, muscle soreness), each
- * as a seven-button scale with a WORDED ANCHOR AT BOTH ENDS and a word for the
- * chosen step — a bare "5" means nothing, "Fairly tired" does. Every button is
- * a native radio (so arrow keys, `aria-checked` and grouping come free) inside
- * a 44 px label; selection is shown by INVERSION plus the spoken word, never by
- * hue alone.
+ * as a seven-step scale with a WORDED ANCHOR AT BOTH ENDS and a word for the
+ * chosen step — a bare "5" means nothing, "Fairly tired" does. Every step is a
+ * native radio (so arrow keys, `aria-checked` and grouping come free) inside a
+ * 44 px label, and the scale is a SEGMENTED WELL: the track is sunken and the
+ * chosen step is raised out of it (DESIGN.md), so selection is carried by
+ * elevation plus the spoken word, never by hue alone.
  *
  * Nothing is preselected: an untouched item stays "not answered yet" and is
  * simply not written, so the store never records a 4 the user did not choose.
@@ -84,6 +85,9 @@ export const PSS_SKIP_LABEL = 'Skip this month';
 export const REANSWER_NOTE = 'Only the totals are kept, not the individual answers — answering again replaces them.';
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** "Very restful" → "very restful": the anchors read as a sentence fragment beside their number. */
+const lower = (s: string): string => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 
 type Answers = Partial<Record<CheckInItem, number>>;
 
@@ -182,26 +186,20 @@ function Question({ label, hint, answer, aria, name, steps, wordAt, value, low, 
     <div className="min-w-0 flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2 min-w-0">
         <span className="hx-label">{label}</span>
-        <span className={`text-[13px] leading-5 shrink-0 ${value === undefined ? 'text-hx-muted' : 'font-medium text-hx-text'}`}>{answer}</span>
+        <span className={`text-[13px] leading-[18px] shrink-0 ${value === undefined ? 'text-hx-muted' : 'font-medium text-hx-text'}`}>{answer}</span>
       </div>
-      {hint && <p className="text-[11px] leading-4 text-hx-muted -mt-1">{hint}</p>}
-      <div className="flex gap-[3px] -mx-1" role="radiogroup" aria-label={aria}>
+      {hint && <p className="text-[13px] leading-[18px] text-hx-muted -mt-1">{hint}</p>}
+      {/* A segmented well: the track is sunken, the chosen step is raised out of
+          it (DESIGN.md "Material system"). Every step stays a 44 px label. */}
+      <div className="hx-well flex p-1 rounded-full" role="radiogroup" aria-label={aria}>
         {steps.map((n) => {
           const selected = value === n;
           return (
             <label key={n} className="relative flex-1 min-w-0 h-11 cursor-pointer">
-              <input
-                type="radio"
-                name={name}
-                value={n}
-                checked={selected}
-                onChange={() => onPick(n)}
-                aria-label={`${n} — ${wordAt(n)}`}
-                className="peer sr-only"
-              />
+              <input type="radio" name={name} value={n} checked={selected} onChange={() => onPick(n)} aria-label={`${n} — ${wordAt(n)}`} className="peer sr-only" />
               <span
-                className={`absolute inset-0 rounded-xl border flex items-center justify-center text-[15px] font-semibold transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-hx-blue ${
-                  selected ? 'bg-hx-text text-hx-base border-hx-text' : 'bg-hx-card2 text-hx-text2 border-hx-border hover:border-hx-neutral'
+                className={`hx-display absolute inset-0 rounded-full flex items-center justify-center text-[15px] font-semibold transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-hx-lume ${
+                  selected ? 'hx-raised !rounded-full text-hx-text' : 'text-hx-text2 hover:text-hx-text'
                 }`}
               >
                 {n}
@@ -210,12 +208,12 @@ function Question({ label, hint, answer, aria, name, steps, wordAt, value, low, 
           );
         })}
       </div>
-      <div className="flex items-start justify-between gap-3 text-[11px] leading-4 text-hx-muted">
+      <div className="flex items-start justify-between gap-3 text-[13px] leading-[18px] text-hx-muted">
         <span className="min-w-0">
-          {first} · {low}
+          {first}, {lower(low)}
         </span>
         <span className="min-w-0 text-right">
-          {last} · {high}
+          {last}, {lower(high)}
         </span>
       </div>
     </div>
@@ -227,7 +225,7 @@ function SkippedCard({ title, caption, onUndo }: { title: string; caption: strin
   return (
     <div className="hx-card p-4 flex flex-col gap-3">
       <SectionHeader title={title} caption={caption} />
-      <p className="text-[13px] leading-5 text-hx-text2">Nothing was written — skipping simply leaves it unanswered.</p>
+      <p className="text-[15px] leading-[22px] text-hx-text2">Nothing was written — skipping simply leaves it unanswered.</p>
       <Button variant="secondary" size="md" className="self-start" onClick={onUndo}>
         Answer it anyway
       </Button>
@@ -281,7 +279,7 @@ function DailyCheckIn({ date, record, settings, onSave, onSkip, onOpenSettings }
     return (
       <div className="hx-card p-4 flex flex-col gap-3">
         <SectionHeader title="Daily check-in" caption="No questions selected." />
-        <p className="text-[13px] leading-5 text-hx-text2">Pick which of the four items to ask under Settings → Check-in.</p>
+        <p className="text-[15px] leading-[22px] text-hx-text2">Pick which of the four items to ask under Settings → Check-in.</p>
         {onOpenSettings && (
           <Button variant="secondary" size="md" onClick={onOpenSettings} className="self-start">
             Open Settings
@@ -296,7 +294,7 @@ function DailyCheckIn({ date, record, settings, onSave, onSkip, onOpenSettings }
     return (
       <div className="hx-card p-4 flex flex-col gap-3">
         <SectionHeader title="Daily check-in" caption="Skipped today — nothing was saved." />
-        <p className="text-[13px] leading-5 text-hx-text2">A skipped day is simply an absent day: it does not count against you and nothing was written.</p>
+        <p className="text-[15px] leading-[22px] text-hx-text2">A skipped day is simply an absent day: it does not count against you and nothing was written.</p>
         <Button variant="secondary" size="md" className="self-start" onClick={() => patch({ skipped: false })}>
           Check in anyway
         </Button>
@@ -317,28 +315,28 @@ function DailyCheckIn({ date, record, settings, onSave, onSkip, onOpenSettings }
             </Button>
           }
         />
-        <p className="flex items-center gap-2 text-[15px] leading-5 font-semibold text-hx-green">
+        <p className="flex items-center gap-2 text-[15px] leading-[22px] font-semibold text-hx-green">
           <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
-          {total === null ? 'Checked in' : `Checked in · Hooper ${total} of ${HOOPER_MAX}`}
+          {total === null ? 'Checked in' : `Checked in, Hooper ${total} of ${HOOPER_MAX}`}
         </p>
         <ul className="flex flex-col gap-1">
           {items.map((k) => (
-            <li key={k} className="flex items-baseline justify-between gap-3 text-[13px] leading-5">
+            <li key={k} className="flex items-baseline justify-between gap-3 text-[13px] leading-[18px]">
               <span className="text-hx-text2 min-w-0 truncate">{CHECK_IN_META[k].label}</span>
               <span className="text-hx-text shrink-0">
-                {answers[k] === undefined ? UNANSWERED : `${checkInWord(k, answers[k])} · ${answers[k]}/7`}
+                {answers[k] === undefined ? UNANSWERED : `${checkInWord(k, answers[k])}, ${answers[k]}/7`}
               </span>
             </li>
           ))}
         </ul>
-        <p className="text-[12px] leading-4 text-hx-muted">Lower is better on all four — the total is the Hooper index.</p>
+        <p className="text-[13px] leading-[18px] text-hx-muted">Lower is better on all four — the total is the Hooper index.</p>
       </div>
     );
   }
 
   // --- the form -------------------------------------------------------------
   return (
-    <div className="hx-card p-4 flex flex-col gap-4">
+    <div className="hx-raised p-4 flex flex-col gap-4">
       <SectionHeader title="Daily check-in" caption={caption} />
 
       {items.map((key) => {
@@ -348,7 +346,7 @@ function DailyCheckIn({ date, record, settings, onSave, onSkip, onOpenSettings }
           <Question
             key={key}
             label={meta.label}
-            answer={value === undefined ? UNANSWERED : `${checkInWord(key, value)} · ${value}/7`}
+            answer={value === undefined ? UNANSWERED : `${checkInWord(key, value)}, ${value}/7`}
             aria={meta.aria}
             name={`${groupId}-${key}`}
             steps={STEPS}
@@ -361,10 +359,10 @@ function DailyCheckIn({ date, record, settings, onSave, onSkip, onOpenSettings }
         );
       })}
 
-      <p className="text-[12px] leading-4 text-hx-text2" role="status">
+      <p className="text-[13px] leading-[18px] text-hx-text2" role="status">
         {total === null
           ? `${answeredKeys.length} of ${items.length} answered — the Hooper total needs all ${items.length}.`
-          : `Hooper total ${total} of ${HOOPER_MAX} · lower is better.`}
+          : `Hooper total ${total} of ${HOOPER_MAX}, lower is better.`}
       </p>
 
       <div className="flex flex-col gap-2">
@@ -446,24 +444,24 @@ function WeeklySrssCard({ date, record, onSave }: InstrumentCardProps) {
             </Button>
           }
         />
-        <p className="flex items-center gap-2 text-[15px] leading-5 font-semibold text-hx-green">
+        <p className="flex items-center gap-2 text-[15px] leading-[22px] font-semibold text-hx-green">
           <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
-          {`Recovery ${savedR === null ? '—' : savedR} · Stress ${savedS === null ? '—' : savedS} (of ${SRSS_SUBSCALE_MAX} each)`}
+          {`Recovery ${savedR === null ? '—' : savedR}, stress ${savedS === null ? '—' : savedS}, out of ${SRSS_SUBSCALE_MAX} each`}
         </p>
-        <p className="text-[12px] leading-4 text-hx-muted">High recovery and low stress is the good corner. {REANSWER_NOTE}</p>
+        <p className="text-[13px] leading-[18px] text-hx-muted">High recovery and low stress is the good corner. {REANSWER_NOTE}</p>
       </div>
     );
   }
 
   // --- the form -------------------------------------------------------------
   return (
-    <div className="hx-card p-4 flex flex-col gap-4">
+    <div className="hx-raised p-4 flex flex-col gap-4">
       <SectionHeader
         title={SRSS_TITLE}
         as="h3"
         caption="Eight items, 0 to 6, asked once a week — usually Sunday. About a minute."
       />
-      {draft.editing && <p className="text-[12px] leading-4 text-hx-muted">{REANSWER_NOTE}</p>}
+      {draft.editing && <p className="text-[13px] leading-[18px] text-hx-muted">{REANSWER_NOTE}</p>}
 
       {(['recovery', 'stress'] as const).map((scale) => (
         <SrssSubscale key={scale} scale={scale} groupId={groupId} answers={answers} onPick={setAnswer} />
@@ -477,7 +475,7 @@ function WeeklySrssCard({ date, record, onSave }: InstrumentCardProps) {
           {SRSS_SKIP_LABEL}
         </Button>
       </div>
-      <p className="text-[12px] leading-4 text-hx-muted">
+      <p className="text-[13px] leading-[18px] text-hx-muted">
         Each subscale is stored as its total out of {SRSS_SUBSCALE_MAX}, so a subscale is only saved once all four of its items are answered.
       </p>
     </div>
@@ -508,7 +506,7 @@ function SrssSubscale({
             key={item.key}
             label={item.label}
             hint={item.hint}
-            answer={value === undefined ? UNANSWERED : `${srssWord(value)} · ${value}/${SRSS_MAX_STEP}`}
+            answer={value === undefined ? UNANSWERED : `${srssWord(value)}, ${value}/${SRSS_MAX_STEP}`}
             aria={item.aria}
             name={`${groupId}-${item.key}`}
             steps={SRSS_STEPS}
@@ -520,7 +518,7 @@ function SrssSubscale({
           />
         );
       })}
-      <p className="text-[12px] leading-4 text-hx-text2" role="status">
+      <p className="text-[13px] leading-[18px] text-hx-text2" role="status">
         {srssSubtotalLine(scale, total, answered)}
       </p>
     </div>
@@ -577,11 +575,11 @@ function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
             </Button>
           }
         />
-        <p className="flex items-center gap-2 text-[15px] leading-5 font-semibold text-hx-green">
+        <p className="flex items-center gap-2 text-[15px] leading-[22px] font-semibold text-hx-green">
           <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
           {`PSS-4 ${saved} of ${PSS_MAX}`}
         </p>
-        <p className="text-[12px] leading-4 text-hx-muted">
+        <p className="text-[13px] leading-[18px] text-hx-muted">
           That is {pss4Reading(saved)} — a description of the month, not a diagnosis. {REANSWER_NOTE}
         </p>
       </div>
@@ -590,14 +588,14 @@ function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
 
   // --- the form -------------------------------------------------------------
   return (
-    <div className="hx-card p-4 flex flex-col gap-4">
+    <div className="hx-raised p-4 flex flex-col gap-4">
       <SectionHeader
         title={PSS_TITLE}
         as="h3"
         caption="Four items asked once a month — they ask about the last month, which is why they are never asked daily."
       />
-      <p className="text-[13px] leading-5 text-hx-text2">{PSS_STEM}</p>
-      {draft.editing && <p className="text-[12px] leading-4 text-hx-muted">{REANSWER_NOTE}</p>}
+      <p className="text-[15px] leading-[22px] text-hx-text2">{PSS_STEM}</p>
+      {draft.editing && <p className="text-[13px] leading-[18px] text-hx-muted">{REANSWER_NOTE}</p>}
 
       {PSS_ITEMS.map((item) => {
         const value = answers[item.key];
@@ -607,7 +605,7 @@ function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
             label={item.label}
             // The read-out names the RAW pick even on the two reverse-scored
             // items: the flip belongs to the total, never to what is shown.
-            answer={value === undefined ? UNANSWERED : `${pssWord(value)} · ${value}/${PSS_MAX_STEP}`}
+            answer={value === undefined ? UNANSWERED : `${pssWord(value)}, ${value}/${PSS_MAX_STEP}`}
             aria={item.aria}
             name={`${groupId}-${item.key}`}
             steps={PSS_STEPS}
@@ -620,7 +618,7 @@ function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
         );
       })}
 
-      <p className="text-[12px] leading-4 text-hx-text2" role="status">
+      <p className="text-[13px] leading-[18px] text-hx-text2" role="status">
         {pss4Line(total, answered)}
       </p>
 
@@ -632,7 +630,7 @@ function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
           {PSS_SKIP_LABEL}
         </Button>
       </div>
-      <p className="text-[12px] leading-4 text-hx-muted">
+      <p className="text-[13px] leading-[18px] text-hx-muted">
         Stored as one total out of {PSS_MAX}, so nothing is saved until all four are answered. It describes how the month felt — it is not a diagnosis.
       </p>
     </div>

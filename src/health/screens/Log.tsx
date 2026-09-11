@@ -1,11 +1,19 @@
 /**
- * Log — SPEC §2 "logging must take seconds". Section order (top → bottom):
- *  1. pinned natural-language AI bar (sticky header) → editable EstimateSheet
- *  2. fast paths: Repeat yesterday → Recents → Favorites → Barcode → Photo
- *  3. today's meals grouped by time + running totals vs targets
- *  4. daily check-in (the Hooper items settings asks for; always reachable
- *     here — `settings.checkIn.enabled` only governs Today's prompt)
- *  5. weight   6. tobacco   7. bedtime   8. caffeine + water
+ * Log — SPEC §2 "logging must take seconds", laid out as the bento in
+ * DESIGN.md. Log is the screen you ACT on, so its tiles are raised glass and
+ * only the readings (the meals list, the running totals) are cards:
+ *
+ *  ai bar      span-2, raised   the natural-language entry → EstimateSheet
+ *  fast paths  span-2 (nested)  Repeat yesterday, Recents, Favorites, then
+ *                               Barcode and Photo as a 1×1 pair
+ *  meals       span-2, cards    today's entries by time + totals vs targets
+ *  check-in    span-2           the Hooper items settings asks for; always
+ *                               reachable here — `settings.checkIn.enabled`
+ *                               only governs Today's prompt
+ *  weight      span-2
+ *  tobacco     span-2
+ *  caffeine    span-2           its cutoff warning is a sentence, so it is wide
+ *  bedtime, water   the 1×1 pair: one number and one control each
  *
  * This file owns state and every store write; the pieces under ./log are
  * presentational. Numbers come from the store through the engine context
@@ -56,7 +64,7 @@ import BedtimeCard from './log/BedtimeCard';
 import CheckInSection from './log/CheckInSection';
 import EstimateSheet from './log/EstimateSheet';
 import FastPaths from './log/FastPaths';
-import HydrationCard from './log/HydrationCard';
+import { CaffeineCard, WaterTile } from './log/HydrationCard';
 import MealsList from './log/MealsList';
 import PhotoSheet from './log/PhotoSheet';
 import TobaccoCard from './log/TobaccoCard';
@@ -409,7 +417,7 @@ export default function Log() {
         toast(ENTRY_GONE, 'warn');
       } else {
         actions.updateMeal(date, sheet.meal.id, itemToMeal(it, time, sheet.meal.src ?? 'manual'));
-        toast(`Updated ${it.name} · ${formatClock(time)}`);
+        toast(`Updated ${it.name}, ${formatClock(time)}`);
       }
     } else {
       let kc = 0;
@@ -423,8 +431,8 @@ export default function Log() {
         p += it.protein_g;
       }
       const what = items.length === 1 ? items[0].name : `${items.length} items`;
-      const where = date === mealDay ? '' : ` · ${formatDateShort(date)}`;
-      toast(`Saved ${what} · ${fmt(kc)} kcal · ${fmt(p)} g P${where}`);
+      const where = date === mealDay ? '' : `, ${formatDateShort(date)}`;
+      toast(`Saved ${what}, ${fmt(kc)} kcal, ${fmt(p)} g protein${where}`);
       if (sheet.kind === 'ai') setText('');
     }
     closeSheet();
@@ -469,7 +477,7 @@ export default function Log() {
     const est = foodItemToEstimate(item, portionOf(item));
     actions.addMeal(mealDayNow(), itemToMeal(est, clockNow(), src));
     actions.touchRecent(item);
-    toast(`Added ${item.name} · ${fmt(est.kcal)} kcal · ${fmt(est.protein_g)} g P`);
+    toast(`Added ${item.name}, ${fmt(est.kcal)} kcal, ${fmt(est.protein_g)} g protein`);
   };
 
   const openPortion = (item: FoodItem, src: 'recent' | 'favorite') =>
@@ -520,7 +528,7 @@ export default function Log() {
   // --- Weight / tobacco / bedtime / caffeine / water (calendar day) -----------
   const saveWeight = (lb: number) => {
     actions.setWeight(today, lb);
-    toast(`Weight saved · ${fmtWeight(lb, profile.units)}`);
+    toast(`Weight saved, ${fmtWeight(lb, profile.units)}`);
   };
 
   const adjustTobacco = (delta: number, stamp: boolean) => {
@@ -529,7 +537,7 @@ export default function Log() {
     const t = clockNow();
     if (stamp && delta > 0) actions.patchDay(today, { note: appendNote(todayRecord?.note, tobaccoStamp(t)) });
     const next = Math.max(0, (todayRecord?.tob ?? 0) + delta);
-    toast(delta > 0 ? `+${delta} tobacco · ${next} today${stamp ? ` · noted ${formatClock(t)}` : ''}` : `Tobacco set to ${next} today`);
+    toast(delta > 0 ? `+${delta} tobacco, ${next} today${stamp ? `, noted ${formatClock(t)}` : ''}` : `Tobacco set to ${next} today`);
   };
 
   const smokeFree = () => {
@@ -543,7 +551,7 @@ export default function Log() {
     const at = new Date();
     const t = nowHHMM(at);
     actions.logBedtime(bedtimeRecordDate(at), t);
-    toast(`Bedtime logged · ${formatClock(t)}`);
+    toast(`Bedtime logged, ${formatClock(t)}`);
   };
 
   const undoBedtime = () => {
@@ -556,7 +564,7 @@ export default function Log() {
     const t = picked ?? clockNow();
     actions.logCaffeine(today, t);
     if (isAfterCutoff(t, profile.caffeineCutoff)) toast(`Caffeine at ${formatClock(t)} — after your ${formatClock(profile.caffeineCutoff)} cutoff`, 'warn');
-    else toast(`Caffeine logged · ${formatClock(t)}`);
+    else toast(`Caffeine logged, ${formatClock(t)}`);
   };
 
   const removeCaffeine = (t: string) => {
@@ -579,16 +587,16 @@ export default function Log() {
       return;
     }
     const asked = settings.checkIn.items.length || 4;
-    toast(daily.length >= asked ? 'Check-in saved' : `Check-in saved · ${daily.length} of ${asked} items`);
+    toast(daily.length >= asked ? 'Check-in saved' : `Check-in saved, ${daily.length} of ${asked} items`);
   };
 
   // --- Deep links -------------------------------------------------------------
-  const weightRef = useRef<HTMLDivElement>(null);
-  const tobaccoRef = useRef<HTMLDivElement>(null);
-  const bedtimeRef = useRef<HTMLDivElement>(null);
-  const checkinRef = useRef<HTMLDivElement>(null);
-  /** Caffeine and water share one card, so both deep links land here. */
-  const hydrationRef = useRef<HTMLDivElement>(null);
+  const weightRef = useRef<HTMLElement>(null);
+  const tobaccoRef = useRef<HTMLElement>(null);
+  const bedtimeRef = useRef<HTMLElement>(null);
+  const checkinRef = useRef<HTMLElement>(null);
+  const caffeineRef = useRef<HTMLElement>(null);
+  const waterRef = useRef<HTMLElement>(null);
   const [flash, setFlash] = useState<LogSection | null>(null);
   const flashTimer = useRef<number | null>(null);
 
@@ -598,12 +606,12 @@ export default function Log() {
     consumeLogSection();
     // 'meal' focuses the AI bar instead of scrolling to a card; everything
     // else scrolls its section into view ('checkin' → CheckInSection, 2g).
-    const targets: Record<Exclude<LogSection, 'meal'>, RefObject<HTMLDivElement>> = {
+    const targets: Record<Exclude<LogSection, 'meal'>, RefObject<HTMLElement>> = {
       weight: weightRef,
       tobacco: tobaccoRef,
       bedtime: bedtimeRef,
-      caffeine: hydrationRef,
-      water: hydrationRef,
+      caffeine: caffeineRef,
+      water: waterRef,
       checkin: checkinRef,
     };
     // The section elements exist after this commit; wait a frame so the
@@ -635,7 +643,7 @@ export default function Log() {
   );
 
   const flashCls = (...sections: LogSection[]) =>
-    `rounded-2xl transition-shadow duration-300 ${flash && sections.includes(flash) ? 'ring-2 ring-hx-blue/70 ring-offset-4 ring-offset-hx-base' : ''}`;
+    `rounded-tile transition-shadow duration-300 ${flash && sections.includes(flash) ? 'ring-2 ring-hx-blue/70 ring-offset-4 ring-offset-hx-base' : ''}`;
 
   // --- Header numbers (protein-first, §1) — the eating day's remaining -------
   const rem = mealCtx.nutrition.remaining;
@@ -644,22 +652,26 @@ export default function Log() {
 
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-20 bg-hx-base/95 backdrop-blur border-b border-hx-border px-4 pt-4 pb-3 space-y-3">
+      <header className="sticky top-0 z-20 bg-hx-base/90 backdrop-blur px-4 pt-5 pb-3 flex flex-col gap-0.5">
         <div className="flex items-baseline justify-between gap-3">
-          <h1 className="text-[22px] leading-7 font-semibold text-hx-text">Log</h1>
-          <p className="text-[12px] leading-4 text-hx-text2 text-right">
-            {formatDateShort(mealDay)} · <span className="text-hx-text font-semibold">{proteinLeft}</span> · {kcalLeft}
-          </p>
+          <h1 className="hx-display text-[22px] leading-7 font-semibold text-hx-text">Log</h1>
+          <span className="hx-display text-[13px] leading-[18px] text-hx-text2 shrink-0">{formatDateShort(mealDay)}</span>
         </div>
+        <p className="hx-display text-[13px] leading-[18px] text-hx-text2">
+          <span className="text-hx-text font-semibold">{proteinLeft}</span>, {kcalLeft}
+        </p>
         {mealDay !== today && (
-          <p className="text-[11px] leading-4 text-hx-yellow" role="status">
+          <p className="text-[13px] leading-[18px] text-hx-yellow" role="status">
             {eatingDayCaption(mealDay)}
           </p>
         )}
-        <AIBar inputRef={inputRef} value={text} onChange={onTextChange} busy={busy} aiStatus={aiStatus} aiError={clientError} question={question} onSubmit={(t) => void runEstimate(t)} />
       </header>
 
-      <section className="px-4 py-5" aria-label="Fast paths">
+      {/* The screen is one bento: the things you act on are raised tiles, the
+          meals and their totals are readings (DESIGN.md "Bento rules"). */}
+      <div className="hx-bento px-4 pb-6">
+        <AIBar inputRef={inputRef} value={text} onChange={onTextChange} busy={busy} aiStatus={aiStatus} aiError={clientError} question={question} onSubmit={(t) => void runEstimate(t)} />
+
         <FastPaths
           yesterdayMeals={yesterdayMeals}
           recents={settings.recents.slice(0, 20)}
@@ -671,15 +683,11 @@ export default function Log() {
           onBarcode={() => setSecondary('barcode')}
           onPhoto={() => setSecondary('photo')}
         />
-      </section>
 
-      <section className="px-4 pb-5" aria-label="Today's meals">
         <MealsList meals={mealDayMeals} totals={mealCtx.nutrition.totals} targets={mealCtx.nutrition.targets} onEdit={editMeal} onDelete={deleteMeal} onLogFirst={() => focusBar()} />
-      </section>
 
-      {/* Deep-link target for `openLog('checkin')` — Today's stress strip taps straight here. */}
-      <section ref={checkinRef} className="px-4 pb-5 scroll-mt-36" aria-label="Daily check-in">
-        <div className={flashCls('checkin')}>
+        {/* Deep-link target for `openLog('checkin')` — Today's stress strip taps straight here. */}
+        <section ref={checkinRef} className={`hx-span-2 scroll-mt-24 ${flashCls('checkin')}`} aria-label="Daily check-in">
           <CheckInSection
             date={today}
             record={todayRecord}
@@ -691,23 +699,22 @@ export default function Log() {
             onSkip={() => toast('Check-in skipped — nothing was saved')}
             onOpenSettings={() => openSettings('checkin')}
           />
-        </div>
-      </section>
+        </section>
 
-      <section ref={weightRef} className="px-4 pb-5 scroll-mt-36" aria-label="Weight">
-        <div className={flashCls('weight')}>
+        <section ref={weightRef} className={`hx-span-2 scroll-mt-24 ${flashCls('weight')}`} aria-label="Weight">
           <WeightCard ctx={ctx} records={records} today={today} todayRecord={todayRecord} profile={profile} onSave={saveWeight} />
-        </div>
-      </section>
+        </section>
 
-      <section ref={tobaccoRef} className="px-4 pb-5 scroll-mt-36" aria-label="Tobacco">
-        <div className={flashCls('tobacco')}>
+        <section ref={tobaccoRef} className={`hx-span-2 scroll-mt-24 ${flashCls('tobacco')}`} aria-label="Tobacco">
           <TobaccoCard ctx={ctx} todayRecord={todayRecord} onAdjust={adjustTobacco} onSmokeFree={smokeFree} />
-        </div>
-      </section>
+        </section>
 
-      <section ref={bedtimeRef} className="px-4 pb-5 scroll-mt-36" aria-label="Bedtime">
-        <div className={flashCls('bedtime')}>
+        <section ref={caffeineRef} className={`hx-span-2 scroll-mt-24 ${flashCls('caffeine')}`} aria-label="Caffeine">
+          <CaffeineCard todayRecord={todayRecord} profile={profile} nowHHMM={ctx.nowHHMM} onCaffeine={logCaffeine} onRemoveCaffeine={removeCaffeine} />
+        </section>
+
+        {/* The 1×1 pair: one number and one control each, so neither is ever alone in a row. */}
+        <section ref={bedtimeRef} className={`scroll-mt-24 ${flashCls('bedtime')}`} aria-label="Bedtime">
           <BedtimeCard
             ctx={ctx}
             now={now}
@@ -718,25 +725,15 @@ export default function Log() {
             onGoingToBed={goingToBed}
             onUndo={undoBedtime}
           />
-        </div>
-      </section>
+        </section>
 
-      <section ref={hydrationRef} className="px-4 pb-5 scroll-mt-36" aria-label="Caffeine and water">
-        <div className={flashCls('caffeine', 'water')}>
-          <HydrationCard
-            ctx={ctx}
-            todayRecord={todayRecord}
-            profile={profile}
-            nowHHMM={ctx.nowHHMM}
-            onCaffeine={logCaffeine}
-            onRemoveCaffeine={removeCaffeine}
-            onWater={setWater}
-          />
-        </div>
-      </section>
+        <section ref={waterRef} className={`scroll-mt-24 ${flashCls('water')}`} aria-label="Water">
+          <WaterTile ctx={ctx} onWater={setWater} />
+        </section>
+      </div>
 
-      <footer className="px-4 pt-1 pb-2 text-center">
-        <p className="text-[11px] leading-4 text-hx-muted">Wellness information only — not medical advice.</p>
+      <footer className="px-4 pt-1 pb-2 text-left">
+        <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
       </footer>
 
       <BarcodeSheet

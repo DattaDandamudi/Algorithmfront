@@ -137,12 +137,12 @@ export function srssValues(answers: SrssAnswers): CheckInWrite {
   return out;
 }
 
-/** "Recovery 18 of 24 · higher is better." — the line under the subscale. */
+/** "Recovery 18 of 24, higher is better." — the line under the subscale. */
 export function srssSubtotalLine(scale: SrssScale, total: number | null, answered: number): string {
   const label = SRSS_SCALE_LABEL[scale];
   if (total === null) return `${label}: ${answered} of 4 answered — the subscale total needs all four.`;
   const direction = scale === 'recovery' ? 'higher is better' : 'lower is better';
-  return `${label} ${total} of ${SRSS_SUBSCALE_MAX} · ${direction}.`;
+  return `${label} ${total} of ${SRSS_SUBSCALE_MAX}, ${direction}.`;
 }
 
 // ---------------------------------------------------------------------------

@@ -177,7 +177,7 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
       }
     >
       <div className="space-y-3">
-        <p className="text-[13px] leading-5 text-hx-text2">
+        <p className="text-[15px] leading-[22px] text-hx-text2">
           Packaged food only — reads the label values from <span className="text-hx-text">Open Food Facts</span>, a public database. No account; only the barcode digits are sent, and only when
           you look one up. Restaurant dishes go in the text bar.
         </p>
@@ -194,7 +194,7 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
             }}
             placeholder="Digits under the bars"
             aria-label="Barcode number"
-            className="flex-1 min-w-0 h-11 px-3 text-[15px] font-semibold"
+            className="hx-display flex-1 min-w-0 h-11 px-3 font-semibold"
             disabled={busy}
           />
           <Button type="submit" size="md" loading={busy} disabled={!valid || busy} icon={<Search aria-hidden />}>
@@ -204,9 +204,9 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
 
         {scanning ? (
           <div className="space-y-2">
-            <video ref={videoRef} className="w-full aspect-[4/3] rounded-2xl bg-black object-cover" muted playsInline autoPlay aria-label="Camera preview — point it at the barcode" />
+            <video ref={videoRef} className="w-full aspect-[4/3] rounded-tile bg-black object-cover" muted playsInline autoPlay aria-label="Camera preview — point it at the barcode" />
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[13px] leading-5 text-hx-text2">Point the camera at the barcode — it locks on by itself.</p>
+              <p className="text-[15px] leading-[22px] text-hx-text2">Point the camera at the barcode — it locks on by itself.</p>
               <Button variant="secondary" size="md" onClick={stopScan}>
                 Stop
               </Button>
@@ -217,16 +217,16 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
             Scan with camera
           </Button>
         ) : (
-          <p className="text-[12px] leading-4 text-hx-muted">Camera scanning needs a browser with barcode detection (Chrome, Edge, Safari 17+). Typing the number works everywhere.</p>
+          <p className="text-[13px] leading-[18px] text-hx-muted">Camera scanning needs a browser with barcode detection (Chrome, Edge, Safari 17+). Typing the number works everywhere.</p>
         )}
 
         {busy && (
-          <p role="status" className="flex items-center gap-2 text-[13px] leading-5 text-hx-text2">
+          <p role="status" className="flex items-center gap-2 text-[15px] leading-[22px] text-hx-text2">
             <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> Looking up {normaliseBarcode(code)}…
           </p>
         )}
         {msg && (
-          <p role={msg.kind === 'error' ? 'alert' : 'status'} className={`text-[13px] leading-5 ${msg.kind === 'error' ? 'text-hx-red' : 'text-hx-yellow'}`}>
+          <p role={msg.kind === 'error' ? 'alert' : 'status'} className={`text-[15px] leading-[22px] ${msg.kind === 'error' ? 'text-hx-red' : 'text-hx-yellow'}`}>
             {msg.text}
           </p>
         )}

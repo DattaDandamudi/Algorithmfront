@@ -3,14 +3,18 @@
  * stepper". Storage is lb (INTEGRATION_NOTES); `profile.units` only changes
  * what is displayed, converting on input via kgToLb (logUtils.displayToLb).
  *
+ * A span-2 RAISED tile: weighing in is something you act on, so the surface is
+ * glass and the readings under it (trend, block, delta) are plain type on it
+ * (DESIGN.md "Material system").
+ *
  * Shows the EWMA trend (§6.1) with the weekly rate, the ▲/▼ delta of today's
  * scale weight vs the 30-day average (good direction = down in a fat-loss
- * phase), and the in-progress expenditure block: "n/7 weigh-ins in this
- * block · updates <date>" from `weeklyExpenditure` — the 7-day block anchored
- * to the first weigh-in that the §6.2 gate is evaluated on, the same counter
- * Trends shows — not the trailing-7-day `ctx.weight.weighInsThisWeek`, which
- * could read 6/7 while the block was at 2/7 (review R7-5). "Enough…" appears
- * only when the block meets both gates (`weighInBlockLine`).
+ * phase), and the in-progress expenditure block: "n/7 weigh-ins in this block,
+ * updates <date>" from `weeklyExpenditure` — the 7-day block anchored to the
+ * first weigh-in that the §6.2 gate is evaluated on, the same counter Trends
+ * shows — not the trailing-7-day `ctx.weight.weighInsThisWeek`, which could
+ * read 6/7 while the block was at 2/7 (review R7-5). "Enough…" appears only
+ * when the block meets both gates (`weighInBlockLine`).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Scale } from 'lucide-react';
@@ -48,32 +52,30 @@ export default function WeightCard({ ctx, records, today, todayRecord, profile, 
   const delta = baselineDelta(records, 'w', today, 30, { direction: weightDirection(profile.goalPhase) });
   const rateLabel = rate === null ? null : `${rate < 0 ? '▼' : rate > 0 ? '▲' : '•'} ${fmtWeight(Math.abs(rate), units)}/wk`;
   const inBand = ctx.weight.inBand;
-  const bandText = inBand === 'in' ? 'text-hx-green' : inBand === null ? 'text-hx-muted' : 'text-hx-yellow';
+  const bandTone = inBand === 'in' ? 'text-hx-green' : inBand === null ? 'text-hx-muted' : 'text-hx-yellow';
   const bandCopy = inBand === 'in' ? 'in your 0.5–1 %/wk band' : inBand === 'below' ? 'slower than your band' : inBand === 'above' ? 'faster than your band' : 'trend needs ~8 days';
   const changed = todayLb === null || round(displayToLb(value, units), 1) !== round(todayLb, 1);
 
   return (
-    <div className="hx-card p-4 space-y-3">
-      <SectionHeader title="Weight" caption={todayLb !== null ? `Logged today · ${fmtWeight(todayLb, units)}` : 'Weigh in first thing, after the bathroom, before coffee.'} />
+    <div className="hx-raised h-full p-4 flex flex-col gap-3">
+      <SectionHeader as="h3" title="Weight" caption={todayLb !== null ? `Logged today, ${fmtWeight(todayLb, units)}` : 'Weigh in first thing, after the bathroom, before coffee.'} />
       {/* The lg stepper is 240 px; with a button beside it the row overflowed the 324 px card (R6-1), so the button sits underneath. */}
-      <div className="flex flex-col gap-3">
-        <Stepper value={value} onChange={setValue} step={0.1} dp={1} min={0} max={units === 'kg' ? 400 : 900} unit={units} label={`Weight in ${units}`} size="lg" />
-        <Button size="lg" fullWidth icon={<Scale aria-hidden />} onClick={() => onSave(displayToLb(value, units))} disabled={!changed || value <= 0}>
-          {todayLb !== null ? 'Update weight' : 'Save weight'}
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 gap-3 text-[13px] leading-5">
-        <div>
+      <Stepper value={value} onChange={setValue} step={0.1} dp={1} min={0} max={units === 'kg' ? 400 : 900} unit={units} label={`Weight in ${units}`} size="lg" />
+      <Button size="lg" fullWidth icon={<Scale aria-hidden />} onClick={() => onSave(displayToLb(value, units))} disabled={!changed || value <= 0}>
+        {todayLb !== null ? 'Update weight' : 'Save weight'}
+      </Button>
+      <div className="grid grid-cols-2 gap-3 pt-1">
+        <div className="min-w-0">
           <div className="hx-label">Trend</div>
-          <div className="text-hx-text font-semibold text-[17px] leading-6">{trend === null ? '—' : fmtWeight(trend, units)}</div>
-          <div className={bandText}>{rateLabel ? `${rateLabel} · ${bandCopy}` : 'Weekly rate after 8 days of weigh-ins'}</div>
+          <div className="hx-display text-[22px] leading-7 font-semibold text-hx-text">{trend === null ? '—' : fmtWeight(trend, units)}</div>
+          <div className={`text-[13px] leading-[18px] ${bandTone}`}>{rateLabel ? `${rateLabel}, ${bandCopy}` : 'Weekly rate after 8 days of weigh-ins'}</div>
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="hx-label">This block</div>
-          <div className="text-hx-text font-semibold text-[17px] leading-6">
+          <div className="hx-display text-[22px] leading-7 font-semibold text-hx-text">
             {block.value} <span className="text-[13px] font-medium text-hx-text2">weigh-ins</span>
           </div>
-          <div className={block.met ? 'text-hx-green' : 'text-hx-text2'}>{block.sub}</div>
+          <div className={`text-[13px] leading-[18px] ${block.met ? 'text-hx-green' : 'text-hx-text2'}`}>{block.sub}</div>
         </div>
       </div>
       {todayLb !== null && (

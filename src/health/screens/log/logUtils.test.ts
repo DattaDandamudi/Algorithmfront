@@ -278,7 +278,7 @@ describe('weighInBlockLine', () => {
     expect(line.met).toBe(blockProgress(exp, today).met);
     expect(line.met).toBe(false);
     // Block 1 (days 7–13 after the anchor) only builds calibration history, and the date is the first estimate.
-    expect(line.sub).toBe(`in this block · first estimate ${next(exp)} — weigh in 5+ days of every block to calibrate.`);
+    expect(line.sub).toBe(`in this block, first estimate ${next(exp)} — weigh in 5+ days of every block to calibrate.`);
     expect(line.sub).not.toMatch(/Enough/);
   });
   it('a full calibration block is "enough" for history, not an update', () => {
@@ -290,7 +290,7 @@ describe('weighInBlockLine', () => {
     expect(line.value).toBe('6/7');
     expect(line.met).toBe(true);
     expect(line.met).toBe(blockProgress(exp, today).met);
-    expect(line.sub).toBe(`Enough for this block — it builds calibration history · first estimate ${next(exp)}.`);
+    expect(line.sub).toBe(`Enough for this block — it builds calibration history, first estimate ${next(exp)}.`);
     expect(line.sub).not.toMatch(/expenditure update/);
   });
   it('says "Enough for this block’s expenditure update" only when a publishable block meets both gates', () => {
@@ -300,7 +300,7 @@ describe('weighInBlockLine', () => {
     expect(exp.calibrating).toBe(false);
     expect(exp.weighInsThisWeek).toBe(7);
     const line = weighInBlockLine(exp, today);
-    expect(line).toEqual({ value: '7/7', met: true, sub: `Enough for this block’s expenditure update · updates ${next(exp)}.` });
+    expect(line).toEqual({ value: '7/7', met: true, sub: `Enough for this block’s expenditure update on ${next(exp)}.` });
 
     // Same weigh-ins, but no intake logged in the open block → weigh-ins alone are not enough.
     const noIntake = range(-27, 0).map((k) => rec(k, k < -7 ? { kc: 2000, p: 150 } : {}));
@@ -308,13 +308,13 @@ describe('weighInBlockLine', () => {
     const line2 = weighInBlockLine(exp2, today);
     expect(line2.met).toBe(false);
     expect(line2.met).toBe(blockProgress(exp2, today).met);
-    expect(line2.sub).toBe(`in this block · updates ${next(exp2)} — log meals on 5+ days of it too so expenditure can update.`);
+    expect(line2.sub).toBe(`in this block, updates ${next(exp2)} — log meals on 5+ days of it too so expenditure can update.`);
 
     // Too few weigh-ins in a publishable block.
     const sparse = [...range(-27, -7), -1, 0].map((k) => rec(k, { kc: 2000, p: 150 }));
     const exp3 = weeklyExpenditure(sparse, today);
     expect(exp3.weighInsThisWeek).toBe(2);
-    expect(weighInBlockLine(exp3, today).sub).toBe(`in this block · updates ${next(exp3)} — weigh in 5+ days to calibrate.`);
+    expect(weighInBlockLine(exp3, today).sub).toBe(`in this block, updates ${next(exp3)} — weigh in 5+ days to calibrate.`);
   });
   it('the first publishable block (day 14+) is labelled as the first estimate', () => {
     const records = [...range(-16, -10), -2, -1, 0].map((k) => rec(k, { kc: 2000, p: 150 }));
@@ -322,7 +322,7 @@ describe('weighInBlockLine', () => {
     expect(exp.calibrating).toBe(true);
     const line = weighInBlockLine(exp, today);
     expect(line.value).toBe('3/7');
-    expect(line.sub).toBe(`in this block · first estimate ${next(exp)} — weigh in 5+ days to calibrate.`);
+    expect(line.sub).toBe(`in this block, first estimate ${next(exp)} — weigh in 5+ days to calibrate.`);
   });
   it('has copy for before the first weigh-in', () => {
     const exp = weeklyExpenditure([], today);

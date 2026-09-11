@@ -1,5 +1,8 @@
 /**
- * HydrationCard — caffeine quick-log and the water cup counter.
+ * Caffeine and water — two RAISED tiles in the Log bento (they are controls,
+ * not readings): caffeine spans both columns because its cutoff warning is a
+ * sentence, water is a 1×1 (one number, one control) paired with the bedtime
+ * tile so neither is left alone in a row.
  *
  * Caffeine (§6.4): "+ coffee" only logs a clock time (`logCaffeine`); it
  * does not add a meal. The time input defaults to now and follows the clock
@@ -24,18 +27,16 @@ import { fmt } from '../../lib/format';
 import { Button, Chip, ProgressRing, SectionHeader } from '../../ui';
 import { caffeineLateCaption, caffeinePickHint, normaliseTime } from './logUtils';
 
-export interface HydrationCardProps {
-  ctx: CoachContext;
+export interface CaffeineCardProps {
   todayRecord: DailyRecord | undefined;
   profile: Profile;
   nowHHMM: HHMM;
   /** `time` is the user's pick, or null for "now" (the caller stamps the wall clock at the tap). */
   onCaffeine: (time: HHMM | null) => void;
   onRemoveCaffeine: (time: string) => void;
-  onWater: (cups: number) => void;
 }
 
-export default function HydrationCard({ ctx, todayRecord, profile, nowHHMM, onCaffeine, onRemoveCaffeine, onWater }: HydrationCardProps) {
+export function CaffeineCard({ todayRecord, profile, nowHHMM, onCaffeine, onRemoveCaffeine }: CaffeineCardProps) {
   const caf = todayRecord?.caf ?? [];
   const lateCaption = caffeineLateCaption(caf, profile.bedTarget, profile.caffeineCutoff);
   // null = follow the clock; a pick sticks until logged or cleared.
@@ -47,84 +48,72 @@ export default function HydrationCard({ ctx, todayRecord, profile, nowHHMM, onCa
     onCaffeine(picked);
     setPicked(null);
   };
+
+  return (
+    <div className="hx-raised h-full p-4 flex flex-col gap-3">
+      <SectionHeader as="h3" title="Caffeine" caption={`Cutoff ${formatClock(profile.caffeineCutoff)}, to protect deep sleep`} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button variant={late ? 'secondary' : 'primary'} size="md" icon={<Coffee aria-hidden />} onClick={log}>
+          + coffee
+        </Button>
+        <label className="flex items-center gap-1.5">
+          <span className="hx-label">at</span>
+          <input type="time" value={at} onChange={(e) => setPicked(normaliseTime(e.target.value, at))} className="h-11 px-2 font-semibold w-[136px]" aria-label="Time of the coffee" />
+        </label>
+        {picked && (
+          <button type="button" onClick={() => setPicked(null)} className="h-11 px-3 text-[13px] font-medium text-hx-text2 hover:text-hx-text rounded-ctl">
+            now
+          </button>
+        )}
+      </div>
+      {caf.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Caffeine logged today">
+          {caf.map((t, i) => (
+            <Chip key={`${t}-${i}`} size="sm" onClick={() => onRemoveCaffeine(t)} aria-label={`Remove caffeine logged at ${formatClock(t)}`}>
+              {formatClock(t)} ×
+            </Chip>
+          ))}
+        </div>
+      )}
+      {lateCaption ? (
+        <p className="text-[13px] leading-[18px] text-hx-yellow" role="status">
+          {lateCaption}
+        </p>
+      ) : pickHint ? (
+        <p className="text-[13px] leading-[18px] text-hx-text2">{pickHint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export interface WaterTileProps {
+  ctx: CoachContext;
+  onWater: (cups: number) => void;
+}
+
+export function WaterTile({ ctx, onWater }: WaterTileProps) {
   const cups = ctx.nutrition.hydrationCups;
   const target = ctx.nutrition.hydrationTargetCups;
 
   return (
-    <div className="hx-card p-4 space-y-4">
-      <div className="space-y-2">
-        <SectionHeader title="Caffeine" caption={`Cutoff ${formatClock(profile.caffeineCutoff)} · protects deep sleep`} />
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button variant={late ? 'secondary' : 'primary'} size="md" icon={<Coffee aria-hidden />} onClick={log}>
-            + coffee
-          </Button>
-          <label className="flex items-center gap-1.5">
-            <span className="hx-label">at</span>
-            <input
-              type="time"
-              value={at}
-              onChange={(e) => setPicked(normaliseTime(e.target.value, at))}
-              className="h-11 px-2 text-[15px] font-semibold w-[136px]"
-              aria-label="Time of the coffee"
-            />
-          </label>
-          {picked && (
-            <button type="button" onClick={() => setPicked(null)} className="h-11 px-2 text-[13px] font-medium text-hx-text2 hover:text-hx-text rounded-xl">
-              now
-            </button>
-          )}
-        </div>
-        {caf.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Caffeine logged today">
-            {caf.map((t, i) => (
-              <Chip key={`${t}-${i}`} size="sm" onClick={() => onRemoveCaffeine(t)} aria-label={`Remove caffeine logged at ${formatClock(t)}`}>
-                {formatClock(t)} ×
-              </Chip>
-            ))}
-          </div>
-        )}
-        {lateCaption ? (
-          <p className="text-[13px] leading-5 text-hx-yellow" role="status">
-            {lateCaption}
-          </p>
-        ) : pickHint ? (
-          <p className="text-[13px] leading-5 text-hx-text2">{pickHint}</p>
-        ) : null}
-      </div>
-
-      <div className="flex items-center justify-between gap-3 border-t border-hx-border pt-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <ProgressRing value={cups} max={Math.max(1, target)} color="blue" size={56} label="Water">
-            <Droplets className="w-4 h-4 text-hx-blue" aria-hidden />
-          </ProgressRing>
-          <div className="min-w-0">
-            <div className="hx-label">Water</div>
-            <div className="text-[17px] leading-6 font-semibold text-hx-text">
-              {cups} <span className="text-[13px] font-medium text-hx-text2">/ {target} cups</span>
-            </div>
-            <div className="text-[12px] leading-4 text-hx-muted">1 cup ≈ {ML_PER_CUP} ml · ≈ {fmt(target * ML_PER_CUP)} ml/day for your weight</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0" role="group" aria-label="Water cups">
-          <button
-            type="button"
-            onClick={() => onWater(Math.max(0, cups - 1))}
-            disabled={cups <= 0}
-            aria-label="Remove a cup"
-            className="w-11 h-11 inline-flex items-center justify-center rounded-xl bg-hx-card2 border border-hx-border text-hx-text hover:border-hx-neutral disabled:opacity-40"
-          >
-            <Minus className="w-5 h-5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => onWater(cups + 1)}
-            aria-label="Add a cup"
-            className="w-11 h-11 inline-flex items-center justify-center rounded-xl bg-hx-text text-hx-base hover:bg-white"
-          >
-            <Plus className="w-5 h-5" aria-hidden />
-          </button>
+    <div className="hx-raised h-full p-4 flex flex-col gap-3">
+      <SectionHeader as="h3" title="Water" />
+      <div className="flex items-center gap-3 min-w-0">
+        <ProgressRing value={cups} max={Math.max(1, target)} color="blue" size={44} stroke={5} label="Water">
+          <Droplets className="w-4 h-4 text-hx-blue" aria-hidden />
+        </ProgressRing>
+        <div className="min-w-0">
+          <div className="hx-display text-[28px] leading-8 font-semibold text-hx-text">{cups}</div>
+          <div className="text-[13px] leading-[18px] text-hx-text2">of {target} cups</div>
         </div>
       </div>
+      <div className="flex items-center gap-2" role="group" aria-label="Water cups">
+        <Button variant="secondary" size="md" className="w-11 !px-0 !rounded-ctl" aria-label="Remove a cup" icon={<Minus aria-hidden />} disabled={cups <= 0} onClick={() => onWater(Math.max(0, cups - 1))} />
+        <Button size="md" className="w-11 !px-0" aria-label="Add a cup" icon={<Plus aria-hidden />} onClick={() => onWater(cups + 1)} />
+      </div>
+      <p className="mt-auto text-[13px] leading-[18px] text-hx-muted">
+        1 cup ≈ {ML_PER_CUP} ml, about {fmt(target * ML_PER_CUP)} ml a day for your weight
+      </p>
     </div>
   );
 }

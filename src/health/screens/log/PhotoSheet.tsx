@@ -72,8 +72,8 @@ export default function PhotoSheet({ open, onClose, aiStatus, aiError = null, bu
       }
     >
       <div className="space-y-3" aria-busy={busy || undefined}>
-        <p className="text-[14px] leading-5 text-hx-text font-semibold">{PHOTO_CAVEAT}</p>
-        <p className="text-[13px] leading-5 text-hx-text2">
+        <p className="text-[15px] leading-[22px] text-hx-text font-semibold">{PHOTO_CAVEAT}</p>
+        <p className="text-[15px] leading-[22px] text-hx-text2">
           Claude names the dishes and guesses a restaurant-size portion; a plate of biryani looks the same at 250 g and 450 g, so you confirm the weight before anything is saved.
         </p>
 
@@ -86,7 +86,7 @@ export default function PhotoSheet({ open, onClose, aiStatus, aiError = null, bu
                 value={hint}
                 onChange={(e) => setHint(e.target.value)}
                 placeholder="e.g. chicken biryani, home-cooked"
-                className="mt-1 w-full h-11 px-3 text-[15px]"
+                className="mt-1 w-full h-11 px-3"
                 aria-label="Hint for the photo estimate"
                 disabled={busy}
               />
@@ -96,26 +96,26 @@ export default function PhotoSheet({ open, onClose, aiStatus, aiError = null, bu
               {busy ? 'Estimating from the photo…' : loading ? AI_LOADING_LABEL : 'Take a photo'}
             </Button>
             {busy && (
-              <p role="status" className="text-[12px] leading-4 text-hx-text2 text-center">
+              <p role="status" className="text-[13px] leading-[18px] text-hx-text2">
                 Resizing and sending to Claude — a few seconds.
               </p>
             )}
             {aiNote && !busy && (
-              <p role="status" className={`text-[13px] leading-5 ${aiStatus === 'error' ? 'text-hx-yellow' : 'text-hx-text2'}`}>
+              <p role="status" className={`text-[15px] leading-[22px] ${aiStatus === 'error' ? 'text-hx-yellow' : 'text-hx-text2'}`}>
                 {aiNote}
               </p>
             )}
             {error && !busy && (
-              <p role="alert" className="text-[13px] leading-5 text-hx-red">
+              <p role="alert" className="text-[15px] leading-[22px] text-hx-red">
                 {error}
               </p>
             )}
-            <p className="text-[12px] leading-4 text-hx-muted">The photo is downsized on your phone and sent only to your AI provider; it is not stored.</p>
+            <p className="text-[13px] leading-[18px] text-hx-muted">The photo is downsized on your phone and sent only to your AI provider; it is not stored.</p>
           </>
         ) : (
           <div className="space-y-3">
-            <p className="text-[13px] leading-5 text-hx-yellow">Photo estimates need an AI key — add one under Settings → Coach &amp; AI. We won't fake an estimate without it.</p>
-            <p className="text-[13px] leading-5 text-hx-text2">Until then the fastest accurate path is the text bar with a weight — "320 g chicken biryani" — which you can edit before saving.</p>
+            <p className="text-[15px] leading-[22px] text-hx-yellow">Photo estimates need an AI key — add one under Settings → Coach &amp; AI. We won't fake an estimate without it.</p>
+            <p className="text-[15px] leading-[22px] text-hx-text2">Until then the fastest accurate path is the text bar with a weight — "320 g chicken biryani" — which you can edit before saving.</p>
             <Button variant="secondary" size="md" fullWidth icon={<Settings2 aria-hidden />} onClick={onOpenAISettings}>
               Open AI settings
             </Button>

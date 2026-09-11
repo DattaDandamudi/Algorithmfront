@@ -398,8 +398,8 @@ export interface WeighInBlockLine {
  * AND the block can publish: the blocks starting < CALIBRATION_DAYS after the
  * first weigh-in only build history (estimateWeek marks them invalid), and
  * while `calibrating` the date is the FIRST estimate, not an update.
- *   1/7 → "in this block · updates Sat 12 Sep — weigh in 5+ days to calibrate."
- *   6/7 → "Enough for this block’s expenditure update · updates Sat 12 Sep."
+ *   1/7 → "in this block, updates Sat 12 Sep — weigh in 5+ days to calibrate."
+ *   6/7 → "Enough for this block’s expenditure update on Sat 12 Sep."
  */
 export function weighInBlockLine(result: ExpenditureResult, today: ISODate, gate = WEIGH_INS_GATE): WeighInBlockLine {
   const w = result.weighInsThisWeek;
@@ -413,10 +413,10 @@ export function weighInBlockLine(result: ExpenditureResult, today: ISODate, gate
   const historyOnly = 7 * blockIndex < CALIBRATION_DAYS;
   if (historyOnly) {
     return met
-      ? { value, met, sub: `Enough for this block — it builds calibration history · ${when}.` }
-      : { value, met, sub: `in this block · ${when} — weigh in ${gate}+ days of every block to calibrate.` };
+      ? { value, met, sub: `Enough for this block — it builds calibration history, ${when}.` }
+      : { value, met, sub: `in this block, ${when} — weigh in ${gate}+ days of every block to calibrate.` };
   }
-  if (met) return { value, met, sub: `Enough for this block’s expenditure update · ${when}.` };
-  if (w >= gate) return { value, met, sub: `in this block · ${when} — log meals on ${gate}+ days of it too so expenditure can update.` };
-  return { value, met, sub: `in this block · ${when} — weigh in ${gate}+ days to calibrate.` };
+  if (met) return { value, met, sub: `Enough for this block’s expenditure ${result.calibrating ? 'estimate' : 'update'} on ${formatDateShort(result.nextUpdate)}.` };
+  if (w >= gate) return { value, met, sub: `in this block, ${when} — log meals on ${gate}+ days of it too so expenditure can update.` };
+  return { value, met, sub: `in this block, ${when} — weigh in ${gate}+ days to calibrate.` };
 }

@@ -32,7 +32,7 @@ export const CLIENT_LOAD_FALLBACK = 'the AI client could not be created';
 export function aiBarCaption(status: AIStatus, error: string | null): string {
   switch (status) {
     case 'none':
-      return 'Offline parser · add an AI key in Settings for better accuracy on restaurant dishes.';
+      return 'Offline parser, add an AI key in Settings for better accuracy on restaurant dishes.';
     case 'loading':
       return 'Loading the AI module — a moment.';
     case 'slow':
