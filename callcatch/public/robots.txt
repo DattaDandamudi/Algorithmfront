@@ -1,0 +1,14 @@
+# CallCatch
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /login
+Disallow: /signup
+Disallow: /onboarding
+Disallow: /inbox
+Disallow: /billing
+Disallow: /settings
+Disallow: /admin
+Disallow: /reports
+
+Sitemap: https://callcatch.co/sitemap.xml

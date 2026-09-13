@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fbfaf7;
+  --foreground: #0b1f3a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Brand: deep navy (trust) + safety orange (action) */
+  --color-brand-50: #eef3fa;
+  --color-brand-100: #d8e2f2;
+  --color-brand-200: #b3c5e4;
+  --color-brand-300: #7f9dcf;
+  --color-brand-400: #4f75b5;
+  --color-brand-500: #2f5697;
+  --color-brand-600: #22427a;
+  --color-brand-700: #18305c;
+  --color-brand-800: #10254a;
+  --color-brand-900: #0b1f3a;
+  --color-brand-950: #061224;
+
+  --color-accent-50: #fff4ee;
+  --color-accent-100: #ffe4d5;
+  --color-accent-200: #ffc5a6;
+  --color-accent-300: #ff9f6b;
+  --color-accent-400: #ff7a38;
+  --color-accent-500: #ff6a1a;
+  --color-accent-600: #e5540b;
+  --color-accent-700: #bf4208;
+  --color-accent-800: #97350a;
+  --color-accent-900: #7a2e0c;
+
+  --color-success-500: #16a34a;
+  --color-warning-500: #f59e0b;
+  --color-danger-500: #dc2626;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
