@@ -11,7 +11,18 @@ import { can } from "@/lib/plans";
 import { formatPhone, sendSms, twilioClient } from "@/lib/telephony/client";
 import { escapeXml, sayTwiceAndHangup } from "@/lib/telephony/twiml";
 
-export type AlertKind = "missed_call" | "voicemail" | "lead" | "qualified" | "booked" | "emergency" | "escalation" | "turn_limit" | "report";
+export type AlertKind =
+  | "missed_call"
+  | "voicemail"
+  | "lead"
+  | "qualified"
+  | "booked"
+  | "emergency"
+  | "escalation"
+  | "turn_limit"
+  /** A customer texted a thread the assistant will not answer (owner took over, turn cap, opted out). */
+  | "customer_reply"
+  | "report";
 
 export type OwnerAlertInput = {
   account: AccountRow;

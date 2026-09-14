@@ -8,8 +8,10 @@
  *   4. Claude turn: cached business-profile system block + dynamic block, strict tools,
  *      adaptive thinking at low effort, tool loop (max 3 rounds)
  *   5. stop_reason refusal / max_tokens / API error -> safe template, never a crash
- *   6. post-filter (no prices, no ETAs, first-message disclosure, SMS length)
- *   7. send via sendCustomerMessage (opt-out / quiet hours / cap enforced there), record usage
+ *   6. post-filter (no prices, no ETAs, first-message disclosures, SMS length)
+ *   7. send via sendCustomerMessage (opt-out / cap enforced there; quiet hours apply only to
+ *      unsolicited sends — a reply to a customer's fresh text goes out at any hour and the
+ *      emergency template always sends immediately), record usage
  *   8. fast-model extraction updates the lead; conversation.turn_count updated
  */
 import Anthropic from "@anthropic-ai/sdk";
@@ -28,7 +30,10 @@ import {
   DEMO_MAX_AI_TURNS,
   DEMO_PROFILE,
   demoClosingTemplate,
+  demoFirstTextbackTemplate,
+  demoRepeatTextbackTemplate,
   emergencyTemplate,
+  ensureFirstOutboundDisclosure,
   firstTextbackTemplate,
   leadSummaryLine,
   repeatTextbackTemplate,
@@ -130,13 +135,19 @@ async function loadRecentMessages(db: Db, conversationId: string, limit = HISTOR
   return (r.data ?? []).reverse();
 }
 
-async function countOutbound(db: Db, conversationId: string, author?: "ai"): Promise<number> {
+/**
+ * Outbound rows that are not failed. `sentOnly` also ignores rows still waiting for the texting
+ * window: a queued first text-back may be voided as superseded when the customer texts first,
+ * so the reply to that text must carry the first-message disclosures itself.
+ */
+async function countOutbound(db: Db, conversationId: string, author?: "ai", opts: { sentOnly?: boolean } = {}): Promise<number> {
   let q = db
     .from("messages")
     .select("id", { count: "exact", head: true })
     .eq("conversation_id", conversationId)
     .eq("direction", "out")
     .neq("status", "failed");
+  if (opts.sentOnly) q = q.neq("status", "queued");
   if (author) q = q.eq("author", author);
   const r = await q;
   return r.count ?? 0;
@@ -247,14 +258,16 @@ const REPEAT_TEXTBACK_MIN_GAP_MS = 10 * 60_000;
 
 /**
  * Text-back after a missed call / demo call. On a fresh thread sends the first-message
- * template (business name + STOP) and tracks `first_textback` on the account's first ever
- * text-back. When the caller already has an open thread (called again within 30 days) a
- * short re-engagement line is sent instead, at most once per 10 minutes.
+ * template (business name + automated-assistant disclosure + STOP; the demo line identifies
+ * CallCatch instead) and tracks `first_textback` on the account's first ever text-back. When
+ * the caller already has an open thread (called again within 30 days) a short re-engagement
+ * line is sent instead, at most once per 10 minutes.
  */
 export async function sendFirstTextback(conversationId: string): Promise<SendCustomerMessageResult> {
   const db = createAdminSupabase();
   const ctx = await loadConversationContext(db, conversationId);
   if (!ctx) return { ok: false, reason: "conversation_not_found" };
+  const demo = isDemoContext(ctx);
   const profile = profileFor(ctx);
   const priorOutbound = await countOutbound(db, conversationId);
   if (priorOutbound > 0) {
@@ -263,13 +276,13 @@ export async function sendFirstTextback(conversationId: string): Promise<SendCus
     const repeat = await sendCustomerMessage({
       accountId: ctx.account.id,
       conversationId,
-      body: repeatTextbackTemplate(profile),
+      body: demo ? demoRepeatTextbackTemplate() : repeatTextbackTemplate(profile),
       author: "ai",
       usage: ZERO_USAGE("template"),
     });
     return repeat.ok ? repeat : { ok: false, reason: repeat.reason ?? "already_texted" };
   }
-  const body = firstTextbackTemplate(profile, ctx.contact.name);
+  const body = demo ? demoFirstTextbackTemplate() : firstTextbackTemplate(profile, ctx.contact.name);
   const result = await sendCustomerMessage({
     accountId: ctx.account.id,
     conversationId,
@@ -289,19 +302,33 @@ export async function sendFirstTextback(conversationId: string): Promise<SendCus
   return result;
 }
 
+/** `system` is reserved for the emergency safety template, which is never held for quiet hours. */
 async function sendTemplate(ctx: ConversationContext, body: string, author: "ai" | "system"): Promise<SendCustomerMessageResult> {
-  return sendCustomerMessage({ accountId: ctx.account.id, conversationId: ctx.conversation.id, body, author, usage: ZERO_USAGE("template") });
+  return sendCustomerMessage({
+    accountId: ctx.account.id,
+    conversationId: ctx.conversation.id,
+    body,
+    author,
+    usage: ZERO_USAGE("template"),
+    bypassQuietHours: author === "system",
+  });
 }
 
-/** Emergency branch: safety template, lead urgency, owner voice call + alert. Model is skipped. */
+/**
+ * Emergency branch: safety template (sent immediately, any hour), lead urgency, owner voice
+ * call + alert. Model is skipped. When the customer's emergency text opens the thread, the
+ * template is the first outbound and gets the business-name / automated-assistant / STOP lines.
+ */
 export async function handleEmergency(
   ctx: ConversationContext,
   kind: ReturnType<typeof detectEmergency> & { isEmergency: true },
   triggerText: string,
-  db: Db
+  db: Db,
+  isFirstOutbound: boolean
 ): Promise<RunAiTurnResult> {
   const profile = profileFor(ctx);
-  const body = emergencyTemplate(profile, safetyLine(kind.kind));
+  let body = emergencyTemplate(profile, safetyLine(kind.kind));
+  if (isFirstOutbound) body = ensureFirstOutboundDisclosure(body, profile);
   const sent = await sendTemplate(ctx, body, "system");
 
   const lead = await ensureLead(db, {
@@ -445,8 +472,10 @@ export async function runAiTurn(conversationId: string): Promise<RunAiTurnResult
 
   const profile = profileFor(ctx);
   const maxTurns = demo ? DEMO_MAX_AI_TURNS : MAX_AI_TURNS;
-  const [aiTurns, outboundTotal] = await Promise.all([countOutbound(db, conversationId, "ai"), countOutbound(db, conversationId)]);
-  const isFirstOutbound = outboundTotal === 0;
+  const [aiTurns, outboundSent] = await Promise.all([countOutbound(db, conversationId, "ai"), countOutbound(db, conversationId, undefined, { sentOnly: true })]);
+  // Nothing has actually reached the customer yet (a text-back still queued for the window does
+  // not count: it is voided as superseded once this reply goes out).
+  const isFirstOutbound = outboundSent === 0;
 
   // Operator kill-switch (RUNBOOK §11): during a model/API outage every turn sends the safe template,
   // pauses the thread and alerts the owner, so no customer is left without a human path.
@@ -484,7 +513,7 @@ export async function runAiTurn(conversationId: string): Promise<RunAiTurnResult
   const emergency = detectEmergency(last.body);
   const emergencyHandled = messages.some((m) => m.direction === "out" && m.author === "system");
   if (emergency.isEmergency && !emergencyHandled) {
-    const result = await handleEmergency(ctx, emergency, last.body, db);
+    const result = await handleEmergency(ctx, emergency, last.body, db, isFirstOutbound);
     await updateTurnCount(db, conversationId, aiTurns + 1);
     await extractAndUpdateLead(ctx, [...messages], result.messageId ?? null, db);
     return result;
@@ -573,6 +602,7 @@ export async function runAiTurn(conversationId: string): Promise<RunAiTurnResult
   let body: string;
   if (!replyText) {
     body = outcome.bookingUrl ? `Here's the booking link: ${outcome.bookingUrl}` : safeTemplate(profile);
+    if (isFirstOutbound) body = ensureFirstOutboundDisclosure(body, profile);
     if (!fallbackReason) fallbackReason = "empty_reply";
   } else {
     body = sanitizeReply(replyText, { profile, isFirstOutbound, bookingUrlToInclude: outcome.bookingUrl });

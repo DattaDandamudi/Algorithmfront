@@ -71,19 +71,37 @@ Weekly (Monday, 15 min):
 
 ## 6. Stripe dunning / `past_due`
 
-Stripe Smart Retries run 4 attempts over 2 weeks; `invoice.payment_failed` → `subscriptions.status='past_due'`; `/api/cron/dunning` sends reminder emails on day 1, 4, 8 and the app shows a banner with an "Update card" portal link.
+Stripe Smart Retries run 4 attempts over 2 weeks; `invoice.payment_failed` → `subscriptions.status='past_due'`; `/api/cron/dunning` sends reminder emails on day 1, 3, 7 and the app shows a banner with an "Update card" portal link.
 
 1. [ ] Day 0-3: automated. Nothing to do unless the customer writes in.
 2. [ ] Day 7: personal text from the founder (from the notification number is fine — they are our subscriber): "Hey *name*, your CallCatch card bounced on *date*. Missed-call texts keep running for now; update it here so it doesn't pause: *portal link*."
-3. [ ] Day 14 (Stripe marks `unpaid`): the dunning cron sets `accounts.status='paused'` and AI + text-back stop; voice greeting continues so callers are not dropped. Customer gets the "paused for non-payment" email.
-4. [ ] Recovery: when `invoice.paid` arrives, the webhook sets `active` and `accounts.status='live'`. Confirm the number is still `sms_enabled` and send a "you're back on" note.
+3. [ ] Day 14 (Stripe marks `unpaid`): the dunning cron sets `accounts.status='paused'`, pauses the AI on every open thread and records which ones (`events` row `dunning_ai_paused` with the conversation ids); voice greeting continues so callers are not dropped. Customer gets the "paused for non-payment" email.
+4. [ ] Recovery: when `invoice.paid` / `customer.subscription.updated` arrives with the subscription `active`, the webhook sets `accounts.status='live'` and resumes exactly the threads the cron paused (`dunning_ai_resumed` event) — threads the owner took over stay paused. Confirm the number is still `sms_enabled` and send a "you're back on" note. If a thread the customer expects to be live still shows "AI paused" in the inbox, it was paused by the owner or by safe mode, not by dunning: the owner's "Resume AI" button clears it.
 5. [ ] Day 45 unpaid: cancel in Stripe (immediately), release the number after 30 more days (Twilio keeps it billed at $2.15/mo `[V]` until released).
+
+## 6a. "Duplicate Stripe subscription" admin email
+
+Trigger: `lib/billing/sync.ts` received a live subscription event for an account whose `subscriptions` row already tracks a *different* live subscription (Checkout refuses to create a second one, so this means a subscription was created in the Stripe dashboard or a webhook raced a restart). The app keeps mirroring the tracked subscription, ignores the newcomer (`duplicate_subscription_detected` event) and never lets a terminal event for the untracked one flip the account to cancelled.
+
+1. [ ] Stripe → Customer → Subscriptions: identify the one the customer should keep (usually the older, already-paid one — the email names both ids).
+2. [ ] Cancel the other **immediately** and refund any charge it made; Stripe sends `customer.subscription.deleted`, which the app ignores for the untracked id (nothing changes for the customer).
+3. [ ] If the *tracked* one is the wrong one: cancel it instead — the app then marks the account cancelled — and make any small edit to the survivor in the Stripe dashboard (e.g. add a metadata key `resync=1`): the resulting `customer.subscription.updated` is a new event, so the webhook mirrors the survivor and the account comes back to live/pending_verification. (Resending the old event from Stripe → Events does nothing: the webhook is idempotent on event id.)
+
+## 6b. Trial ending before verification
+
+Trigger: `customer.subscription.trial_will_end` (3 days before `trial_end`) for a self-serve trial with no verified customer number. The webhook extends the trial by 7 days at most **twice** (`grace_extensions` in the subscription metadata; 14-day trial + 14 days of grace = 28 days from checkout), emailing the owner each time ("we extended your trial"). If the customer already clicked cancel (`cancel_at_period_end`), nothing is extended so the cancellation lands on time.
+
+After the second extension the trial ends on schedule and the card is charged, verified or not: the owner gets "your trial ends *date* — verification is still pending" and admins get "Trial ending unverified: *business*" (`trial_ending_unverified` event).
+
+1. [ ] Escalate the verification first (§1 / §2) — the customer has been waiting 3+ weeks.
+2. [ ] If verification is still weeks away, extend by hand: Stripe → Subscription → Update → trial end date (no proration), and tell the customer. Or, if they would rather wait: cancel at period end, and re-subscribe them with pay-now when the number clears.
+3. [ ] If the card was charged and the number verifies within the money-back window, `onVerified()` starts their first paid month on the verification day for monthly plans; for a charge they dispute, refund per §7.
 
 ## 7. Refund within 30 days
 
 Policy: 30-day money-back on any **first** payment; no refunds on renewals; setup fee refundable with the first payment only if setup was not delivered (spec §2).
 
-1. [ ] Verify eligibility: first invoice date ≤ 30 days ago (`subscriptions.created_at`, Stripe invoice). Ask one question only: "Anything we could have done differently?" — log the answer in `admin_notes` (churn reasons feed the product).
+1. [ ] Verify eligibility: first invoice date ≤ 30 days ago (`subscriptions.created_at`, Stripe invoice). Ask one question only: "Anything we could have done differently?" — log the answer in `admin_notes` (churn reasons feed the product). Note for annual pay-now: the term runs from the checkout date and the days spent in carrier verification were credited to the customer balance on `verified` (`annual_verification_credited` event) — a full refund inside 30 days includes that credit implicitly; outside 30 days the credit stays on the balance for the next invoice.
 2. [ ] Stripe → Customer → Subscription → **Cancel immediately** (not at period end), then Payments → the charge → **Refund** full amount. `charge.refunded` + `customer.subscription.deleted` webhooks set `subscriptions.status='canceled'`, `accounts.status='cancelled'`.
 3. [ ] Tell the customer: refund posts in 5-10 business days; forwarding removal codes (Verizon `*73`, AT&T `##61#`, T-Mobile `##61#`) so calls stop routing to us; their number is released after 30 days unless they return.
 4. [ ] Annual refunds after a partial month: still full refund inside 30 days. Outside 30 days: no refund, offer pause (§8) or plan downgrade.
@@ -159,3 +177,19 @@ After any rotation: `git log -p` is not the place to check for leaks — search 
 ## Incident log
 
 Keep `admin_notes` with `account_id = null` for platform-level incidents: start time, detection, impact (accounts, messages), fix, follow-up. Review at the month-end meeting with `RISKS.md`.
+
+
+## 13. Message states, limiter counters, and deleted accounts (post-review)
+
+- `messages.status = 'sending'` is the atomic claim taken before the Twilio API call. Rows stuck in `sending` for more than
+  10 minutes are swept by `/api/cron/ai-followups` to `failed` / `send_state_unknown` and are **never re-sent**; reconcile in
+  the Twilio console by To/From/time before resending manually.
+- `error_code` values on `failed` rows: `canceled_by_owner` (owner replied or paused AI first), `superseded` (thread moved on
+  before the queued text went out), `send_state_unknown` (sweep above). None of these are delivery failures.
+- Alert-code and forwarding-test limiter counters live in `public.rate_limits` (service role only). To clear a stuck
+  customer, delete that account's rows in the SQL editor.
+- After deleting an `accounts` row (data-deletion request), a still-signed-in user lands on the `/onboarding`
+  "No CallCatch account for this sign-in" page with a sign-out button; there is no redirect loop.
+- `AI_SAFE_TEMPLATE_MODE=true` (README env table) forces every AI turn to the safe template + owner alert (see §11).
+- 10DLC (sole-proprietor) numbers are polled alongside toll-free verifications; escalation emails carry the subject
+  "Escalate 10DLC (sole proprietor): …".

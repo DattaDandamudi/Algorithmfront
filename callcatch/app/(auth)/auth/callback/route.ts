@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
   let userId: string | null = null;
   let email: string | null = null;
   let createdAt: string | null = null;
+  let provider: string | null = null;
 
   if (code) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
@@ -60,17 +61,22 @@ export async function GET(request: NextRequest) {
     userId = data.user?.id ?? null;
     email = data.user?.email ?? null;
     createdAt = data.user?.created_at ?? null;
+    provider = typeof data.user?.app_metadata?.provider === "string" ? data.user.app_metadata.provider : null;
   } else if (tokenHash && type && OTP_TYPES.has(type)) {
     const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as EmailOtpType });
     if (error) return loginWithError(error.message);
     userId = data.user?.id ?? null;
     email = data.user?.email ?? null;
     createdAt = data.user?.created_at ?? null;
+    provider = typeof data.user?.app_metadata?.provider === "string" ? data.user.app_metadata.provider : null;
   } else {
     return loginWithError("That sign-in link is invalid or has expired.");
   }
 
   // A brand-new user (Google signup or confirmed email) → record the signup with the plan they chose.
+  // recordSignup resolves the account with the service-role client: the new session only exists on
+  // `response`, so an RLS lookup here would run as anon. The method comes from the auth provider
+  // (PKCE email-confirmation links also arrive with `?code=`, so `code` alone does not mean Google).
   const isNew = createdAt ? Date.now() - Date.parse(createdAt) < 10 * 60 * 1000 : false;
   if (userId && (flow === "signup" || type === "signup") && isNew) {
     const nextUrl = new URL(next, origin);
@@ -78,7 +84,7 @@ export async function GET(request: NextRequest) {
       userId,
       email,
       { plan: nextUrl.searchParams.get("plan") ?? undefined, interval: nextUrl.searchParams.get("interval") ?? undefined, path: nextUrl.searchParams.get("path") ?? undefined },
-      code ? "google" : "password"
+      provider === "google" ? "google" : "password"
     );
   }
 

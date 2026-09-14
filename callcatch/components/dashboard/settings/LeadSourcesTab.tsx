@@ -11,7 +11,7 @@ import { ActionForm } from "../ActionForm";
 import { CopyButton } from "../CopyButton";
 import { Card, CardTitle, Notice, btn } from "../primitives";
 import { StatusPill } from "../StatusPill";
-import { inboundAddressFor, webhookUrlFor } from "./lead-source-helpers";
+import { webhookUrlFor } from "./lead-source-helpers";
 import { formatDate } from "../format";
 
 function SourceRow({
@@ -76,14 +76,10 @@ function SourceRow({
             </dt>
             <dd className="flex flex-wrap items-center gap-2">
               <code className="rounded-md bg-brand-50 px-2 py-1 text-xs text-brand-900">
-                {source.inbound_email ??
-                  inboundAddressFor(account.referral_code)}
+                {source.inbound_email ?? "Address pending"}
               </code>
               <CopyButton
-                value={
-                  source.inbound_email ??
-                  inboundAddressFor(account.referral_code)
-                }
+                value={source.inbound_email ?? ""}
               />
             </dd>
           </div>
@@ -206,10 +202,7 @@ export function LeadSourcesTab({
             Inbound email
           </CardTitle>
           <p className="mb-3 text-xs text-brand-600">
-            Your address:{" "}
-            <code className="rounded bg-brand-50 px-1.5 py-0.5">
-              {inboundAddressFor(account.referral_code)}
-            </code>
+            A private inbound address is generated when you create this source. Only that address routes leads into your inbox.
           </p>
           <ActionForm
             action={createLeadSourceAction}

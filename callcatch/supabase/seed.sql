@@ -266,8 +266,9 @@ begin
   on conflict (id) do update set account_id = excluded.account_id, lead_id = excluded.lead_id, call_id = excluded.call_id;
 
   -- 9. lead sources (Pro): per-account inbox + generic webhook -------------------------
+  -- The inbound address is a random token, never derived from the (public) referral code.
   insert into public.lead_sources (id, account_id, type, inbound_email, enabled)
-  values (v_src1_id, v_account_id, 'resend_inbox', 'acct-' || v_code || '@leads.callcatch.co', true)
+  values (v_src1_id, v_account_id, 'resend_inbox', 'acct-demo7k2mq4x@leads.callcatch.co', true)
   on conflict (id) do update set account_id = excluded.account_id, inbound_email = excluded.inbound_email;
 
   insert into public.lead_sources (id, account_id, type, webhook_secret, enabled)

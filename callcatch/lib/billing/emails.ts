@@ -97,6 +97,37 @@ export async function sendTrialExtendedPendingVerification(input: {
   });
 }
 
+/**
+ * Sent when the pre-verification grace has been used up (`MAX_VERIFICATION_GRACE_EXTENSIONS` in the
+ * Stripe webhook): the trial ends on `trialEndIso` and the card is charged, verified or not.
+ */
+export async function sendTrialEndingUnverified(input: {
+  to: string;
+  businessName: string;
+  trialEndIso: string;
+  planName: string;
+  priceUsd: number;
+  interval: "month" | "year";
+}): Promise<void> {
+  const billingUrl = `${env.appUrl()}/billing`;
+  const per = input.interval === "year" ? "year" : "month";
+  const html = layout(
+    `Your trial ends ${formatDate(input.trialEndIso)} — verification is still pending`,
+    `<p>Hi ${esc(input.businessName)},</p>
+     <p>We've extended your free trial twice while the carriers review your number, and it now ends on <strong>${esc(formatDate(input.trialEndIso))}</strong>. After that your card on file is charged ${esc(formatUsd(input.priceUsd))}/${per} for CallCatch ${esc(input.planName)}.</p>
+     <p>Your voicemail transcripts, missed-call alerts and inbox are already working; text-backs turn on automatically the moment verification clears, and we're chasing the carriers on your behalf.</p>
+     <p>Not ready to be charged yet? Pause or cancel from your billing page any time before then — or reply to this email and we'll sort it out.</p>`,
+    { href: billingUrl, label: "Review my plan" }
+  );
+  await sendEmail({
+    to: input.to,
+    subject: `Your CallCatch trial ends ${formatDate(input.trialEndIso)}`,
+    html,
+    text: `Your CallCatch ${input.planName} trial ends ${formatDate(input.trialEndIso)} (we extended it twice while your number is in carrier review). Then ${formatUsd(input.priceUsd)}/${per}. Pause or cancel: ${billingUrl}`,
+    tags: [{ name: "type", value: "trial_ending_unverified" }],
+  });
+}
+
 export async function sendPausedConfirmation(input: { to: string; businessName: string; resumesOnIso: string }): Promise<void> {
   const html = layout(
     `Paused until ${formatDate(input.resumesOnIso)}`,

@@ -48,8 +48,8 @@ export function CheckoutForm({ initialPlan, initialInterval, path, initialSetupF
         {canceled ? (
           <Notice tone="warning">
             Checkout was canceled — nothing was charged. Pick up where you left off below, or{" "}
-            <Link href="/onboarding" className="font-semibold underline">
-              go back to onboarding
+            <Link href="/billing" className="font-semibold underline">
+              view your billing page
             </Link>
             .
           </Notice>
@@ -169,7 +169,7 @@ export function CheckoutForm({ initialPlan, initialInterval, path, initialSetupF
             </p>
           ) : (
             <p>
-              Charged today. {interval === "month" ? "Your first full month starts the day your number is verified; we move the renewal date so you aren't paying for verification days." : "Your annual term starts the day your number is verified."}
+              Charged today. {interval === "month" ? "Your first full month starts the day your number is verified; we move the renewal date so you aren't paying for verification days." : "Your number typically verifies in 3–10 business days; we credit those days back to your account, so you aren't paying for days your text-backs weren't live."}
             </p>
           )}
           <p className="flex items-start gap-1.5">

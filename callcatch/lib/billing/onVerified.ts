@@ -3,18 +3,24 @@
  * When a customer's number becomes carrier-verified:
  *  - self-serve trial: push Stripe `trial_end` to now + TRIAL_DAYS
  *  - pay-now monthly:  set `billing_cycle_anchor`-equivalent (proration-free) so the first full cycle starts today
- *  - annual:           no change
- *  - always: set accounts.status = 'live', record event 'verified'
+ *  - pay-now annual:   the term was charged at checkout and stays anchored there; the days spent in
+ *                      carrier review are refunded as a customer-balance credit (days/365 × annual price),
+ *                      consumed by the next invoice (matches the Checkout copy)
+ *  - promote accounts.status 'pending_verification' → 'live' (never paused/cancelled — those come back
+ *    through the Stripe sync on resume/re-subscribe), record event 'verified'
  *
  * The caller (module c) has already tracked `verified`; this function tracks `billing_anchored`.
  */
+import type Stripe from "stripe";
 import { createAdminSupabase } from "@/lib/db/client";
 import { track } from "@/lib/events";
-import { TRIAL_DAYS } from "@/lib/plans";
-import { syncSubscriptionFromStripe } from "@/lib/billing/sync";
+import { getPlan, TRIAL_DAYS } from "@/lib/plans";
+import { planItemOf, syncSubscriptionFromStripe } from "@/lib/billing/sync";
 import { stripe, toUnix } from "@/lib/billing/stripe";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Only accounts waiting on carrier review are promoted to live by a verification event. */
+const PROMOTABLE_STATUSES = ["pending_verification"] as const;
 
 export type OnVerifiedResult = { ok: boolean; detail?: string };
 
@@ -25,7 +31,7 @@ export async function onVerified(accountId: string): Promise<OnVerifiedResult> {
     db.from("accounts").select("id, status, plan").eq("id", accountId).maybeSingle(),
     db
       .from("subscriptions")
-      .select("stripe_subscription_id, status, interval, paid_now, trial_end, current_period_end")
+      .select("stripe_subscription_id, status, interval, paid_now, plan, trial_end, current_period_end")
       .eq("account_id", accountId)
       .maybeSingle(),
   ]);
@@ -73,8 +79,7 @@ export async function onVerified(accountId: string): Promise<OnVerifiedResult> {
          * Why not `billing_cycle_anchor: 'now'`? Resetting the anchor ends the current period and
          * Stripe invoices the new period immediately; with `proration_behavior: 'none'` the customer
          * would be charged a second full month with no credit for the one they just paid. That is a
-         * refund magnet, so we use the trial-window mechanism instead. (Annual plans are untouched:
-         * the term simply starts on verification per the spec.)
+         * refund magnet, so we use the trial-window mechanism instead.
          */
         const nextRenewal = addOneMonth(now);
         const updated = await s.subscriptions.update(live.id, {
@@ -84,8 +89,16 @@ export async function onVerified(accountId: string): Promise<OnVerifiedResult> {
         });
         await syncSubscriptionFromStripe(updated, { accountId, paidNow: true });
         detail = `cycle_anchored_to_verification:${nextRenewal.toISOString()}`;
-      } else if (sub.interval === "year") {
-        detail = "annual_no_change";
+      } else if (live.status === "active" && sub.interval === "year" && sub.paid_now) {
+        /**
+         * Pay-now annual (charged in full at Checkout). Parking a year-long term in a Stripe trial
+         * window would hide overage until the renewal and show "trialing" for a year, so the term
+         * stays anchored on the checkout date and the verification days are given back as a
+         * customer-balance credit: (days from checkout to verification / 365) × annual price. The
+         * credit is consumed by the next invoice (renewal or overage). Idempotent via subscription
+         * metadata + a Stripe idempotency key.
+         */
+        detail = await creditAnnualVerificationDays(accountId, live, now);
       } else {
         detail = `no_change:${live.status}`;
       }
@@ -104,12 +117,51 @@ export async function onVerified(accountId: string): Promise<OnVerifiedResult> {
   return { ok: true, detail };
 }
 
+/**
+ * Promotes an account waiting on carrier review to live. Never resurrects a paused (customer pause
+ * or dunning), cancelled or still-onboarding account — those change status through the Stripe sync
+ * (`lib/billing/sync.ts`), which checks for a verified number when the subscription comes back.
+ * The UPDATE is conditional so a concurrent pause/cancel is never overwritten.
+ */
 async function setLive(accountId: string, currentStatus: string): Promise<void> {
-  // Never resurrect a cancelled account; a paused one resumes on the Stripe side.
-  if (currentStatus === "cancelled") return;
+  if (!(PROMOTABLE_STATUSES as readonly string[]).includes(currentStatus)) return;
   const db = createAdminSupabase();
-  const { error } = await db.from("accounts").update({ status: "live" }).eq("id", accountId);
+  const { error } = await db
+    .from("accounts")
+    .update({ status: "live" })
+    .eq("id", accountId)
+    .in("status", [...PROMOTABLE_STATUSES]);
   if (error) console.error("[billing/onVerified] accounts.status update failed", error.message);
+}
+
+/** Credits the verification days of a pay-now annual subscription back to the customer balance. */
+async function creditAnnualVerificationDays(accountId: string, live: Stripe.Subscription, now: Date): Promise<string> {
+  if (live.metadata?.verification_credit_cents !== undefined) return `annual_credit_already_applied:${live.metadata.verification_credit_cents}`;
+  const s = stripe();
+  const customerId = typeof live.customer === "string" ? live.customer : live.customer.id;
+  const item = planItemOf(live);
+  const annualCents = item?.price.unit_amount ?? getPlan(live.metadata?.plan).priceAnnualUsd * 100;
+  const currency = item?.price.currency ?? "usd";
+  const days = Math.max(0, Math.floor((now.getTime() - live.start_date * 1000) / DAY_MS));
+  const credit = Math.min(annualCents, Math.round((annualCents * days) / 365));
+
+  if (credit > 0) {
+    await s.customers.createBalanceTransaction(
+      customerId,
+      {
+        amount: -credit,
+        currency,
+        description: `Credit for ${days} day${days === 1 ? "" : "s"} of carrier verification on your annual plan`,
+        metadata: { account_id: accountId, subscription_id: live.id, reason: "annual_verification_credit", days: String(days) },
+      },
+      { idempotencyKey: `verification-credit:${live.id}` }
+    );
+  }
+  await s.subscriptions.update(live.id, {
+    metadata: { verified_at: now.toISOString(), verification_credit_cents: String(credit), verification_credit_days: String(days) },
+  });
+  await track("annual_verification_credited", { subscription_id: live.id, days, credit_cents: credit }, { accountId });
+  return `annual_verification_credit:${credit}:${days}d`;
 }
 
 /** Same day next month (clamped to that month's last day), UTC. */

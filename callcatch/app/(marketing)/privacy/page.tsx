@@ -92,10 +92,9 @@ export default function PrivacyPage() {
       <H2 id="retention">6. Retention</H2>
       <UL
         items={[
-          "Call, message and lead records: kept while the Business's account is active so the Business can see its history, and deleted 90 days after the account is closed.",
-          "Voicemail audio: deleted 30 days after transcription; the transcript stays with the call record.",
+          "Call, message and lead records (including voicemail audio and transcripts): kept while the Business's account is active so the Business can see its history, and deleted within 30 days of a verified deletion request from the Business (see the Data Deletion page). A Business can also ask us to delete an individual caller's records at any time.",
           "Consent and opt-out records: kept for 4 years after the last message, as carrier rules and the TCPA statute of limitations require, even if other data is deleted.",
-          "Demo-line conversations: deleted after 30 days.",
+          "Demo-line conversations: kept so we can show you the owner's view of your demo call; deleted within 30 days of your request (reply STOP to the demo text or email us).",
           "Customer account and billing records: for the life of the account plus 7 years for tax and accounting.",
           "Website analytics and attribution: 90 days (cookie) / 26 months (aggregate).",
         ]}

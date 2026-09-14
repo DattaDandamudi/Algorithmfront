@@ -12,7 +12,7 @@ import { sendEmail } from "@/lib/email/send";
 import { track } from "@/lib/events";
 import { can } from "@/lib/plans";
 import { businessNameOf, leadFormFirstMessage, profileFromAccount, TRADES } from "@/lib/ai/prompts";
-import { ensureLead, patchLead } from "@/lib/leads/store";
+import { DuplicateLeadError, ensureLead, patchLead } from "@/lib/leads/store";
 import { prettyPhone, renderAlertEmail, sendOwnerAlert } from "@/lib/telephony/alerts";
 import { normalizePhone } from "@/lib/telephony/client";
 import { findOrCreateContact } from "@/lib/telephony/consent";
@@ -142,20 +142,28 @@ export async function createLeadAndEngage(accountId: string, input: LeadIntakeIn
     address: cleanText(input.address, 240),
   });
 
-  let lead = await ensureLead(db, {
-    accountId,
-    conversationId: null,
-    contactId: contact.id,
-    phone,
-    source: input.source,
-    name,
-    raw,
-  });
-  lead = await patchLead(db, lead, { name, issue: message, address: cleanText(input.address, 240), zip: input.zip ?? input.address ?? null }, { overwrite: true });
-  if (externalRef && lead.external_ref !== externalRef) {
-    const r = await db.from("leads").update({ external_ref: externalRef }).eq("id", lead.id).select("*").single();
-    if (r.data) lead = r.data;
+  // external_ref goes in with the INSERT: the (account_id, external_ref) unique index is the
+  // idempotency barrier, so two concurrent deliveries of the same lead can only create one row,
+  // one conversation and one first text (the pre-check above is just the fast path).
+  let lead: LeadRow;
+  try {
+    lead = await ensureLead(db, {
+      accountId,
+      conversationId: null,
+      contactId: contact.id,
+      phone,
+      source: input.source,
+      name,
+      raw,
+      externalRef,
+    });
+  } catch (err) {
+    if (err instanceof DuplicateLeadError) {
+      return { ok: true, leadId: err.lead.id, conversationId: err.lead.conversation_id, engaged: "none", duplicate: true };
+    }
+    throw err;
   }
+  lead = await patchLead(db, lead, { name, issue: message, address: cleanText(input.address, 240), zip: input.zip ?? input.address ?? null }, { overwrite: true });
   await track("lead_received", { channel: input.channel, lead_id: lead.id, has_phone: true }, { accountId });
 
   let engaged: "sms" | "sms_queued" | "email" | "none" = "none";

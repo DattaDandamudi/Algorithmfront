@@ -3,15 +3,20 @@
  * `events` row `dunning_reminder` with the day), account pause on `unpaid`, and cancellation
  * (accounts.status='cancelled' + AI paused on every thread) when a subscription is `canceled`.
  * Module d's Stripe webhook is the primary writer of these statuses; this cron is the backstop.
+ *
+ * Every thread pause done here is recorded as a `dunning_ai_paused` event carrying the exact
+ * conversation ids, so `lib/billing/sync.ts` can resume those threads — and only those — when the
+ * subscription becomes active again (invoice.paid / customer.subscription.updated) and the account
+ * returns to `live`.
  */
 import type { NextRequest } from "next/server";
-import { createAdminSupabase } from "@/lib/db/client";
+import { createAdminSupabase, type Db } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { sendEmail } from "@/lib/email/send";
 import { track } from "@/lib/events";
 import { businessNameOf } from "@/lib/ai/prompts";
+import { DUNNING_AI_PAUSED_EVENT } from "@/lib/billing/sync";
 import { renderAlertEmail } from "@/lib/telephony/alerts";
-import { pauseAllAiForAccount } from "@/lib/telephony/outbound";
 import { authorizeCron, cronError, cronResponse } from "../_lib/cron";
 
 export const runtime = "nodejs";
@@ -36,6 +41,18 @@ function reminderCopy(day: number, business: string, portalUrl: string) {
     ctaLabel: "Update payment method",
     footnote: "Questions? Reply to this email.",
   });
+}
+
+/**
+ * Pauses the AI on every open thread of the account (same effect as module c's
+ * `pauseAllAiForAccount`) and records which ones, so the billing sync can undo exactly this pause.
+ */
+async function pauseThreadsForBilling(db: Db, accountId: string, reason: "unpaid" | "canceled", subscriptionId: string): Promise<number> {
+  const { data, error } = await db.from("conversations").update({ ai_paused: true }).eq("account_id", accountId).eq("ai_paused", false).select("id");
+  if (error) throw new Error(`dunning thread pause failed: ${error.message}`);
+  const ids = (data ?? []).map((c) => c.id);
+  await track(DUNNING_AI_PAUSED_EVENT, { reason, subscription_id: subscriptionId, conversation_ids: ids, paused: ids.length }, { accountId });
+  return ids.length;
 }
 
 export async function GET(request: NextRequest) {
@@ -96,7 +113,7 @@ export async function GET(request: NextRequest) {
         if (sub.status === "unpaid") {
           if (account.status === "live") {
             await db.from("accounts").update({ status: "paused" }).eq("id", account.id).eq("status", "live");
-            counts.ai_paused_threads += await pauseAllAiForAccount(account.id);
+            counts.ai_paused_threads += await pauseThreadsForBilling(db, account.id, "unpaid", sub.stripe_subscription_id);
             counts.paused++;
             if (account.alert_email) {
               const { html, text } = renderAlertEmail({
@@ -114,7 +131,7 @@ export async function GET(request: NextRequest) {
 
         if (sub.status === "canceled" && account.status !== "cancelled") {
           await db.from("accounts").update({ status: "cancelled" }).eq("id", account.id);
-          counts.ai_paused_threads += await pauseAllAiForAccount(account.id);
+          counts.ai_paused_threads += await pauseThreadsForBilling(db, account.id, "canceled", sub.stripe_subscription_id);
           counts.cancelled++;
           await track("subscription_canceled", { subscription_id: sub.stripe_subscription_id, via: "dunning_cron" }, { accountId: account.id });
         }

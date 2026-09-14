@@ -1,9 +1,6 @@
 import { env } from "@/lib/env";
 
 /** Per-account inbound lead address parsed by /api/leads/inbound-email (module c). */
-export function inboundAddressFor(code: string): string {
-  return `acct-${code}@${env.get("LEADS_INBOUND_DOMAIN", "leads.callcatch.co")}`;
-}
 
 /** Per-account webhook URL for Zapier / Make / website forms (module c's route). */
 export function webhookUrlFor(code: string): string {

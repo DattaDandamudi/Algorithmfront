@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { getAppContext } from "@/components/dashboard/context";
 import { pauseAi, resumeAi, sendCustomerMessage } from "@/lib/telephony/outbound";
@@ -33,6 +34,8 @@ async function assertConversation(ctx: Awaited<ReturnType<typeof ownerContext>>,
 }
 
 function fail(err: unknown): InboxActionState {
+  // redirect() thrown by getAppContext (signed out / onboarding / billing) must reach Next, not the form.
+  unstable_rethrow(err);
   return { error: err instanceof Error ? err.message : "Something went wrong. Please try again." };
 }
 

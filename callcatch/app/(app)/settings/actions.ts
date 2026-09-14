@@ -1,12 +1,14 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { getAppContext, type AppContext } from "@/components/dashboard/context";
+import { createAdminSupabase } from "@/lib/db/client";
 import type { Json, TablesInsert, TablesUpdate } from "@/lib/db/types";
-import { inboundAddressFor } from "@/components/dashboard/settings/lead-source-helpers";
 import { track } from "@/lib/events";
+import { newInboundAddress, newWebhookSecret } from "@/lib/onboarding/lead-sources";
+import { refineQuietWindow } from "@/lib/onboarding/schemas";
 import { can } from "@/lib/plans";
 import { normalizePhone } from "@/lib/telephony/client";
 
@@ -112,13 +114,15 @@ const aiProfileSchema = z.object({
     }),
 });
 
+// The texting window can be narrowed but never widened past the 8:00 AM – 9:00 PM the SMS Terms promise
+// (bounds shared with onboarding step 6 via refineQuietWindow).
 const hoursSchema = z
   .object({
     quiet_start: z.string().regex(timeRe, "Use HH:MM"),
     quiet_end: z.string().regex(timeRe, "Use HH:MM"),
     hours: z.record(z.enum(DAYS), z.tuple([z.string().regex(timeRe), z.string().regex(timeRe)]).nullable()),
   })
-  .refine((h) => h.quiet_start !== h.quiet_end, { message: "Quiet hours can't start and end at the same time", path: ["quiet_end"] });
+  .superRefine(refineQuietWindow);
 
 const alertsSchema = z.object({
   alert_email: z.string().trim().toLowerCase().email("Enter a valid email"),
@@ -150,9 +154,18 @@ function fieldErrors(err: z.ZodError): Record<string, string> {
 }
 
 function fail(err: unknown): SettingsState {
+  // redirect() / notFound() thrown inside the try (e.g. by getAppContext) must reach Next, not the form.
+  unstable_rethrow(err);
   return { error: err instanceof Error ? err.message : "Something went wrong. Please try again." };
 }
 
+/**
+ * Every settings write runs as the real owner/staff user (never through an admin "view as").
+ * `getAppContext()` proves membership through RLS (the account row is read with the user's own
+ * client); the writes below then go through the service-role client scoped to that account id,
+ * because `accounts` and `lead_sources` are not member-writable (see supabase/README.md: a
+ * member-writable `accounts` would let anyone PATCH plan / status / alert_phone_verified).
+ */
 async function ownerContext(): Promise<AppContext> {
   const ctx = await getAppContext();
   if (ctx.impersonating) throw new Error("Read-only while viewing as an admin.");
@@ -160,7 +173,7 @@ async function ownerContext(): Promise<AppContext> {
 }
 
 async function updateAccount(ctx: AppContext, patch: TablesUpdate<"accounts">): Promise<void> {
-  const { error } = await ctx.db.from("accounts").update(patch).eq("id", ctx.account.id);
+  const { error } = await createAdminSupabase().from("accounts").update(patch).eq("id", ctx.account.id);
   if (error) throw new Error(error.message);
 }
 
@@ -170,7 +183,7 @@ function asObject(j: Json | null | undefined): Record<string, Json | undefined> 
 
 /** Merges keys into `accounts.ai_profile` (keeps onboarding metadata written by the wizard). */
 async function patchAiProfile(ctx: AppContext, patch: Record<string, Json>): Promise<void> {
-  const { data } = await ctx.db.from("accounts").select("ai_profile").eq("id", ctx.account.id).maybeSingle();
+  const { data } = await createAdminSupabase().from("accounts").select("ai_profile").eq("id", ctx.account.id).maybeSingle();
   const merged = { ...asObject(data?.ai_profile), ...patch } as Json;
   await updateAccount(ctx, { ai_profile: merged });
 }
@@ -306,10 +319,6 @@ export async function saveBookingAction(_prev: SettingsState, formData: FormData
 // Lead sources
 // ---------------------------------------------------------------------------
 
-function newSecret(): string {
-  return `ccs_${randomBytes(24).toString("hex")}`;
-}
-
 const sourceTypeSchema = z.enum(["resend_inbox", "webhook", "zapier"]);
 
 export async function createLeadSourceAction(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
@@ -318,23 +327,25 @@ export async function createLeadSourceAction(_prev: SettingsState, formData: For
     if (!can(ctx.account, "web_form_leads")) return { error: "Web-form and Meta lead intake is a Pro feature. Upgrade under Billing." };
     const type = sourceTypeSchema.safeParse(formData.get("type"));
     if (!type.success) return { error: "Unknown lead source type." };
-    const code = ctx.account.referral_code;
+    const admin = createAdminSupabase();
+    // The inbound address is a fresh random token: the referral code is public (referral links,
+    // weekly emails) and the inbound-email route routes solely on this address.
     const insert: TablesInsert<"lead_sources"> = {
       account_id: ctx.account.id,
       type: type.data,
       enabled: true,
-      inbound_email: type.data === "resend_inbox" ? inboundAddressFor(code) : null,
-      webhook_secret: type.data === "resend_inbox" ? null : newSecret(),
+      inbound_email: type.data === "resend_inbox" ? newInboundAddress() : null,
+      webhook_secret: type.data === "resend_inbox" ? null : newWebhookSecret(),
     };
     if (type.data === "resend_inbox") {
-      const { data: existing } = await ctx.db.from("lead_sources").select("id").eq("account_id", ctx.account.id).eq("type", "resend_inbox").limit(1).maybeSingle();
+      const { data: existing } = await admin.from("lead_sources").select("id").eq("account_id", ctx.account.id).eq("type", "resend_inbox").limit(1).maybeSingle();
       if (existing) return { error: "You already have an inbound email address." };
     }
-    const { error } = await ctx.db.from("lead_sources").insert(insert);
+    const { error } = await admin.from("lead_sources").insert(insert);
     if (error) throw new Error(error.message);
     void track("lead_source_created", { type: type.data }, { accountId: ctx.account.id, userId: ctx.user.id });
     revalidatePath("/settings");
-    return { ok: type.data === "resend_inbox" ? "Inbound email address created." : "Webhook created — copy the secret into Zapier or your form tool." };
+    return { ok: type.data === "resend_inbox" ? "Inbound email address created — copy it from the list above." : "Webhook created — copy the secret into Zapier or your form tool." };
   } catch (err) {
     return fail(err);
   }
@@ -345,9 +356,10 @@ export async function regenerateSecretAction(_prev: SettingsState, formData: For
     const ctx = await ownerContext();
     const id = z.string().uuid().safeParse(formData.get("id"));
     if (!id.success) return { error: "Invalid lead source." };
-    const { data } = await ctx.db.from("lead_sources").select("id, type").eq("id", id.data).eq("account_id", ctx.account.id).maybeSingle();
+    const admin = createAdminSupabase();
+    const { data } = await admin.from("lead_sources").select("id, type").eq("id", id.data).eq("account_id", ctx.account.id).maybeSingle();
     if (!data || data.type === "resend_inbox") return { error: "Lead source not found." };
-    const { error } = await ctx.db.from("lead_sources").update({ webhook_secret: newSecret() }).eq("id", id.data).eq("account_id", ctx.account.id);
+    const { error } = await admin.from("lead_sources").update({ webhook_secret: newWebhookSecret() }).eq("id", id.data).eq("account_id", ctx.account.id);
     if (error) throw new Error(error.message);
     revalidatePath("/settings");
     return { ok: "New secret generated. The old one stops working immediately — update Zapier." };
@@ -362,7 +374,7 @@ export async function toggleLeadSourceAction(_prev: SettingsState, formData: For
     const id = z.string().uuid().safeParse(formData.get("id"));
     const enabled = formData.get("enabled") === "true";
     if (!id.success) return { error: "Invalid lead source." };
-    const { error } = await ctx.db.from("lead_sources").update({ enabled }).eq("id", id.data).eq("account_id", ctx.account.id);
+    const { error } = await createAdminSupabase().from("lead_sources").update({ enabled }).eq("id", id.data).eq("account_id", ctx.account.id);
     if (error) throw new Error(error.message);
     revalidatePath("/settings");
     return { ok: enabled ? "Lead source enabled." : "Lead source paused." };

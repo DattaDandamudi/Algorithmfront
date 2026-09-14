@@ -796,6 +796,24 @@ export type Database = {
           },
         ];
       };
+      rate_limits: {
+        Row: {
+          hits: string[];
+          key: string;
+          updated_at: string;
+        };
+        Insert: {
+          hits?: string[];
+          key: string;
+          updated_at?: string;
+        };
+        Update: {
+          hits?: string[];
+          key?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       referrals: {
         Row: {
           created_at: string;
@@ -1049,6 +1067,14 @@ export type Database = {
         Args: { account: string };
         Returns: boolean;
       };
+      rate_limit_hit: {
+        Args: { p_key: string; p_max: number; p_window_seconds: number };
+        Returns: {
+          allowed: boolean;
+          retry_after_seconds: number;
+          hits: number;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;
@@ -1090,6 +1116,7 @@ export type LeadSourceRow = Tables<"lead_sources">;
 export type EventRow = Tables<"events">;
 export type WeeklyReportRow = Tables<"weekly_reports">;
 export type ReferralRow = Tables<"referrals">;
+export type RateLimitRow = Tables<"rate_limits">;
 export type AdminNoteRow = Tables<"admin_notes">;
 
 /**
@@ -1109,7 +1136,7 @@ export type ConversationSource = "missed_call" | "lead_form" | "web_form" | "inb
 export type ConversationStatus = "open" | "qualified" | "booked" | "lost" | "closed";
 export type MessageDirection = "in" | "out";
 export type MessageAuthor = "ai" | "owner" | "contact" | "system";
-export type MessageStatus = "queued" | "sent" | "delivered" | "failed" | "received";
+export type MessageStatus = "queued" | "sending" | "sent" | "delivered" | "failed" | "received";
 export type CallStatus = "missed" | "voicemail" | "answered_by_greeting" | "test";
 export type LeadUrgency = "emergency" | "today" | "this_week" | "flexible";
 export type LeadStatus = "new" | "qualified" | "booked" | "lost";

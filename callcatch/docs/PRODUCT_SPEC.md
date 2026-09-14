@@ -481,3 +481,31 @@ Upside crosses $20k in the first days of **January 2027 (month 4)**.
 | Learning phase never reached at $150-350/week | Stated; weeks 1-4 treated as a creative test; 2-week decision windows |
 | Founder outbound is load-bearing and unbenchmarked | Stated as `[U]`, volume and yield specified, downside at 60% of plan modeled |
 | Shared-campaign / founder-number sending for customers (QuoteChaser) | Explicitly forbidden: each end business is its own TFV or 10DLC brand |
+
+
+---
+
+## 13. Implementation notes and deviations (added 2026-09-14 after the code review)
+
+The MVP in this repository implements the spec above with these deliberate changes, each traceable to a confirmed review finding:
+
+1. **Pay-now monthly** is charged at checkout (not on verification). On `verified`, the paid month is re-anchored so the
+   first full cycle starts on the verification date (no double charge). **Pay-now annual** is charged at checkout and the
+   days spent in carrier verification are credited back to the customer balance (days/365 × annual price).
+2. **Self-serve trials** waiting on verification are extended at most twice (7 days each), then the trial ends and the card
+   is charged; the owner is emailed at each step.
+3. **Overage** is reported through Stripe Billing Meter events (not `usage_records`), nightly for every closed month until
+   it succeeds; Pro overage uses `STRIPE_PRICE_OVERAGE_CONVERSATION_PRO` ($0.20).
+4. **Quiet hours** (§4.4) apply to unsolicited sends only: replies within 15 minutes of a customer's text and the emergency
+   template go out at any hour. The owner can narrow the 8 AM–9 PM window but not widen it.
+5. **Every first outbound message** identifies the business, states that it is an automated assistant, and includes
+   "Reply STOP to opt out." Natural-language opt-outs ("please stop texting me") are honored, and every inbound text is
+   stored (opted-out contacts' texts alert the owner instead of getting a reply).
+6. **The demo line** identifies itself as the CallCatch demo in its first text and may confirm it is a demo when asked.
+7. **RLS writer model**: members write only conversation data (contacts, conversations, messages, calls, leads, events);
+   accounts, numbers, subscriptions, usage, lead sources, alerts and reports are written by server code only.
+8. **Billing gate**: no number is provisioned, no verification submitted and no account goes live without an entitled
+   Stripe subscription (trialing / active / past_due).
+9. **Verification poll** covers both toll-free verifications and sole-proprietor 10DLC brand/campaign registrations.
+10. Inbound lead email addresses are random (`acct-<random>@…`), not derived from the public referral code.
+11. `TWILIO_MESSAGING_SERVICE_SID_NOTIFY` is not used; owner alerts go directly from `TWILIO_NOTIFICATION_NUMBER`.

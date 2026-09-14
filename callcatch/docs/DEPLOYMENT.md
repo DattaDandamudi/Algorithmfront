@@ -45,9 +45,17 @@ Use **test mode** first, do the whole flow, then repeat in **live mode** (ids di
    | CallCatch Pro | $149.00 USD | Recurring, monthly | `STRIPE_PRICE_PRO_MONTHLY` |
    | CallCatch Pro | $1,490.00 USD | Recurring, yearly | `STRIPE_PRICE_PRO_ANNUAL` |
    | Done-for-you setup | $149.00 USD | One-time | `STRIPE_PRICE_SETUP_FEE` |
-   | Conversation overage | $0.25 USD per unit | Recurring monthly, **usage-based (metered)**, "Sum of usage during period", unit label `conversation` | `STRIPE_PRICE_OVERAGE_CONVERSATION` |
+   | Conversation overage (Starter) | $0.25 USD per unit | Recurring monthly, **usage-based**, meter = the Billing Meter from step 2a, unit label `conversation` | `STRIPE_PRICE_OVERAGE_CONVERSATION` |
+   | Conversation overage (Pro) | $0.20 USD per unit | Recurring monthly, **usage-based**, **same meter**, unit label `conversation` | `STRIPE_PRICE_OVERAGE_CONVERSATION_PRO` |
 
-   Pro overage is $0.20 (spec §2). The webhook applies the per-plan rate when it reports usage; a single metered price with per-unit tiers is acceptable at launch — if you prefer two prices, create `STRIPE_PRICE_OVERAGE_CONVERSATION_PRO` and tell the integrator. Set tax behavior "exclusive" on all prices; Stripe Tax stays **off** at launch (spec §5, revisit at $50k).
+   Set tax behavior "exclusive" on all prices; Stripe Tax stays **off** at launch (spec §5, revisit at $50k).
+
+   2a. [ ] **Billing Meter first** (Product catalog → Meters → Create meter) — usage-based prices on this API version are billed only through a meter; there are no legacy usage records:
+      - Display name `Conversation overage`, event name `callcatch_conversation_overage` (the app reads the event name and payload keys from the meter attached to the price, so another name also works — but keep this one so logs and dashboards match).
+      - Aggregation **Sum**, customer mapping key `stripe_customer_id` (the default), value key `value` (the default).
+      - Then create the two overage prices above on one product "Conversation overage", choosing this meter in the "Usage-based" pricing model. **Both prices are required**: Pro accounts are billed on the Pro price; if `STRIPE_PRICE_OVERAGE_CONVERSATION_PRO` is missing the app logs an error on every overage run and bills Pro overage on the Starter price with the quantity scaled so the total still matches the published $0.20 rate.
+      - How it is used: `/api/cron/usage-rollup` runs nightly and, for every closed month whose `usage_monthly.overage_reported` is still false, attaches the plan's overage price to the subscription (swapping the Starter item for the Pro one on upgrade — never two metered items), sends one meter event (`value` = conversations over the plan quota, `identifier` = `overage:<account>:<period>`) and flips the flag. A failed run is retried the next night; the flag, not the Stripe identifier, is the idempotency guard.
+      - Sanity check in test mode: Billing → Meters → the meter shows events after the first cron run with overage; the customer's next invoice carries a "Conversation overage" line.
 3. [ ] Coupons (Product catalog → Coupons): `REFERRAL-1MO` = 100% off, duration once, name "Referral: one free month". Used by the referral flow on both sides.
 4. [ ] Billing settings (Settings → Billing → Subscriptions and emails):
    - Smart Retries ON, retry up to 4 times over 2 weeks; then "mark subscription as unpaid" (do **not** cancel — our dunning cron pauses AI and `RUNBOOK.md` §6 handles recovery).
@@ -91,7 +99,7 @@ Unverified toll-free SMS is fully blocked by carriers (error **30032**) `[V]`, s
    | Voice → Call status changes | `https://callcatch.co/api/twilio/voice/status` POST | same |
    | Messaging → A message comes in | `https://callcatch.co/api/twilio/sms/inbound` POST | same |
 4. [ ] **Toll-Free Verification** for both numbers the day the ISV profile is approved (~Sep 17). Console → Messaging → Regulatory Compliance → Toll-Free Verification → Submit. Use the field values in `COMPLIANCE.md` §5 (notification-number variant and demo-number variant). Twilio quotes "a few days to a week or more" `[V]`; operators report 3-10 business days. Track in `RUNBOOK.md` §1.
-5. [ ] Messaging Service for alerts (Messaging → Services → Create, use case "Notify my users"): add the notification number to the sender pool, Integration → "Send a webhook" OFF (the number-level webhook handles inbound), Opt-out management: default keywords ON. Copy the SID (`MG…`) → `TWILIO_MESSAGING_SERVICE_SID_NOTIFY`.
+5. [ ] (Optional) Messaging Service for alerts: not used by the app — owner alerts go directly from `TWILIO_NOTIFICATION_NUMBER`. Only create one if you want Advanced Opt-Out management in the console.
 6. [ ] Status callbacks: the app passes `statusCallback=https://callcatch.co/api/twilio/sms/status` on every send (`lib/telephony/client.ts`), so no console setting is needed. Verification status changes are polled by `/api/cron/verification-poll` and additionally pushed if you set the Trust Hub webhook: Trust Hub → Settings → Status callback URL `https://callcatch.co/api/twilio/verification/status`.
 7. [ ] Customer numbers are bought by the app at onboarding (`/api/onboarding/provision-number`) and their webhooks are set programmatically to the three URLs above. Ensure the account has "Programmable Voice → Recording" enabled and Geo Permissions → Messaging → United States only.
 8. [ ] Alerts: Monitor → Alerts → email on error codes 30032, 30007, 30034, 21610 and on debugger events > 10/hour. Add `hello@callcatch.co`.
@@ -116,13 +124,14 @@ Unverified toll-free SMS is fully blocked by carriers (error **30032**) `[V]`, s
 5. [ ] Conversions API: Events Manager → the dataset → Settings → "Generate access token" (creates a system user) → `META_CAPI_ACCESS_TOKEN`. Copy the **Test event code** → `META_CAPI_TEST_EVENT_CODE` while testing, then **remove it** in prod. Event map is in `META_ADS.md` §2.
 6. [ ] Developer app: developers.facebook.com → Create app → type **Business**, name "CallCatch Lead Sync", connect to the portfolio. Add products **Webhooks** and **Facebook Login for Business**. App id → `META_APP_ID`, App secret → `META_APP_SECRET`. Set Privacy Policy URL `https://callcatch.co/privacy`, Terms `https://callcatch.co/terms`, **Data deletion instructions URL** `https://callcatch.co/data-deletion` (required for review).
 7. [ ] Webhooks → Page → Subscribe to `leadgen`. Callback URL `https://callcatch.co/api/meta/leadgen`, Verify token = a long random string → `META_WEBHOOK_VERIFY_TOKEN`. Meta sends a GET challenge on save; the route answers it only when the token matches. POST bodies are verified with `X-Hub-Signature-256` (HMAC-SHA256, app secret).
-8. [ ] Keep `FEATURE_META_LEADGEN=false` until App Review approves `leads_retrieval`, `pages_manage_ads`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`. Submission script: `COMPLIANCE.md` §8. Until then, Pro customers' Meta leads flow through Zapier (Facebook Lead Ads trigger → Webhooks by Zapier POST → `https://callcatch.co/api/leads/webhook/<accountCode>` with header `X-CallCatch-Secret`), configured on the onboarding call.
+8. [ ] Generate a long-lived **Page access token** for each customer Page you sync (Graph API Explorer → user token with `pages_show_list`,`leads_retrieval` → exchange for long-lived → `/me/accounts` page token) → `META_PAGE_ACCESS_TOKEN` (single-tenant until App Review; per-page tokens later).
+9. [ ] Keep `FEATURE_META_LEADGEN=false` until App Review approves `leads_retrieval`, `pages_manage_ads`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`. Submission script: `COMPLIANCE.md` §8. Until then, Pro customers' Meta leads flow through Zapier (Facebook Lead Ads trigger → Webhooks by Zapier POST → `https://callcatch.co/api/leads/webhook/<accountCode>` with header `X-CallCatch-Secret`), configured on the onboarding call.
 
 ## 6. Vercel
 
 1. [ ] Import the Git repo. If you deploy **from the monorepo**, set **Root Directory = `callcatch`** (Settings → General) and "Include source files outside of the Root Directory" OFF. If you ran `scripts/split-to-new-repo.sh`, the root is the repo root. Framework preset Next.js, Node 22, install `npm ci`, build `npm run build`.
 2. [ ] Plan: **Pro** ($20/seat/mo `[V]`) — required for cron schedules more frequent than daily (`*/5` and `*/30` in `vercel.json`) and for function `maxDuration` up to 300s.
-3. [ ] Environment variables: paste every variable from the README table for **Production**, and a test-mode set for **Preview** (test Stripe keys, a Twilio subaccount, `META_CAPI_TEST_EVENT_CODE`). `NEXT_PUBLIC_APP_URL` must be `https://callcatch.co` in Production — Twilio signature validation is computed against it. Mark all non-`NEXT_PUBLIC_` values as Sensitive.
+3. [ ] Environment variables: paste every variable in `.env.example` (the README table describes each one) for **Production**, and a test-mode set for **Preview** (test Stripe keys, a Twilio subaccount, `META_CAPI_TEST_EVENT_CODE`). `NEXT_PUBLIC_APP_URL` must be `https://callcatch.co` in Production — Twilio signature validation is computed against it. Mark all non-`NEXT_PUBLIC_` values as Sensitive.
 4. [ ] Cron: `vercel.json` already declares:
 
    | Path | Schedule (UTC) | Purpose |
@@ -130,8 +139,8 @@ Unverified toll-free SMS is fully blocked by carriers (error **30032**) `[V]`, s
    | `/api/cron/ai-followups` | `*/5 * * * *` | Drain queued messages, scheduled nudges, quiet-hours release |
    | `/api/cron/verification-poll` | `*/30 * * * *` | Poll pending TFVs, escalate at 5 business days |
    | `/api/cron/weekly-report` | `0 * * * *` | Monday 07:00 per timezone bucket |
-   | `/api/cron/usage-rollup` | `15 2 * * *` | Nightly usage; report overage on the 1st |
-   | `/api/cron/dunning` | `30 14 * * *` | Past-due reminders, pause AI on canceled |
+   | `/api/cron/usage-rollup` | `15 2 * * *` | Nightly usage; reports every closed month's unreported overage (retried nightly until reported) |
+   | `/api/cron/dunning` | `30 14 * * *` | Past-due reminders, pause AI on `unpaid`/`canceled` (recorded so the webhook resumes exactly those threads on recovery) |
 
    Vercel sends `Authorization: Bearer $CRON_SECRET` automatically when the `CRON_SECRET` env var is set on the project. Verify in Settings → Cron Jobs after the first deploy.
 5. [ ] Function settings: routes that do AI work declare `export const maxDuration = 60;` (Twilio SMS inbound, voice inbound, recording, cron routes). Nothing else to set; region `iad1` default.
@@ -177,6 +186,7 @@ Do these in order on the production domain with **live** keys and a real card (c
 - [ ] Stripe → Developers → Webhooks → endpoint shows `checkout.session.completed` and `customer.subscription.created` delivered 200. Supabase `subscriptions` row exists with `status='trialing'`, `accounts.plan='starter'`.
 - [ ] Repeat with `path=paynow&interval=year` → charged $790 (or $1,490 Pro) immediately; `paid_now=true`. Refund it in Stripe → `charge.refunded` delivered 200.
 - [ ] Customer Portal opens from `/billing`, plan switch Starter → Pro prorates, cancel shows "at period end".
+- [ ] While subscribed, open `/signup?plan=pro` and `/billing/checkout?plan=pro` → both land on `/billing` with the "you already have a subscription" notice; `POST /api/stripe/checkout` returns 409 `already_subscribed`. Stripe shows exactly one subscription on the customer.
 
 **Onboarding + telephony**
 - [ ] Wizard step 2 provisions a toll-free number; Twilio console shows the three webhooks set on it.

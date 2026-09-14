@@ -5,7 +5,7 @@ import type { User } from "@supabase/supabase-js";
 import { isAdminEmail, requireAccount } from "@/lib/auth/session";
 import { createAdminSupabase, createServerSupabase, type Db } from "@/lib/db/client";
 import type { AccountRow, NumberRow, VerificationStatus } from "@/lib/db/types";
-import { ensureOnboarded } from "./gate";
+import { ensureBillable, ensureOnboarded } from "./gate";
 
 /**
  * Admin "view as" cookie. Set only by the admin Server Function (`impersonateAction`) after an
@@ -53,12 +53,17 @@ const loadAppContext = cache(async (): Promise<AppContext> => {
 
 /**
  * Loads the signed-in user, their account and a database client for the dashboard pages.
- * Redirects to /login (signed out), /onboarding (no account, or still onboarding unless
- * `gate: false` or an admin is viewing the account).
+ * Redirects to /login (signed out), /onboarding (no account, or still onboarding) and
+ * /billing/checkout (never completed Checkout — no `subscriptions` row) unless `gate: false`
+ * or an admin is viewing the account. Admins' own accounts are exempt from the billing redirect
+ * (operators are not customers); the paid-resource API routes still enforce it for everyone.
  */
 export async function getAppContext(opts: { gate?: boolean } = {}): Promise<AppContext> {
   const ctx = await loadAppContext();
-  if (opts.gate !== false && !ctx.impersonating) ensureOnboarded(ctx.account);
+  if (opts.gate !== false && !ctx.impersonating) {
+    ensureOnboarded(ctx.account);
+    await ensureBillable(ctx.account, { exempt: ctx.isAdmin });
+  }
   return ctx;
 }
 

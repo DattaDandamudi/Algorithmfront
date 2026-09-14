@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Card";
 import { finishOnboarding, saveAlerts } from "@/app/(app)/onboarding/actions";
-import { checkAlertCode, sendAlertCode } from "@/lib/onboarding/client-api";
+import { checkAlertCode, sendAlertCode, isBillingRequired, BILLING_REQUIRED_MESSAGE } from "@/lib/onboarding/client-api";
 import { alertsSchema, formatUsPhone, issuesToFieldErrors, normalizeUsPhone } from "@/lib/onboarding/schemas";
 import { StepShell, Tip } from "./StepShell";
 import type { Patch, WizardState } from "./OnboardingWizard";
@@ -42,7 +42,7 @@ export function StepAlerts({ state, onPatch, onBack }: { state: WizardState; onP
       setCodeState({ phase: "sent", message: `Code sent to ${formatUsPhone(res.phone)}. Expires in 10 minutes.` });
       onPatch({ alerts: { ...state.alerts, alert_phone: res.phone, alert_phone_verified: false } });
     } catch (err) {
-      setCodeState({ phase: "idle", error: err instanceof Error ? err.message : "Could not send the code" });
+      setCodeState({ phase: "idle", error: isBillingRequired(err) ? BILLING_REQUIRED_MESSAGE : err instanceof Error ? err.message : "Could not send the code" });
     }
   }
 
@@ -86,7 +86,7 @@ export function StepAlerts({ state, onPatch, onBack }: { state: WizardState; onP
       const res = await finishOnboarding();
       // finishOnboarding redirects on success; reaching here means it returned an error.
       setFinishing(false);
-      setError(res.error);
+      setError(res.code === "no_subscription" ? BILLING_REQUIRED_MESSAGE : res.error);
     });
   }
 

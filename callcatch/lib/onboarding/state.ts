@@ -36,17 +36,17 @@ export type ForwardingTestMeta = {
   started_at: string;
   call_sid: string | null;
   seen_at: string | null;
-  /** ISO timestamps of recent POSTs — rate limiting. */
-  sent_at: string[];
 };
 
+/**
+ * Rate-limit counters deliberately do NOT live here: `ai_profile` is readable by the member and
+ * the limiter state must not be something they can influence. See lib/onboarding/rate-limit.ts.
+ */
 export type AlertCodeMeta = {
   phone: string;
   hash: string;
   expires_at: string;
   attempts: number;
-  /** ISO timestamps of recent sends — rate limiting. */
-  sent_at: string[];
 };
 
 export type OnboardingMeta = {
@@ -93,14 +93,13 @@ export function parseOnboardingMeta(aiProfile: Json | null | undefined): Onboard
           started_at: t.started_at,
           call_sid: typeof t.call_sid === "string" ? t.call_sid : null,
           seen_at: typeof t.seen_at === "string" ? t.seen_at : null,
-          sent_at: strList(t.sent_at),
         }
       : null;
 
   const a = asObject(p.alert_code);
   const alertCode: AlertCodeMeta | null =
     typeof a.hash === "string" && typeof a.expires_at === "string" && typeof a.phone === "string"
-      ? { phone: a.phone, hash: a.hash, expires_at: a.expires_at, attempts: num(a.attempts) ?? 0, sent_at: strList(a.sent_at) }
+      ? { phone: a.phone, hash: a.hash, expires_at: a.expires_at, attempts: num(a.attempts) ?? 0 }
       : null;
 
   return { completedStep, compliance, forwarding, forwardingTest, alertCode };

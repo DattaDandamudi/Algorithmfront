@@ -30,7 +30,7 @@ export const LANDING_FAQ: FaqItem[] = [
   },
   {
     q: "Is this legal? What about spam rules?",
-    a: "We only text people who contacted your business first: they called you, or they submitted your web form with an SMS disclosure. The first text identifies your business and says it's an automated assistant, STOP is honored instantly, HELP returns support info, and automated messages go out between 8 AM and 9 PM in the caller's local time. Each business gets its own carrier-verified number; we never share numbers between customers.",
+    a: "We only text people who contacted your business first: they called you, or they submitted your web form with an SMS disclosure. The first text identifies your business and says it's an automated assistant, STOP is honored instantly, HELP returns support info, and unsolicited messages go out between 8 AM and 9 PM in the caller's local time — an after-hours missed call gets its text when the window opens (8 AM by default), while replies to someone who just texted you go out right away. Each business gets its own carrier-verified number; we never share numbers between customers.",
   },
   {
     q: "Can I take over a conversation?",

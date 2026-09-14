@@ -21,7 +21,8 @@ export function referralLinkFor(code: string | null | undefined): string {
  */
 export async function applyReferralOnCheckout(accountId: string, refCode: string): Promise<{ ok: boolean; referrerAccountId?: string; reason?: string }> {
   const db = createAdminSupabase();
-  const code = refCode.trim();
+  // Codes are generated and stored lowercase; a code relayed by hand may arrive in caps.
+  const code = refCode.trim().toLowerCase();
   if (!code) return { ok: false, reason: "empty_code" };
 
   const { data: referrer } = await db.from("accounts").select("id").eq("referral_code", code).neq("id", accountId).maybeSingle();
@@ -53,7 +54,7 @@ export async function applyReferralOnCheckout(accountId: string, refCode: string
 }
 
 /**
- * Rewards both sides once the referred account pays its first invoice.
+ * Rewards both sides once the referred account has paid an invoice.
  *
  * Mechanism (documented choice):
  *  - We create a single-use Stripe coupon ($79 off, `duration: 'once'`) so the reward is a first-class,
@@ -65,13 +66,18 @@ export async function applyReferralOnCheckout(accountId: string, refCode: string
  *    customer balance credit of the same amount, which Stripe applies to whatever they pay next.
  *  - The *referred* account already paid its first invoice, so its "free month" is a customer balance
  *    credit consumed by its next invoice (a Checkout coupon would collide with `allow_promotion_codes`).
- * Idempotent via `referrals.status`.
+ *
+ * State-based and retry-safe: it is called on every paid invoice (and on checkout completion) until
+ * `referrals.status = 'rewarded'`, so it must never double-credit. Every Stripe write carries an
+ * idempotency key derived from the referral id, the coupon id is persisted before it is applied, and
+ * each side checks Stripe for an already-applied credit before creating one — so a crash, a retry
+ * days later or two webhooks racing each other converge on exactly one reward per side.
  */
 export async function rewardReferral(referredAccountId: string): Promise<{ ok: boolean; reason?: string }> {
   const db = createAdminSupabase();
   const { data: referral } = await db
     .from("referrals")
-    .select("id, referrer_account_id, referred_account_id, status")
+    .select("id, referrer_account_id, referred_account_id, status, stripe_coupon_id")
     .eq("referred_account_id", referredAccountId)
     .maybeSingle();
   if (!referral) return { ok: false, reason: "no_referral" };
@@ -84,55 +90,87 @@ export async function rewardReferral(referredAccountId: string): Promise<{ ok: b
   if (!referrer?.stripe_customer_id) return { ok: false, reason: "referrer_has_no_customer" };
 
   const s = stripe();
+  const key = `referral:${referral.id}`;
   const referredName = referred?.dba || referred?.legal_name || "a contractor you referred";
   const description = `CallCatch referral credit — ${referredName} joined`;
 
-  const coupon = await s.coupons.create({
-    amount_off: REFERRAL_CREDIT_CENTS,
-    currency: "usd",
-    duration: "once",
-    max_redemptions: 1,
-    name: "Referral: one free month",
-    metadata: { referral_id: referral.id, referrer_account_id: referrer.id, referred_account_id: referral.referred_account_id },
-  });
+  // 1. The coupon: reuse the persisted one, else create it (idempotent) and persist before applying.
+  let couponId = referral.stripe_coupon_id;
+  if (!couponId) {
+    const coupon = await s.coupons.create(
+      {
+        amount_off: REFERRAL_CREDIT_CENTS,
+        currency: "usd",
+        duration: "once",
+        max_redemptions: 1,
+        name: "Referral: one free month",
+        metadata: { referral_id: referral.id, referrer_account_id: referrer.id, referred_account_id: referral.referred_account_id },
+      },
+      { idempotencyKey: `${key}:coupon` }
+    );
+    couponId = coupon.id;
+    const { error } = await db.from("referrals").update({ stripe_coupon_id: couponId }).eq("id", referral.id).eq("status", "pending");
+    if (error) throw new Error(`referrals coupon update failed: ${error.message}`);
+  }
 
-  // Attach to the referrer's live subscription (next invoice) or fall back to a balance credit.
-  const subs = await s.subscriptions.list({ customer: referrer.stripe_customer_id, status: "all", limit: 5 });
+  // 2. Referrer side: the coupon on their live subscription (next invoice), else a balance credit.
+  const subs = await s.subscriptions.list({ customer: referrer.stripe_customer_id, status: "all", limit: 5, expand: ["data.discounts"] });
   const target = subs.data.find((x) => x.status === "active" || x.status === "trialing" || x.status === "past_due");
-  let applied: "subscription_discount" | "customer_balance";
+  let applied: "subscription_discount" | "customer_balance" | "already_applied";
   if (target) {
-    const existing = target.discounts.map((d) => ({ discount: idOf(d) ?? "" })).filter((d) => d.discount);
-    await s.subscriptions.update(target.id, { discounts: [...existing, { coupon: coupon.id }] });
-    applied = "subscription_discount";
+    const existing = target.discounts.map((d) => (typeof d === "string" ? { id: d, coupon: null } : { id: d.id, coupon: idOf(d.source?.coupon ?? null) }));
+    if (existing.some((d) => d.coupon === couponId)) {
+      applied = "already_applied";
+    } else {
+      await s.subscriptions.update(
+        target.id,
+        { discounts: [...existing.map((d) => ({ discount: d.id })), { coupon: couponId }] },
+        { idempotencyKey: `${key}:referrer:${target.id}` }
+      );
+      applied = "subscription_discount";
+    }
+  } else if (await hasReferralBalanceCredit(referrer.stripe_customer_id, referral.id, "referrer")) {
+    applied = "already_applied";
   } else {
-    await s.customers.createBalanceTransaction(referrer.stripe_customer_id, {
-      amount: -REFERRAL_CREDIT_CENTS,
-      currency: "usd",
-      description,
-      metadata: { coupon_id: coupon.id, referral_id: referral.id },
-    });
+    await s.customers.createBalanceTransaction(
+      referrer.stripe_customer_id,
+      { amount: -REFERRAL_CREDIT_CENTS, currency: "usd", description, metadata: { coupon_id: couponId, referral_id: referral.id, side: "referrer" } },
+      { idempotencyKey: `${key}:referrer:balance` }
+    );
     applied = "customer_balance";
   }
 
-  // Referred side: balance credit against their next invoice.
-  if (referred?.stripe_customer_id) {
-    await s.customers.createBalanceTransaction(referred.stripe_customer_id, {
-      amount: -REFERRAL_CREDIT_CENTS,
-      currency: "usd",
-      description: "CallCatch referral credit — welcome, your next month is on us",
-      metadata: { referral_id: referral.id },
-    });
+  // 3. Referred side: balance credit against their next invoice.
+  if (referred?.stripe_customer_id && !(await hasReferralBalanceCredit(referred.stripe_customer_id, referral.id, "referred"))) {
+    await s.customers.createBalanceTransaction(
+      referred.stripe_customer_id,
+      {
+        amount: -REFERRAL_CREDIT_CENTS,
+        currency: "usd",
+        description: "CallCatch referral credit — welcome, your next month is on us",
+        metadata: { referral_id: referral.id, side: "referred" },
+      },
+      { idempotencyKey: `${key}:referred:balance` }
+    );
   }
 
-  const { error } = await db
+  const { data: flipped, error } = await db
     .from("referrals")
-    .update({ status: "rewarded", stripe_coupon_id: coupon.id })
+    .update({ status: "rewarded", stripe_coupon_id: couponId })
     .eq("id", referral.id)
-    .eq("status", "pending");
+    .eq("status", "pending")
+    .select("id");
   if (error) throw new Error(`referrals update failed: ${error.message}`);
+  if ((flipped?.length ?? 0) === 0) return { ok: true, reason: "already_rewarded" };
 
-  await track("referral_rewarded", { referral_id: referral.id, coupon_id: coupon.id, applied, referred_account_id: referredAccountId }, { accountId: referrer.id });
+  await track("referral_rewarded", { referral_id: referral.id, coupon_id: couponId, applied, referred_account_id: referredAccountId }, { accountId: referrer.id });
   return { ok: true };
+}
+
+/** True when a balance credit for this referral + side already exists on the customer (retry guard beyond Stripe's 24h idempotency window). */
+async function hasReferralBalanceCredit(customerId: string, referralId: string, side: "referrer" | "referred"): Promise<boolean> {
+  const txns = await stripe().customers.listBalanceTransactions(customerId, { limit: 50 });
+  return txns.data.some((t) => t.metadata?.referral_id === referralId && (t.metadata?.side === side || (side === "referrer" && t.metadata?.coupon_id)));
 }
 
 export type ReferralSummary = {

@@ -41,3 +41,10 @@ export function checkAlertCode(code: string): Promise<{ ok: true; verified: true
 export function submitVerification(): Promise<{ ok: true; already: boolean; path: "tollfree" | "sole_prop"; number: WizardNumber | null }> {
   return call("/api/onboarding/submit-verification", { method: "POST" });
 }
+
+/** True when a Route Handler refused because the account has no entitled subscription (402 billing_required). */
+export function isBillingRequired(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 402 || err.code === "billing_required");
+}
+
+export const BILLING_REQUIRED_MESSAGE = "Complete checkout first — open Billing → Checkout, then come back to this step.";

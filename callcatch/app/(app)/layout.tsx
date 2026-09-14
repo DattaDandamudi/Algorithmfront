@@ -15,10 +15,13 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /**
- * Signed-in app shell. Signed-out users go to /login. The onboarding gate itself lives in each
- * dashboard page (`ensureOnboarded`) because this layout also wraps /onboarding and /billing/**,
- * which must stay reachable while `accounts.status === 'onboarding'` — those users (and users
- * whose account row has not been created yet) get a slim shell without navigation.
+ * Signed-in app shell. Signed-out users go to /login. The onboarding gate (`ensureOnboarded`) and
+ * the billing gate (`ensureBillable`: no `subscriptions` row → /billing/checkout) both live in
+ * `getAppContext()`, which every dashboard page and Server Function calls, because this layout
+ * also wraps /onboarding and /billing/** — a layout cannot see the pathname, and those routes must
+ * stay reachable while `accounts.status === 'onboarding'` or before Checkout is done, otherwise the
+ * redirect would loop. Those users (and users whose account row is missing) get a slim shell with
+ * only a sign-out button; /onboarding renders its own "no account" state instead of redirecting.
  */
 function SlimShell({ children }: { children: React.ReactNode }) {
   return (

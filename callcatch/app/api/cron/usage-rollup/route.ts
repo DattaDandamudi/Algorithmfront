@@ -7,8 +7,12 @@
  *   sms_segments_in   sum of segments on inbound messages
  *   voice_minutes     voicemail recording seconds / 60 (greeting time is not billed by us)
  *   ai_cost_usd       sum of messages.cost_usd
- * On the 1st of the month it reports the previous period's overage via module d's
- * reportOverageForPeriod (idempotent through usage_monthly.overage_reported).
+ * Every run first sweeps closed periods whose overage is still unreported
+ * (`usage_monthly.overage_reported = false`, last two closed periods) and reports them via module
+ * d's reportOverageForPeriod — idempotent through that flag — so a Stripe outage, a missed cron run
+ * or the time budget on the 1st never silently loses a month of overage. The sweep runs before the
+ * per-account rollup loop (with its own budget) so the loop's `break` cannot starve it, and it
+ * re-marks/re-rolls the closed period for that account first so the count is complete.
  */
 import type { NextRequest } from "next/server";
 import { createAdminSupabase, type Db } from "@/lib/db/client";
@@ -60,34 +64,82 @@ async function rollupPeriod(db: Db, accountId: string, period: string): Promise<
   if (r.error) throw new Error(`usage_monthly upsert failed: ${r.error.message}`);
 }
 
+/** Time the overage sweep may use before handing over to the rollup loop (ms). */
+const SWEEP_BUDGET_MS = 25_000;
+const TOTAL_BUDGET_MS = 50_000;
+
+type Counts = Record<string, number>;
+
+/**
+ * Reports every closed period still owed to Stripe. Only the last two closed periods are retried;
+ * anything older is logged as an error (and left unreported) so a human decides — meter events are
+ * stamped "now", and billing a customer for a months-old period without looking is not acceptable.
+ */
+async function sweepUnreportedOverage(db: Db, started: number, current: string, counts: Counts): Promise<void> {
+  const oldestRetry = previousPeriod(previousPeriod(current));
+  const pending = await db
+    .from("usage_monthly")
+    .select("account_id, period")
+    .eq("overage_reported", false)
+    .lt("period", current)
+    .order("period", { ascending: true })
+    .limit(500);
+  if (pending.error) throw new Error(`usage_monthly pending lookup failed: ${pending.error.message}`);
+
+  for (const row of pending.data ?? []) {
+    if (Date.now() - started > SWEEP_BUDGET_MS) {
+      console.warn("[cron:usage-rollup] overage sweep out of budget; remaining rows are retried tomorrow");
+      break;
+    }
+    if (row.period < oldestRetry) {
+      counts.overage_stale++;
+      console.error("[cron:usage-rollup] overage unreported for a period outside the retry window — reconcile by hand", row);
+      continue;
+    }
+    counts.overage_checked++;
+    try {
+      // The closed period must be complete before it is billed: flag the last conversations of the
+      // month (they are only marked after their first sent text) and re-roll the row.
+      counts.conversations_marked += await markBillableConversations(db, row.account_id);
+      await rollupPeriod(db, row.account_id, row.period);
+      const r = await reportOverageForPeriod(row.account_id, row.period);
+      if (r.reported) counts.overage_reported++;
+      else console.warn("[cron:usage-rollup] overage not reported", { accountId: row.account_id, period: row.period, reason: r.reason });
+    } catch (err) {
+      counts.errors++;
+      console.error("[cron:usage-rollup] overage report failed", { accountId: row.account_id, period: row.period, err: err instanceof Error ? err.message : err });
+    }
+  }
+}
+
 export async function GET(request: NextRequest) {
   const denied = authorizeCron(request);
   if (denied) return denied;
   const started = Date.now();
-  const counts = { accounts: 0, conversations_marked: 0, rolled_up: 0, overage_checked: 0, overage_reported: 0, errors: 0 };
+  const counts: Counts = { accounts: 0, conversations_marked: 0, rolled_up: 0, overage_checked: 0, overage_reported: 0, overage_stale: 0, errors: 0 };
   const db = createAdminSupabase();
   const now = new Date();
   const current = periodOf(now);
   const previous = previousPeriod(current);
-  const isFirstOfMonth = now.getUTCDate() === 1;
   try {
+    // 1. Money first: closed periods still owed to Stripe (nightly, until reported).
+    try {
+      await sweepUnreportedOverage(db, started, current, counts);
+    } catch (err) {
+      counts.errors++;
+      console.error("[cron:usage-rollup] overage sweep failed", { err: err instanceof Error ? err.message : err });
+    }
+
+    // 2. Rollups for the current period (and the just-closed one for the first days of the month).
     const accounts = await db.from("accounts").select("id, status").neq("status", "onboarding").limit(5000);
     for (const account of accounts.data ?? []) {
       counts.accounts++;
-      if (Date.now() - started > 50_000) break;
+      if (Date.now() - started > TOTAL_BUDGET_MS) break;
       try {
         counts.conversations_marked += await markBillableConversations(db, account.id);
         await rollupPeriod(db, account.id, current);
-        if (isFirstOfMonth || now.getUTCDate() <= 3) await rollupPeriod(db, account.id, previous);
+        if (now.getUTCDate() <= 3) await rollupPeriod(db, account.id, previous);
         counts.rolled_up++;
-        if (isFirstOfMonth) {
-          const prevRow = await db.from("usage_monthly").select("overage_reported").eq("account_id", account.id).eq("period", previous).maybeSingle();
-          if (prevRow.data && !prevRow.data.overage_reported) {
-            counts.overage_checked++;
-            const r = await reportOverageForPeriod(account.id, previous);
-            if (r.reported) counts.overage_reported++;
-          }
-        }
       } catch (err) {
         counts.errors++;
         console.error("[cron:usage-rollup] account failed", { accountId: account.id, err: err instanceof Error ? err.message : err });

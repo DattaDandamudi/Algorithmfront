@@ -135,7 +135,7 @@ cp .env.example .env.local        # fill in the vars below
 
 ## Environment variables
 
-Copy `.env.example`. Anything starting with `NEXT_PUBLIC_` is shipped to the browser; everything else is server-only.
+Copy `.env.example` — it is the source of truth for the variable list (every variable it contains is read somewhere in `lib/` or `app/`); this table explains each one. Anything starting with `NEXT_PUBLIC_` is shipped to the browser; everything else is server-only.
 
 | Variable | Purpose |
 |---|---|
@@ -154,17 +154,22 @@ Copy `.env.example`. Anything starting with `NEXT_PUBLIC_` is shipped to the bro
 | `STRIPE_PRICE_PRO_ANNUAL` | Price id, Pro $1,490/yr |
 | `STRIPE_PRICE_SETUP_FEE` | One-time $149 done-for-you setup |
 | `STRIPE_PRICE_OVERAGE_CONVERSATION` | Metered overage price (per conversation over plan quota) |
+| `STRIPE_PRICE_OVERAGE_CONVERSATION_PRO` | Optional metered price for Pro overage ($0.20); falls back to the Starter price when unset |
+| `STRIPE_CHECKOUT_REQUIRE_TOS` | `true` makes Checkout require Terms acceptance (needs a ToS URL in Stripe → Settings → Public details) |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token (also validates `X-Twilio-Signature`) |
 | `TWILIO_NOTIFICATION_NUMBER` | Our verified toll-free number that sends owner alerts and verification codes (E.164) |
 | `TWILIO_DEMO_NUMBER` | Our verified public demo line (E.164) |
 | `TWILIO_ISV_PROFILE_SID` | Trust Hub ISV Primary Business Profile (`BU…`) used when submitting customers' TFVs |
-| `TWILIO_MESSAGING_SERVICE_SID_NOTIFY` | Messaging Service (`MG…`) holding the notification number |
+| `TWILIO_TFV_NOTIFICATION_EMAIL` | Email Twilio notifies about toll-free verification outcomes (defaults to the first `ADMIN_EMAILS` entry) |
+| `TWILIO_POLICY_SOLE_PROP_CUSTOMER_PROFILE` / `TWILIO_POLICY_SOLE_PROP_TRUST_PRODUCT` | Optional overrides of the Trust Hub policy SIDs used on the sole-proprietor 10DLC path |
+| `TWILIO_HANDLES_OPTOUT_KEYWORDS` | `true` (default): Twilio's carrier-standard STOP/HELP/START replies are used and the app sends none of its own for those keywords (plain-language opt-outs still get one confirmation). Set `false` only when the number sits in a Messaging Service with Advanced Opt-Out disabled |
 | `TWILIO_SKIP_SIGNATURE_VALIDATION` | Dev only; `true` disables webhook signature checks. Never set in prod |
 | `NEXT_PUBLIC_DEMO_NUMBER` | Demo line shown on the landing page (E.164) |
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `CLAUDE_MODEL_CHAT` | Model id for qualification turns (default `claude-opus-5`; spec recommends `claude-sonnet-5`) |
 | `CLAUDE_MODEL_FAST` | Model id for classification / extraction (default `claude-haiku-4-5`) |
+| `AI_SAFE_TEMPLATE_MODE` | Ops kill switch (`true`): the AI sends only the fixed safe template instead of model replies (see `docs/RUNBOOK.md`) |
 | `DEEPGRAM_API_KEY` | Voicemail transcription |
 | `RESEND_API_KEY` | Transactional email |
 | `RESEND_WEBHOOK_SECRET` | Svix signing secret for the inbound-email webhook |
@@ -176,7 +181,11 @@ Copy `.env.example`. Anything starting with `NEXT_PUBLIC_` is shipped to the bro
 | `META_CAPI_TEST_EVENT_CODE` | Optional; routes CAPI events to Events Manager "Test events" |
 | `META_APP_ID` / `META_APP_SECRET` | Meta app for Lead Ads webhook (`X-Hub-Signature-256`) |
 | `META_WEBHOOK_VERIFY_TOKEN` | `hub.verify_token` for the leadgen webhook GET challenge |
+| `META_PAGE_ACCESS_TOKEN` | Long-lived Page access token of the connected Page (from the "CallCatch Lead Sync" app); required before `FEATURE_META_LEADGEN=true`, otherwise leadgen webhooks are dropped |
 | `FEATURE_META_LEADGEN` | `true` once App Review passes; until then leads come via Zapier → per-account webhook |
+| `NEXT_PUBLIC_SUPPORT_EMAIL` | Support address shown on the site and legal pages (default `support@callcatch.co`) |
+| `NEXT_PUBLIC_PRIVACY_EMAIL` | Privacy / data-deletion request address on the legal pages (default `privacy@callcatch.co`) |
+| `NEXT_PUBLIC_LEGAL_ADDRESS` | **Required in prod**: the LLC's mailing address printed in the Terms and Privacy Policy (otherwise they render "Mailing address provided on request") |
 | `SENTRY_DSN` | Optional error reporting |
 | `POSTHOG_KEY` | Optional product analytics |
 

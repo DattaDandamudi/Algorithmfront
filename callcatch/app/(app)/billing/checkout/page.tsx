@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { ArrowLeft, Lock } from "lucide-react";
 import { z } from "zod";
 import { requireAccount } from "@/lib/auth/session";
-import { TRIAL_DAYS } from "@/lib/plans";
+import { MONEY_BACK_DAYS, TRIAL_DAYS } from "@/lib/plans";
+import { isLiveSubscriptionStatus, loadExistingSubscription, normalizeReferralCode } from "@/lib/billing/checkout";
 import { REFERRAL_COOKIE } from "@/lib/billing/referrals";
 import { CheckoutForm } from "@/components/billing/CheckoutForm";
+import { Notice } from "@/components/billing/ui";
 
 export const metadata: Metadata = { title: "Checkout — CallCatch" };
+export const dynamic = "force-dynamic";
 
 const paramsSchema = z.object({
   plan: z.enum(["starter", "pro"]).catch("starter"),
@@ -16,10 +20,12 @@ const paramsSchema = z.object({
   path: z.enum(["trial", "paynow"]).catch("trial"),
   setup: z.enum(["1", "0"]).optional().catch(undefined),
   canceled: z.string().optional().catch(undefined),
+  trial_used: z.string().optional().catch(undefined),
   ref: z
     .string()
     .trim()
     .regex(/^[a-z0-9]{4,32}$/i)
+    .transform((s) => s.toLowerCase())
     .optional()
     .catch(undefined),
 });
@@ -37,11 +43,30 @@ export default async function CheckoutPage(props: PageProps<"/billing/checkout">
     path: first(raw.path),
     setup: first(raw.setup),
     canceled: first(raw.canceled),
+    trial_used: first(raw.trial_used),
     ref: first(raw.ref),
   });
+
+  // Never render Checkout for an account that already has a subscription: a second Checkout would
+  // create a second Stripe subscription (double billing). Plan changes and restarts live on /billing.
+  // This also covers proxy.ts's `/signup?plan=…` → `/billing/checkout` redirect for signed-in users,
+  // the Stripe cancel_url and the browser Back button after a completed checkout.
+  const existing = await loadExistingSubscription(account.id);
+  if (existing && isLiveSubscriptionStatus(existing.status)) {
+    redirect(`/billing?already_subscribed=1&plan=${params.plan}`);
+  }
+  // A returning customer (canceled / expired subscription) restarts with pay-now, never a second trial.
+  if (existing && params.path === "trial") {
+    const q = new URLSearchParams({ plan: params.plan, interval: params.interval, path: "paynow", trial_used: "1" });
+    if (params.setup === "1") q.set("setup", "1");
+    if (params.ref) q.set("ref", params.ref);
+    redirect(`/billing/checkout?${q.toString()}`);
+  }
+  const trialAvailable = !existing;
+
   const store = await cookies();
-  const cookieRef = store.get(REFERRAL_COOKIE)?.value;
-  const refCode = params.ref ?? (cookieRef && /^[a-z0-9]{4,32}$/i.test(cookieRef) && cookieRef.toLowerCase() !== (account.referral_code ?? "").toLowerCase() ? cookieRef : undefined);
+  const cookieRef = normalizeReferralCode(store.get(REFERRAL_COOKIE)?.value);
+  const refCode = params.ref ?? (cookieRef && cookieRef !== (account.referral_code ?? "").toLowerCase() ? cookieRef : undefined);
   const businessName = account.dba || account.legal_name;
 
   return (
@@ -63,8 +88,13 @@ export default async function CheckoutPage(props: PageProps<"/billing/checkout">
         <p className="mt-3 text-base text-brand-700">
           {params.path === "trial"
             ? "Add a card, pick a plan, and you're in. Your trial clock only starts once the carriers verify your number, so you get the free days when text-backs are actually live."
-            : "You'll be charged today and covered by a 30-day money-back guarantee. Your first full month starts the day the carriers verify your number."}
+            : "You'll be charged today and covered by a 30-day money-back guarantee. Your number typically verifies in 3–10 business days: on monthly plans your first full month starts the day it's verified; on annual plans we credit those verification days back to your account."}
         </p>
+        {params.trial_used === "1" ? (
+          <div className="mt-4">
+            <Notice tone="info">Your free trial has already been used, so this restart is pay-now — with the {MONEY_BACK_DAYS}-day money-back guarantee.</Notice>
+          </div>
+        ) : null}
       </header>
 
       <CheckoutForm
@@ -85,7 +115,7 @@ export default async function CheckoutPage(props: PageProps<"/billing/checkout">
             </Link>
             .
           </>
-        ) : (
+        ) : trialAvailable ? (
           <>
             Want to try it first?{" "}
             <Link href={`/billing/checkout?plan=${params.plan}&interval=${params.interval}&path=trial`} className="font-semibold underline">
@@ -93,7 +123,7 @@ export default async function CheckoutPage(props: PageProps<"/billing/checkout">
             </Link>
             .
           </>
-        )}
+        ) : null}
       </p>
     </main>
   );

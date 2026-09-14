@@ -17,8 +17,10 @@ import { UsageMeter } from "@/components/billing/UsageMeter";
 export const metadata: Metadata = { title: "Billing — CallCatch" };
 export const dynamic = "force-dynamic";
 
-export default async function BillingPage() {
+export default async function BillingPage(props: PageProps<"/billing">) {
   const { account } = await requireAccount();
+  const query = await props.searchParams;
+  const alreadySubscribed = (Array.isArray(query.already_subscribed) ? query.already_subscribed[0] : query.already_subscribed) === "1";
   const s = await getBillingSummary(account);
   const plan = getPlan(s.plan);
   const tz = account.timezone;
@@ -45,6 +47,14 @@ export default async function BillingPage() {
           </PortalButton>
         ) : null}
       </header>
+
+      {alreadySubscribed && hasSub ? (
+        <div className="mb-6">
+          <Notice tone="info">
+            You already have a CallCatch subscription, so we didn&apos;t start a second checkout. Change plans below, or resume / update your card from <strong>Manage billing</strong>.
+          </Notice>
+        </div>
+      ) : null}
 
       {!hasSub ? (
         <Card tone="accent" className="mb-6">
@@ -119,8 +129,10 @@ export default async function BillingPage() {
                       ? s.verified
                         ? `Then ${formatUsd(recurringPriceUsd(plan.id, s.interval))}${intervalSuffix(s.interval)} on the card on file.`
                         : "Provisional — resets to a full 14 days the day your number is verified."
-                      : s.paidNow && !s.verified && s.interval === "month"
-                        ? "Moves to one month after verification once carriers approve your number."
+                      : s.paidNow && !s.verified
+                        ? s.interval === "month"
+                          ? "Moves to one month after verification once carriers approve your number."
+                          : "Charged at checkout. The days spent in carrier verification are credited to your account balance the day your number is verified."
                         : undefined
                   }
                 />

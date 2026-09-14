@@ -1,9 +1,11 @@
 /**
  * GET /api/cron/verification-poll — every 30 minutes.
- * Polls every number with verification_status pending/in_review against Twilio and applies
- * changes (verified → sms_enabled, "You're live", onVerified). Escalates to ADMIN_EMAILS once
- * a submission has been pending for 5+ business days (one `verification_events` row of status
- * `escalated` guards repeats).
+ * Polls every number with verification_status pending/in_review against Twilio — both the
+ * toll-free path (`verification_sid`, HH…) and the sole-proprietor 10DLC path
+ * (`tendlc_brand_sid` + `tendlc_campaign_sid`, no verification_sid; `pollVerification`
+ * dispatches to `pollTenDlc`) — and applies changes (verified → sms_enabled, "You're live",
+ * onVerified). Escalates to ADMIN_EMAILS once a submission on either path has been pending for
+ * 5+ business days (one `verification_events` row of status `escalated` guards repeats).
  */
 import type { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/db/client";
@@ -31,7 +33,9 @@ export async function GET(request: NextRequest) {
       .from("numbers")
       .select("*")
       .in("verification_status", ["pending", "in_review"])
-      .not("verification_sid", "is", null)
+      // Either path: TFV rows carry verification_sid; sole-prop rows carry the 10DLC campaign sid.
+      // PostgREST ANDs `.in()` with `.or()`, so this yields pending/in_review rows on either path.
+      .or("verification_sid.not.is.null,tendlc_campaign_sid.not.is.null")
       .order("verification_submitted_at", { ascending: true })
       .limit(200);
     const now = new Date();
@@ -57,11 +61,19 @@ export async function GET(request: NextRequest) {
       const admins = env.adminEmails();
       const account = await db.from("accounts").select("legal_name, dba, alert_email").eq("id", number.account_id).maybeSingle();
       const name = account.data?.dba || account.data?.legal_name || number.account_id;
+      const isTenDlc = !number.verification_sid && Boolean(number.tendlc_campaign_sid);
+      const pathLabel = isTenDlc ? "10DLC (sole proprietor)" : "TFV";
       const { html, text } = renderAlertEmail({
-        title: `TFV pending ${businessDaysBetween(submittedAt, now)} business days`,
+        title: `${pathLabel} pending ${businessDaysBetween(submittedAt, now)} business days`,
         intro: `Verification for ${number.phone_number} (${name}) is still ${number.verification_status}. Open a Twilio support ticket (Runbook §1).`,
         rows: [
-          { label: "Verification SID", value: number.verification_sid ?? "—" },
+          { label: "Path", value: pathLabel },
+          ...(isTenDlc
+            ? [
+                { label: "Brand SID", value: number.tendlc_brand_sid ?? "—" },
+                { label: "Campaign SID", value: number.tendlc_campaign_sid ?? "—" },
+              ]
+            : [{ label: "Verification SID", value: number.verification_sid ?? "—" }]),
           { label: "Submitted", value: submittedAt.toISOString() },
           { label: "Account", value: number.account_id },
           { label: "Owner email", value: account.data?.alert_email ?? "—" },
@@ -70,15 +82,19 @@ export async function GET(request: NextRequest) {
         ctaLabel: "Open admin",
       });
       if (admins.length) {
-        await sendEmail({ to: admins, subject: `Escalate TFV: ${name} (${number.phone_number})`, html, text, tags: [{ name: "kind", value: "tfv_escalation" }] }).catch((e) =>
-          console.error("[cron:verification-poll] escalation email failed", e)
-        );
+        await sendEmail({
+          to: admins,
+          subject: `Escalate ${pathLabel}: ${name} (${number.phone_number})`,
+          html,
+          text,
+          tags: [{ name: "kind", value: isTenDlc ? "tendlc_escalation" : "tfv_escalation" }],
+        }).catch((e) => console.error("[cron:verification-poll] escalation email failed", e));
       }
       await db.from("verification_events").insert({
         number_id: number.id,
         account_id: number.account_id,
         status: "escalated",
-        payload: { business_days: businessDaysBetween(submittedAt, now), at: now.toISOString(), admins_notified: admins.length },
+        payload: { business_days: businessDaysBetween(submittedAt, now), at: now.toISOString(), admins_notified: admins.length, path: isTenDlc ? "10dlc" : "tfv" },
       });
       counts.escalated++;
     }

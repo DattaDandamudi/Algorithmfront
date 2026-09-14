@@ -12,14 +12,75 @@ export const checkoutInputSchema = z.object({
   interval: z.enum(["month", "year"]),
   path: z.enum(["trial", "paynow"]),
   setupFee: z.boolean().default(false),
-  /** Referral code from `/signup?ref=CODE`; validated against `accounts.referral_code`. */
+  /** Referral code from `/signup?ref=CODE`; validated against `accounts.referral_code` (stored lowercase). */
   ref: z
     .string()
     .trim()
     .regex(/^[a-z0-9]{4,32}$/i)
+    .transform((s) => s.toLowerCase())
     .optional(),
 });
 export type CheckoutInput = z.infer<typeof checkoutInputSchema>;
+
+/** Referral codes are generated and stored lowercase; compare with the normalised form everywhere. */
+export function normalizeReferralCode(raw: string | null | undefined): string | undefined {
+  const code = raw?.trim().toLowerCase();
+  return code && /^[a-z0-9]{4,32}$/.test(code) ? code : undefined;
+}
+
+/**
+ * Subscription statuses that mean "this account already has a Stripe subscription we must not
+ * duplicate". Everything except the two terminal states — a `paused`, `unpaid` or `incomplete`
+ * subscription is still the customer's subscription (fix the card / resume it; never add a second one).
+ */
+export const LIVE_SUBSCRIPTION_STATUSES = new Set(["trialing", "active", "past_due", "paused", "unpaid", "incomplete"]);
+
+export function isLiveSubscriptionStatus(status: string | null | undefined): boolean {
+  return Boolean(status && LIVE_SUBSCRIPTION_STATUSES.has(status));
+}
+
+/** Thrown by `createCheckoutSession` when the account already has a live subscription. */
+export class AlreadySubscribedError extends Error {
+  readonly subscriptionId: string;
+  readonly status: string;
+  constructor(subscriptionId: string, status: string) {
+    super("You already have a subscription. Change plans, resume or restart it from Billing instead of checking out again.");
+    this.name = "AlreadySubscribedError";
+    this.subscriptionId = subscriptionId;
+    this.status = status;
+  }
+}
+
+/** Thrown when a returning customer asks for a second free trial. */
+export class TrialNotEligibleError extends Error {
+  constructor() {
+    super("Your free trial has already been used. Restart with pay-now — it comes with the 30-day money-back guarantee.");
+    this.name = "TrialNotEligibleError";
+  }
+}
+
+export type ExistingSubscription = { stripe_subscription_id: string; status: string };
+
+/**
+ * The account's `subscriptions` row (one per account), or null. Used by the checkout page and by
+ * `createCheckoutSession` to refuse a second subscription / a second trial.
+ */
+export async function loadExistingSubscription(accountId: string): Promise<ExistingSubscription | null> {
+  const db = createAdminSupabase();
+  const { data, error } = await db.from("subscriptions").select("stripe_subscription_id, status").eq("account_id", accountId).maybeSingle();
+  if (error) throw new Error(`subscriptions lookup failed: ${error.message}`);
+  return data;
+}
+
+/**
+ * Belt and braces against a stale/flip-flopped local row: ask Stripe whether the customer already
+ * carries a non-terminal subscription. Returns the first one found, or null.
+ */
+async function findLiveStripeSubscription(customerId: string): Promise<{ id: string; status: string } | null> {
+  const subs = await stripe().subscriptions.list({ customer: customerId, status: "all", limit: 10 });
+  const live = subs.data.find((s) => isLiveSubscriptionStatus(s.status));
+  return live ? { id: live.id, status: live.status } : null;
+}
 
 export type CreateCheckoutSessionInput = {
   accountId: string;
@@ -47,6 +108,9 @@ export type CreateCheckoutSessionResult = { id: string; url: string };
  *                next renewal so the first *full* month starts on verification.
  * - monthly + setupFee: adds the one-time done-for-you setup price. Annual never carries a setup fee.
  * - Reuses `accounts.stripe_customer_id` when present so one business never gets two Stripe customers.
+ * - Refuses to run when the account already has a live subscription (`AlreadySubscribedError`) —
+ *   plan changes go through `changePlan` / the Customer Portal, never through a second Checkout —
+ *   and refuses a second free trial for a returning customer (`TrialNotEligibleError`).
  */
 export async function createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CreateCheckoutSessionResult> {
   const db = createAdminSupabase();
@@ -58,6 +122,22 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
   if (error) throw new Error(`accounts lookup failed: ${error.message}`);
   if (!account) throw new Error("Account not found");
 
+  // One subscription per account. Our row first, then Stripe itself (the row can lag a webhook).
+  const existing = await loadExistingSubscription(input.accountId);
+  if (existing && isLiveSubscriptionStatus(existing.status)) {
+    throw new AlreadySubscribedError(existing.stripe_subscription_id, existing.status);
+  }
+  if (account.stripe_customer_id) {
+    const live = await findLiveStripeSubscription(account.stripe_customer_id);
+    if (live) {
+      console.error("[billing/checkout] live Stripe subscription not mirrored locally", { accountId: input.accountId, subscriptionId: live.id, status: live.status });
+      throw new AlreadySubscribedError(live.id, live.status);
+    }
+  }
+  // A returning customer (any prior subscription, e.g. canceled) never gets a second free trial;
+  // the billing page already sends them to pay-now and the checkout page redirects, this is the backstop.
+  if (input.path === "trial" && existing) throw new TrialNotEligibleError();
+
   const wantsSetupFee = input.setupFee && setupFeeApplies(input.interval);
   const appUrl = env.appUrl();
 
@@ -68,16 +148,18 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
     lineItems.push({ price: env.required("STRIPE_PRICE_SETUP_FEE"), quantity: 1 });
   }
 
-  // Referral: only forward codes that belong to another account.
+  // Referral: only forward codes that belong to another account. Codes are stored lowercase.
   let refCode: string | undefined;
-  if (input.ref && input.ref.toLowerCase() !== (account.referral_code ?? "").toLowerCase()) {
+  const ref = normalizeReferralCode(input.ref);
+  if (ref && ref !== (account.referral_code ?? "").toLowerCase()) {
     const { data: referrer } = await db
       .from("accounts")
       .select("id")
-      .eq("referral_code", input.ref)
+      .eq("referral_code", ref)
       .neq("id", input.accountId)
       .maybeSingle();
-    if (referrer) refCode = input.ref;
+    if (referrer) refCode = ref;
+    else console.warn("[billing/checkout] unknown referral code ignored", { accountId: input.accountId, ref });
   }
 
   const metadata: Record<string, string> = {
@@ -123,7 +205,9 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         message:
           input.path === "trial"
             ? `Your ${TRIAL_DAYS}-day trial clock starts when carriers verify your number. Cancel any time before then and you won't be charged.`
-            : "30-day money-back guarantee on your first payment. Your first full month starts the day your number is verified.",
+            : input.interval === "year"
+              ? "30-day money-back guarantee on your first payment. Your number typically verifies in 3–10 business days; we credit those days back to your account."
+              : "30-day money-back guarantee on your first payment. Your first full month starts the day your number is verified.",
       },
     },
   });

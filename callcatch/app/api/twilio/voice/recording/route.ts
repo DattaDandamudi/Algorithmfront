@@ -95,7 +95,9 @@ async function processRecording(input: { callSid: string; recordingUrl: string; 
       if (isEmergency && conv.data && !contact.data.opted_out) {
         const detected = detectEmergency(transcript);
         const body = emergencyTemplate(profileFromAccount(account), safetyLine(detected.isEmergency ? detected.kind : "other"));
-        await sendCustomerMessage({ accountId: account.id, conversationId: conv.data.id, body, author: "system", usage: ZERO_USAGE("template") });
+        // Safety text for an active emergency: never held for quiet hours (this thread has no
+        // inbound text row, so the reply grace window would not cover it).
+        await sendCustomerMessage({ accountId: account.id, conversationId: conv.data.id, body, author: "system", usage: ZERO_USAGE("template"), bypassQuietHours: true });
       }
     }
   }

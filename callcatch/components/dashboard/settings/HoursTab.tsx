@@ -95,7 +95,7 @@ export function HoursTab({
 
       <Card>
         <CardTitle sub="We only text customers inside this window (local time). Anything outside is queued and sent when the window opens — a TCPA safeguard. Owner alerts are not affected.">
-          Texting window (quiet hours)
+          Texting window (within 8 AM – 9 PM local — you can narrow it, not widen it)
         </CardTitle>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Start texting at" htmlFor="quiet_start">

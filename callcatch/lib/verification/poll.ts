@@ -11,6 +11,7 @@ import { env } from "@/lib/env";
 import { sendEmail } from "@/lib/email/send";
 import { track } from "@/lib/events";
 import { onVerified } from "@/lib/billing/onVerified";
+import { hasEntitledSubscription } from "@/lib/billing/status";
 import { twilioClient } from "@/lib/telephony/client";
 import { renderAlertEmail } from "@/lib/telephony/alerts";
 import { businessNameOf } from "@/lib/ai/prompts";
@@ -139,7 +140,12 @@ export async function applyVerificationStatus(input: ApplyInput, db: Db = create
     await track("verified", { number_id: current.id, phone_number: current.phone_number, verification_sid: current.verification_sid }, { accountId: current.account_id });
     if (account) {
       if (account.status === "pending_verification") {
-        await db.from("accounts").update({ status: "live" }).eq("id", account.id).eq("status", "pending_verification");
+        if (await hasEntitledSubscription(account.id, db)) {
+          await db.from("accounts").update({ status: "live" }).eq("id", account.id).eq("status", "pending_verification");
+        } else {
+          // Verified but unpaid (subscription lapsed during verification): stay pending; billing promotes on payment.
+          await track("verified_unbilled", { number_id: current.id }, { accountId: account.id });
+        }
       }
       await sendYoureLiveEmail(account, { ...current, ...update }).catch((e) => console.error("[verification] you're-live email failed", e));
     }
@@ -261,8 +267,28 @@ export async function pollVerification(number: NumberRow, db: Db = createAdminSu
   );
 }
 
-/** Finds the numbers row for a verification SID (webhook path). */
+/** Finds the numbers row for a toll-free verification SID (HH…). */
 export async function findNumberByVerificationSid(sid: string, db: Db = createAdminSupabase()): Promise<NumberRow | null> {
   const r = await db.from("numbers").select("*").eq("verification_sid", sid).maybeSingle();
+  return r.data ?? null;
+}
+
+/**
+ * Finds the numbers row for any SID a Twilio status callback may carry: a toll-free
+ * verification (HH…), a 10DLC brand registration (BN…) or a 10DLC campaign (QE…).
+ * Returns null for SIDs we do not track (e.g. Trust Hub bundles).
+ */
+export async function findNumberForCallbackSid(sid: string, db: Db = createAdminSupabase()): Promise<NumberRow | null> {
+  if (sid.startsWith("HH")) return findNumberByVerificationSid(sid, db);
+  const column = sid.startsWith("BN") ? "tendlc_brand_sid" : sid.startsWith("QE") ? "tendlc_campaign_sid" : null;
+  if (!column) return null;
+  const r = await db
+    .from("numbers")
+    .select("*")
+    .eq(column, sid)
+    .in("verification_status", ["pending", "in_review", "verified", "rejected"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   return r.data ?? null;
 }

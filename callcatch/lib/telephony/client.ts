@@ -21,6 +21,33 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   return null;
 }
 
+/**
+ * Placeholders Twilio substitutes for a withheld caller ID on voice webhooks
+ * (they spell ANONYMOUS / RESTRICTED / BLOCKED / UNKNOWN / UNAVAILABLE on a keypad).
+ * They pass `normalizePhone` (8-15 digits) but are not real numbers.
+ */
+export const BLOCKED_CALLER_IDS: ReadonlySet<string> = new Set(["+266696687", "+7378742833", "+2562533", "+8656696", "+86282452253"]);
+
+const BLOCKED_CALLER_WORDS = new Set(["anonymous", "restricted", "blocked", "unknown", "unavailable", "private"]);
+
+/** True when the voice `From` carries no usable caller ID (empty, a word like "anonymous", or a placeholder). */
+export function isBlockedCallerId(raw: string | null | undefined): boolean {
+  if (!raw || !raw.trim()) return true;
+  if (BLOCKED_CALLER_WORDS.has(raw.trim().toLowerCase())) return true;
+  const e164 = normalizePhone(raw);
+  return !e164 || BLOCKED_CALLER_IDS.has(e164);
+}
+
+/**
+ * Like `normalizePhone` for a voice caller ID, but returns null for withheld caller ID and for
+ * anything outside the US/Canada (+1) — numbers we can neither text back nor store as a contact.
+ */
+export function normalizeCallerId(raw: string | null | undefined): string | null {
+  if (isBlockedCallerId(raw)) return null;
+  const e164 = normalizePhone(raw);
+  return e164 && /^\+1\d{10}$/.test(e164) ? e164 : null;
+}
+
 /** Pretty US format for UI: "+15551234567" -> "(555) 123-4567". */
 export function formatPhone(e164: string | null | undefined): string {
   if (!e164) return "";

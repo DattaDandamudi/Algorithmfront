@@ -18,6 +18,7 @@
  * Every uncertain call shape is isolated here and guarded: nothing runs unless
  * `TWILIO_ISV_PROFILE_SID` is set, and failures surface as a thrown Error with the step name.
  */
+import { helpReply, startReply, stopReply } from "@/lib/telephony/consent";
 import { twilioClient } from "@/lib/telephony/client";
 import { env } from "@/lib/env";
 import type { AccountRow, NumberRow } from "@/lib/db/types";
@@ -211,11 +212,11 @@ export async function registerSoleProprietor(
       hasEmbeddedLinks: true,
       hasEmbeddedPhone: true,
       optInKeywords: ["START"],
-      optInMessage: `${brandName}: You're opted in to appointment and service texts. Msg&data rates may apply. Reply HELP for help, STOP to opt out.`,
+      optInMessage: startReply(brandName),
       optOutKeywords: ["STOP"],
-      optOutMessage: `${brandName}: You've been unsubscribed. No more messages will be sent. Reply START to opt back in.`,
+      optOutMessage: stopReply(brandName),
       helpKeywords: ["HELP"],
-      helpMessage: `${brandName}: For help call the business directly. Reply STOP to opt out.`,
+      helpMessage: helpReply(brandName),
       subscriberOptIn: true,
       ageGated: false,
       directLending: false,

@@ -20,9 +20,23 @@ Schema highlights the other modules rely on:
   `referred_by_account_id` and a `referrals(status='pending')` row. App code never inserts accounts.
 - **RLS** is on for every table. `public.is_account_member(account uuid)` (SECURITY DEFINER, STABLE) is
   the single membership check used by all policies, so `account_members` never recurses.
-  Members can `select/insert/update` rows of their account; `delete` only on `leads` and `contacts`;
-  `accounts` is `select/update` only; `events` is `select` + `insert` for own account; `referrals` is
-  `select` for either side; `admin_notes` has no policies (service role only). The service role bypasses RLS.
+  **Writer model** (policies *and* explicit `GRANT`/`REVOKE` at the bottom of the migration — hosted
+  Supabase's default privileges would otherwise grant `ALL` to `authenticated` on every new table):
+  - Member-writable (user-scoped client, RLS): `contacts`, `conversations`, `messages`, `calls`, `leads`
+    are `select/insert/update`; `delete` only on `leads` and `contacts`; `events` is `select` + `insert`
+    for the member's own account.
+  - Service-role only: `accounts`, `account_members`, `numbers`, `subscriptions`, `usage_monthly`,
+    `verification_events`, `alerts`, `lead_sources`, `weekly_reports`, `referrals` are `select` for
+    members and never writable by them (`referrals` is visible to either side; `admin_notes` and
+    `rate_limits` have no member access at all). Onboarding and Settings Server Functions verify
+    membership first and then write `accounts` / `lead_sources` with the service-role client; billing,
+    verification and crons do the same for the rest. This is what stops a signed-in member from
+    PATCHing `accounts.plan/status/alert_phone_verified`, `numbers.sms_enabled`,
+    `usage_monthly.overage_reported` or `subscriptions.*` over PostgREST with the anon key.
+- `public.rate_limits` + `public.rate_limit_hit(key, max, window_seconds)` (service role only) back the
+  sliding-window limiter for alert-code sends and forwarding-test calls (`lib/onboarding/rate-limit.ts`).
+- `lead_sources.inbound_email` is `acct-<random>@LEADS_INBOUND_DOMAIN` — a random token, never derived
+  from the account's public `referral_code`.
 - **Realtime** is enabled for `messages`, `conversations`, `leads` (with `replica identity full`).
 - `messages.send_after` (extra, not in the spec table) is the quiet-hours queue timestamp for
   `status='queued'` outbound rows; `null` means send immediately.

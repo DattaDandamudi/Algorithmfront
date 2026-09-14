@@ -9,9 +9,18 @@ import { safeEqual } from "@/lib/utils";
 import type { AlertCodeMeta } from "./state";
 
 export const ALERT_CODE_TTL_MS = 10 * 60 * 1000;
+/** Per-account burst limit (BUILD_CONTRACTS: 5 sends / 10 min). */
 export const ALERT_CODE_MAX_SENDS = 5;
 export const ALERT_CODE_SEND_WINDOW_MS = 10 * 60 * 1000;
+/** Absolute per-account cap: no account can make our notification number send more codes than this per day. */
+export const ALERT_CODE_MAX_SENDS_PER_DAY = 10;
+/** Per-destination cap across ALL accounts, so one number cannot be spammed from many free signups. */
+export const ALERT_CODE_MAX_SENDS_PER_TARGET_HOUR = 3;
+/** Global cap per instance of the product (a runaway abuser trips this before carriers do). */
+export const ALERT_CODE_MAX_SENDS_GLOBAL_HOUR = 300;
 export const ALERT_CODE_MAX_ATTEMPTS = 6;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+export const HOUR_MS = 60 * 60 * 1000;
 
 function secret(): string {
   return env.get("INTERNAL_API_SECRET") ?? env.required("SUPABASE_SERVICE_ROLE_KEY");

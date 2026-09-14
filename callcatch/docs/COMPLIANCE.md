@@ -15,11 +15,14 @@ CallCatch only texts people who initiated contact with the business. Two consent
 | Manual (`manual`) | Owner types a number into the inbox to start a thread. | `{ user_id, typed_at }` | Owner-authored only; the AI does not initiate manual threads |
 
 Rules enforced in code, not by the model (spec §4.4):
-- Never message a contact with `opted_out=true`.
-- Never send outside quiet hours **08:00-21:00 local** (queued via `messages.send_after`).
+- Never message a contact with `opted_out=true`. Their inbound texts are still stored and the owner is alerted ("call them"); nothing is sent back.
+- Opt-out is honored from the exact keywords **and** from plain language ("please stop texting me", "wrong number" — `lib/telephony/consent.ts` regex list, fast-model check only on a loose trigger such as a bare "stop"): contact opted out, thread closed, AI paused, one confirmation, before any AI turn.
+- Never **start or restart** a conversation outside quiet hours **08:00-21:00 local** (first/repeat text-backs and nudges are queued via `messages.send_after`). Replies to a text the customer just sent (owner or AI, within 15 minutes) and the emergency safety template go out at any hour (§4).
 - Max **3 unanswered** outbound messages per conversation; max **8 AI turns** then hand-off.
-- First outbound always contains the business name + STOP language.
+- First outbound always contains the business name, the automated-assistant disclosure ("this is the automated assistant for *[Business]*") and the exact line "Reply STOP to opt out" — templates are written that way and `ensureFirstOutboundDisclosure` normalises anything else that becomes a thread's first outbound (model reply, emergency template, booking-link fallback).
 - Emergency keywords → fixed template + voice call to owner; the AI does not improvise safety advice.
+- Owner takeover (any owner reply, "Pause AI") voids the thread's queued AI replies (`messages.error_code='canceled_by_owner'`) so a stale assistant text never goes out after the owner answered.
+- Calls with a withheld caller ID (Twilio placeholders such as `+266696687`) are recorded and alerted but never get a contact or a text-back.
 - Owner alerts go from our own verified number to our own subscriber — our brand messaging our customer.
 - Each end business is its own TFV (or 10DLC brand). No shared sending number, no shared campaign.
 
@@ -30,7 +33,14 @@ The customer's obligations are in the ToS and SMS Terms: keep the forwarding gre
 
 ## 2. Voice greeting (informational, not telemarketing)
 
-> "Hi, you've reached *[Business]*. Sorry we missed you — we'll text you at this number in a few seconds so we can help. You can leave a message after the tone, or just hang up."
+Inside the texting window (text-back goes out right after the greeting):
+> "Hi, you've reached *[Business]*. Sorry we missed your call — we'll text you in a few seconds. Leave a message after the tone, or just hang up."
+
+Outside the texting window (text-back is queued for the window start; the greeting must not promise a text that is not coming):
+> "Hi, you've reached *[Business]*. Sorry we missed your call. It's outside our texting hours, so we'll text you first thing at *[8:00 AM]*. Leave a message after the tone so we can help sooner."
+
+No text-back (texting off, caller opted out, blocked caller ID):
+> "Hi, you've reached *[Business]*. Sorry we missed your call. Leave a message after the tone and we'll call you right back." (blocked caller ID: "…please leave your name and a number to reach you…")
 
 Recorded via `<Say>` (Polly voice per tone setting) then `<Record maxLength="120">`. Test-forwarding calls use the same greeting with "This is a CallCatch test" prefixed.
 
@@ -38,11 +48,15 @@ Recorded via `<Say>` (Polly voice per tone setting) then `<Record maxLength="120
 
 All messages ≤ 160 GSM-7 characters where possible (one segment). `*[Business]*` = `accounts.dba` or `legal_name`.
 
-### 3.1 First text-back (missed call)
-> Hi, this is the automated assistant for *[Business]* — sorry we missed your call. What's going on, and what's the address? Reply STOP to opt out.
+### 3.1 First text-back (missed call) — `firstTextbackTemplate`
+> Hi *[First name, if known]*, this is the automated assistant for *[Business]*. Sorry we missed your call - what's going on with your *[heating or cooling / plumbing / electrical / home]*? Reply STOP to opt out.
 
-### 3.2 First text-back (web / Meta form, Pro)
-> Hi *[First name]*, this is the automated assistant for *[Business]* — thanks for your request about *[topic]*. What's the address, and how soon do you need someone? Reply STOP to opt out.
+(Plain hyphens, no em dashes: keeps the message GSM-7 so a typical first text is one 160-character segment.) A repeat call within 30 days on an open thread gets: "*[Business]*'s automated assistant: Sorry we missed you again - reply here with what you need and we'll get right on it. Reply STOP to opt out."
+
+### 3.2 First text-back (web / Meta form, Pro) — `leadFormFirstMessage`
+> Hi *[First name]*, this is the automated assistant for *[Business]*. Thanks for reaching out about "*[topic]*". What's the service address or ZIP? Reply STOP to opt out.
+
+The TFV sample messages (`lib/onboarding/tfv.ts generateSampleMessages`) must use the same shape as §3.1, since /sms-terms §3 now renders these templates verbatim.
 
 ### 3.3 Qualification turns (order: issue → address/ZIP → urgency → window → name)
 > Got it — *[issue restated in ≤ 8 words]*. What's the ZIP or street address so we can check the service area?
@@ -55,22 +69,29 @@ All messages ≤ 160 GSM-7 characters where possible (one segment). `*[Business]
 
 > Perfect, *[Name]*. *[Owner first name]* at *[Business]* has your details and will call you at this number shortly. *(Pro, if booking link:)* You can also pick a time here: *[booking URL]*
 
-Rules for the model: no prices unless the profile's "starting at" ranges are enabled; no ETAs; no diagnosis; never claim to be a person; if asked "is this a bot?" answer "Yes — I'm *[Business]*'s automated assistant; the owner will call you."
+Rules for the model (in the system prompt): no prices unless the profile's "starting at" ranges are enabled; no ETAs; no diagnosis; never claim to be a person; if asked "is this a bot?" answer "Yes - I'm *[Business]*'s automated assistant; the owner will call you." If the customer asks not to be texted in any wording, one short okay and nothing else (the code records the opt-out; the model is the second layer, not the first).
 
 ### 3.4 STOP / HELP / START replies
-- STOP (and STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT):
-  > You've been unsubscribed from *[Business]* texts and won't receive any more. Reply START to opt back in.
-- HELP:
-  > *[Business]* texting via CallCatch. Reply STOP to opt out. Msg & data rates may apply. Help: *[business phone]* or help@callcatch.co
-- START / UNSTOP:
-  > You're re-subscribed to *[Business]* texts. Reply STOP any time to opt out.
 
-Twilio's built-in opt-out handling sends its own default replies unless disabled; we keep Twilio's default **on** for the carrier-level block and suppress our duplicate reply when Twilio's `OptOutType` parameter is present in the inbound webhook.
+Default deployment (`TWILIO_HANDLES_OPTOUT_KEYWORDS=true`, numbers are standalone `IncomingPhoneNumbers`): Twilio's Advanced Opt-Out answers STOP/STOPALL/UNSUBSCRIBE/CANCEL/END/QUIT, START/UNSTOP/YES and HELP/INFO with its **carrier-standard** confirmations and blocks the handset; we mirror the state into `contacts.opted_out` and send nothing of our own for those keywords. Twilio's default handling cannot be disabled on a standalone number, so `=false` is only valid when the number sits in a Messaging Service with Advanced Opt-Out turned off. /sms-terms §6-7 describe whichever configuration is active and quote the exact texts below for the self-reply case.
+
+We always send our own confirmation (synchronous TwiML, one message) when Twilio saw no keyword: plain-language revocations and the FCC-named words REVOKE / OPTOUT / REMOVE.
+
+- STOP confirmation (`stopReply`):
+  > *[Business]*: You have been unsubscribed and will not receive further messages from this number. Reply START to resubscribe.
+- HELP (`helpReply`):
+  > *[Business]* texts are powered by CallCatch. For help email support@callcatch.co or visit callcatch.co/sms-terms. Msg&data rates may apply. Reply STOP to opt out.
+- START / UNSTOP / YES (`startReply`; only treated as a resubscribe when the contact is actually opted out — otherwise "Yes" is an ordinary reply the assistant answers):
+  > *[Business]*: You are resubscribed to messages from this number. Reply STOP to opt out, HELP for help.
+
+Every keyword and every plain-language opt-out is stored as an inbound message on the customer's thread (nothing a customer sends is dropped).
 
 ### 3.5 Emergency template (hard-coded; sent on keyword match, model not consulted)
-> If anyone is in danger or you smell gas, leave the building and call 911 or your gas utility now. *[Business]* is being called right now about your emergency and will reach you at this number. Reply STOP to opt out.
+> *[Safety line for the hazard, e.g. "If you smell gas, please leave the building now, don't flip any switches, and call 911 or your gas utility from outside."]* We're calling *[Business]*'s owner / on-call tech right now so they can reach you at this number.
 
-Followed by an immediate outbound voice call to `on_call_phone` (Pro) or `alert_phone` with: "CallCatch emergency: a caller at *[number]* reported *[keyword]*. Press 1 to call them now."
+Sent **immediately at any hour** (`author: "system"` / `bypassQuietHours` in `sendCustomerMessage`; also for the voicemail-emergency text). When the emergency text opens the thread (customer texted first), it becomes the first outbound and is wrapped with the §3.1 disclosures: "This is the automated assistant for *[Business]*. … Reply STOP to opt out."
+
+Followed by an immediate outbound voice call to `on_call_phone` (Pro) or `alert_phone` with: "CallCatch emergency alert for *[Business]*. A customer at *[number]* texted: *[text]*. Please call them back now."
 
 ### 3.6 Nudges (max 2, quiet hours respected, 20 min and 24 h after an unanswered first text)
 > Still here if you need *[Business]* — just reply with what's going on and the address. Reply STOP to opt out.
@@ -79,13 +100,21 @@ Followed by an immediate outbound voice call to `on_call_phone` (Pro) or `alert_
 > CallCatch: missed call from (512) 555-0134 — "AC not cooling, 78704, wants today". Call now: tel:+15125550134 · Thread: callcatch.co/i/abc123
 
 ### 3.8 Demo line thread (from `TWILIO_DEMO_NUMBER`, caller-initiated by dialing the demo)
-> Hi — this is CallCatch. You just called our demo line and we didn't answer, so this is what your customers would get. What kind of shop do you run: HVAC, plumbing or electrical? Reply STOP to opt out.
+
+The demo number is verified in CallCatch's name, so every demo message identifies CallCatch; the fictional "Summit Air Heating & Cooling" is only the role-play context and the model may say so if asked. Voice greeting: "Thanks for calling the CallCatch demo. Sorry we missed you. Watch your phone: you'll get a text in a few seconds, exactly what your customers would get. Goodbye."
+
+First text (`demoFirstTextbackTemplate`):
+> Hi! This is the CallCatch demo line - the automated assistant your customers would get. Imagine we're Summit Air Heating & Cooling and you're a homeowner who just called: what's going on at the house? Reply STOP to opt out.
+
+STOP/HELP/START replies on the demo line name "CallCatch demo line". After the third assistant turn the closing message links to /signup; the thread is then closed and further replies are stored without a model call.
 
 ## 4. Quiet hours
 
 - Default `quiet_start 08:00`, `quiet_end 21:00` in the account's `timezone`; editable in Settings.
-- Outbound customer-facing SMS outside the window is inserted with `status='queued'`, `send_after = next 08:00 local`; `/api/cron/ai-followups` releases it.
-- Exception: a **reply** to an inbound message received inside quiet hours is allowed within 5 minutes of the inbound (the homeowner is awake and asked); nudges are never sent in quiet hours.
+- **Unsolicited** customer-facing SMS outside the window (first/repeat text-back after a missed call, lead-form first message, the 20-minute nudge) is inserted with `status='queued'`, `send_after = next 08:00 local`; `/api/cron/ai-followups` releases it. The voice greeting tells an after-hours caller the text will come at that time.
+- Exception 1: a **reply** (owner or AI) to an inbound text is allowed within **15 minutes** of the inbound at any hour (the homeowner is awake and asked; matches the Settings copy). Unsolicited sends never qualify because there is no recent inbound row.
+- Exception 2: the **emergency safety template** is always sent immediately (customer text or voicemail emergency).
+- A queued AI row is voided (never sent late) once the owner took over, once any newer message exists in the thread, or once it is 24 hours old (e.g. released after an account pause).
 - Owner alerts are not customer-facing and follow the owner's own quiet-hours setting (default: always on for emergencies, 07:00-22:00 for the rest).
 
 ## 5. Toll-Free Verification — field-by-field mapping
@@ -153,7 +182,7 @@ Submit by **Day 4** (Sep 18) from the seeded demo account; expect ~20 days per c
 - [ ] In a second tab: Meta Lead Ads Testing Tool (developers.facebook.com/tools/lead-ads-testing) → submit a test lead for that Page/form.
 - [ ] Back in CallCatch: the lead appears in `/leads` within seconds with name/phone, and the inbox shows the outbound SMS (use the seeded verified number so a real text goes to the founder's phone; show the phone on camera).
 - [ ] Show `/settings?tab=sources` → "Disconnect" → the Page subscription is removed (demonstrates `pages_manage_metadata` cleanup).
-- [ ] Show `https://callcatch.co/data-deletion` and the in-app "Delete my account" button.
+- [ ] Show `https://callcatch.co/data-deletion` and walk through the email-based deletion request process it describes (there is no self-serve delete button).
 
 **Written notes for the reviewer:** step-by-step matching the video; test user credentials (create a Test User under App Roles with a Page and a lead form); explain that the app only acts on Pages the customer administers and stores lead fields for the customer's own CRM use; no data is used for ads targeting.
 

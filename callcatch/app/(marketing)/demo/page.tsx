@@ -1,3 +1,4 @@
+import { DEMO_GREETING } from "@/lib/telephony/demoCopy";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, MessageSquareText, PhoneCall, PhoneMissed, ShieldCheck, UserRound } from "lucide-react";
@@ -55,7 +56,7 @@ export default function DemoPage() {
                 {
                   icon: PhoneMissed,
                   title: "You call. We answer with a 6-second greeting.",
-                  body: "\"Thanks for calling the CallCatch demo — sorry we missed you. We'll text you in a few seconds. Leave a message after the tone or just hang up.\" Hang up or leave a voicemail; both work.",
+                  body: `"${DEMO_GREETING.join(" ")}" Hang up or leave a voicemail; both work.`,
                 },
                 {
                   icon: MessageSquareText,
@@ -83,7 +84,7 @@ export default function DemoPage() {
             <div className="mt-8 flex items-start gap-3 rounded-2xl border border-brand-100 bg-white p-4 text-sm text-brand-800">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-success-500" aria-hidden="true" />
               <p>
-                You&apos;re opting in by calling. We store your number and the demo thread for 30 days so we can show you the owner view, then delete it. We don&apos;t add you to any list. Full details in the{" "}
+                You&apos;re opting in by calling. We store your number and the demo thread so we can show you the owner view, and delete them on request (see Data Deletion). We don&apos;t add you to any list. Full details in the{" "}
                 <Link href="/sms-terms" className="underline decoration-brand-300 underline-offset-2">
                   SMS Terms
                 </Link>

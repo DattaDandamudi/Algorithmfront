@@ -2,6 +2,7 @@
  * Toll-Free Verification payload builder. Pure: the wizard's compliance step previews exactly
  * what `/api/onboarding/submit-verification` sends, because both call these functions.
  */
+import { helpReply } from "@/lib/telephony/consent";
 import type { AccountRow } from "@/lib/db/types";
 import { env } from "@/lib/env";
 import { asObject, parseOnboardingMeta } from "./state";
@@ -38,6 +39,7 @@ export type TfvPayload = {
   optInImageUrls: string[];
   optInType: OptInType;
   optInConfirmationMessage: string;
+  helpMessageSample: string;
   messageVolume: string;
   tollfreePhoneNumberSid: string;
   businessStreetAddress: string;
@@ -91,9 +93,9 @@ export function generateSampleMessages(a: Pick<TfvAccount, "dba" | "legal_name" 
   const trade = TRADE_LABEL[a.trade ?? "other"] ?? "home-service";
   const thing = a.trade === "hvac" ? "heating or cooling" : a.trade === "plumbing" ? "plumbing" : a.trade === "electrical" ? "electrical" : "home";
   return [
-    `Hi, this is ${name}. Sorry we missed your call! What's going on with your ${thing} today? Reply here and we'll get you taken care of. Reply STOP to opt out.`,
+    `Hi, this is the automated assistant for ${name}. Sorry we missed your call - what's going on with your ${thing}? Reply STOP to opt out.`,
     `Thanks! To get the right ${trade} tech out, what's the service address or ZIP, and is this an emergency, today, this week, or flexible?`,
-    `Got it — ${name} has you down for a visit. The owner will confirm the time window shortly by text. Reply HELP for help or STOP to opt out.`,
+    `Thanks - got it. ${name} will call you shortly. Reply STOP to opt out.`,
   ];
 }
 
@@ -116,12 +118,13 @@ export function defaultOptInDescription(optInType: OptInType, a: Pick<TfvAccount
     return (
       `Customers initiate contact by submitting a service-request form on ${a.website || "the business website"} that includes an SMS disclosure ` +
       `("By submitting you agree to receive text messages from ${name} about your request. Msg & data rates may apply. Reply STOP to opt out."). ` +
-      `Customers may also opt in verbally by calling the business phone number; missed callers receive a text back regarding their own call.`
+      `Customers may also opt in verbally by calling the business phone number; missed callers receive a text back regarding their own call. ` +
+      `The first text identifies the business, states that it is an automated assistant and includes "Reply STOP to opt out".`
     );
   }
   return (
     `Customers opt in verbally by calling ${name}'s published business phone number. When the call is not answered, the caller receives a single text back ` +
-    `about their own call. Every first message identifies the business and includes "Reply STOP to opt out"; STOP is honored immediately and HELP returns ` +
+    `about their own call. Every first message identifies the business, states that it is an automated assistant and includes "Reply STOP to opt out"; STOP is honored immediately and HELP returns ` +
     `contact information. Terms and the opt-in flow are published at ${env.appUrl()}/sms-terms.`
   );
 }
@@ -197,6 +200,7 @@ export function buildTollFreeVerificationPayload(input: BuildTfvInput): TfvPaylo
     optInImageUrls: [`${appUrl}/sms-terms`],
     optInType: c.opt_in_type,
     optInConfirmationMessage: c.sample_messages[0],
+    helpMessageSample: helpReply(name),
     messageVolume: toMessageVolumeBucket(c.monthly_volume),
     tollfreePhoneNumberSid: input.tollfreePhoneNumberSid,
     businessStreetAddress: a.address_line1!,

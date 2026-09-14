@@ -5,7 +5,7 @@ import { Loader2, PhoneCall, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Card";
 import { saveNumberStep } from "@/app/(app)/onboarding/actions";
-import { provisionNumber } from "@/lib/onboarding/client-api";
+import { provisionNumber, isBillingRequired, BILLING_REQUIRED_MESSAGE } from "@/lib/onboarding/client-api";
 import { formatUsPhone, TONES, type Tone } from "@/lib/onboarding/schemas";
 import { TONE_SAMPLES } from "@/lib/onboarding/us-data";
 import { ChoiceCards, StepShell, Tip } from "./StepShell";
@@ -28,7 +28,7 @@ export function StepNumber({ state, onPatch, onSaved, onBack }: { state: WizardS
       const res = await provisionNumber();
       onPatch({ number: res.number });
     } catch (err) {
-      setProvisionError(err instanceof Error ? err.message : "Could not get a number");
+      setProvisionError(isBillingRequired(err) ? BILLING_REQUIRED_MESSAGE : err instanceof Error ? err.message : "Could not get a number");
     } finally {
       setProvisioning(false);
     }
@@ -117,9 +117,15 @@ export function StepNumber({ state, onPatch, onSaved, onBack }: { state: WizardS
       {provisionError && number === null && !provisioning ? (
         <Alert tone="error">
           {provisionError}{" "}
-          <button type="button" onClick={provision} className="inline-flex items-center gap-1 font-semibold underline underline-offset-2">
-            <RefreshCw className="h-3 w-3" aria-hidden /> Try again
-          </button>
+          {provisionError === BILLING_REQUIRED_MESSAGE ? (
+            <a href="/billing/checkout" className="inline-flex items-center gap-1 font-semibold underline underline-offset-2">
+              Go to checkout
+            </a>
+          ) : (
+            <button type="button" onClick={provision} className="inline-flex items-center gap-1 font-semibold underline underline-offset-2">
+              <RefreshCw className="h-3 w-3" aria-hidden /> Try again
+            </button>
+          )}
         </Alert>
       ) : null}
 

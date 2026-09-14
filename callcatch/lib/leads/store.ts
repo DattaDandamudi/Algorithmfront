@@ -52,12 +52,29 @@ export type EnsureLeadInput = {
   source: string;
   name?: string | null;
   raw?: Record<string, Json | undefined>;
+  /**
+   * Upstream id (Meta leadgen_id, Zapier id, webhook id). Written on the INSERT so the
+   * `(account_id, external_ref)` unique index is the idempotency barrier for redeliveries.
+   */
+  externalRef?: string | null;
 };
+
+/** Postgres SQLSTATE for unique_violation. */
+const UNIQUE_VIOLATION = "23505";
+
+/** Thrown by `ensureLead` when a lead with the same `(account_id, external_ref)` already exists. */
+export class DuplicateLeadError extends Error {
+  constructor(public readonly lead: LeadRow) {
+    super(`duplicate lead for external_ref ${lead.external_ref ?? ""}`);
+    this.name = "DuplicateLeadError";
+  }
+}
 
 /**
  * Returns the lead attached to the conversation, or attaches the contact's latest open
  * lead (created without a conversation, e.g. a web form) or inserts a new one.
- * Tracks `first_lead` for the account on the very first lead.
+ * Tracks `first_lead` for the account on the very first lead. With `externalRef`, a concurrent
+ * redelivery loses the unique-index race and gets `DuplicateLeadError` carrying the winner.
  */
 export async function ensureLead(db: Db, input: EnsureLeadInput): Promise<LeadRow> {
   if (input.conversationId) {
@@ -94,9 +111,19 @@ export async function ensureLead(db: Db, input: EnsureLeadInput): Promise<LeadRo
       name: clean(input.name, 120),
       status: "new",
       raw: input.raw ?? {},
+      external_ref: input.externalRef ?? null,
     })
     .select("*")
     .single();
+  if (inserted.error?.code === UNIQUE_VIOLATION && input.externalRef) {
+    const existing = await db
+      .from("leads")
+      .select("*")
+      .eq("account_id", input.accountId)
+      .eq("external_ref", input.externalRef)
+      .maybeSingle();
+    if (existing.data) throw new DuplicateLeadError(existing.data);
+  }
   if (inserted.error || !inserted.data) throw new Error(`leads insert failed: ${inserted.error?.message ?? "unknown"}`);
 
   const prior = await db.from("leads").select("id", { count: "exact", head: true }).eq("account_id", input.accountId);

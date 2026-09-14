@@ -88,7 +88,7 @@ paths (see `docs/PRODUCT_SPEC.md` for the product and `build_modules` in the bui
 - Every external webhook verifies its signature (Twilio, Stripe, Resend/Svix, Meta) or a secret (cron, internal, per-account webhook) with `safeEqual`.
 - `createAdminSupabase()` only in Route Handlers / Server Functions / crons; never in Client Components.
 - Never log secrets, full card data or message bodies with PII at info level.
-- Rate-limit code-sending endpoints (alert-phone verification): max 5 sends / 10 min per account (in-memory + DB timestamp is fine).
+- Rate-limit code-sending endpoints (alert-phone verification, forwarding test) through `public.rate_limits` + `rate_limit_hit()` via `lib/onboarding/rate-limit.ts` (service-role only). Never keep limiter state in a member-readable or member-writable column.
 
 ## Additional cross-module contracts (added by the integrator)
 
@@ -112,3 +112,24 @@ paths (see `docs/PRODUCT_SPEC.md` for the product and `build_modules` in the bui
 - **Module d exposes** `@/lib/billing/stripe`: `stripe()` client singleton (server-only).
 - **Public env var** `NEXT_PUBLIC_DEMO_NUMBER` (E.164) is used by module f for the demo line CTA.
 - **Module f may also own** `app/opengraph-image.tsx` and `app/icon.tsx` (generated OG image + favicon via `next/og`).
+
+
+## Post-review amendments (2026-09-14)
+
+- **Writer model (RLS)**: members can insert/update only `contacts`, `conversations`, `messages`, `calls`, `leads` (+ insert `events`).
+  `accounts`, `numbers`, `subscriptions`, `usage_monthly`, `verification_events`, `alerts`, `lead_sources`, `weekly_reports`,
+  `referrals`, `admin_notes`, `rate_limits` are written only by server code with the service-role client after an explicit
+  membership check (`ownerContext()` / `getSessionForApi()`); members keep SELECT where the dashboard needs it.
+- **Billing gate**: `@/lib/billing/status` → `getBillingGate(accountId)` / `hasEntitledSubscription(accountId)` is the only
+  source of truth for "may this account provision, verify, go live, use the app". Onboarding routes return 402
+  `{ code: 'billing_required', redirect: '/billing/checkout' }`; `getAppContext` sends accounts without a subscriptions row
+  to `/billing/checkout`.
+- **Overage**: `usage-rollup` sweeps every closed period with `usage_monthly.overage_reported=false` nightly (not only on the 1st).
+- **Dunning**: the cron records the conversation ids it pauses (`events` name `dunning_ai_paused`); `lib/billing/sync.ts`
+  resumes exactly those when the account returns to live and writes `dunning_ai_resumed`.
+- **Outbound message states**: `messages.status` gains `sending` (atomic claim before the Twilio call); voided rows are
+  `failed` with `error_code` `canceled_by_owner` | `superseded` | `send_state_unknown`.
+- **Quiet hours**: apply to unsolicited sends only. Replies within 15 minutes of a customer's text and the emergency template
+  go out at any hour. The window can be narrowed inside 08:00–21:00 local but never widened (schema + `quietWindow()` clamp).
+- **First outbound message** (missed call, lead form, emergency, demo) always carries: business name, "the automated
+  assistant for …", and "Reply STOP to opt out." — templates in `lib/ai/prompts.ts`, mirrored on `/sms-terms` and in the TFV samples.

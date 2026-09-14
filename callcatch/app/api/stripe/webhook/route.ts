@@ -5,7 +5,8 @@ import { env } from "@/lib/env";
 import { track } from "@/lib/events";
 import { sendCapiEvent } from "@/lib/meta/capi";
 import { getPlan, TRIAL_DAYS, type BillingInterval, type PlanId } from "@/lib/plans";
-import { sendDunningNotice, sendTrialEndingReminder, sendTrialExtendedPendingVerification } from "@/lib/billing/emails";
+import { sendEmail } from "@/lib/email/send";
+import { sendDunningNotice, sendTrialEndingReminder, sendTrialEndingUnverified, sendTrialExtendedPendingVerification } from "@/lib/billing/emails";
 import { isInterval, isPlanId, recurringPriceUsd } from "@/lib/billing/plans-ui";
 import { applyReferralOnCheckout, rewardReferral } from "@/lib/billing/referrals";
 import { fromUnix, idOf, stripe, toUnix } from "@/lib/billing/stripe";
@@ -17,6 +18,12 @@ export const maxDuration = 60;
 const STRIPE_EVENT = "stripe_event";
 /** Extra days granted when the trial is about to end but the number is still in carrier review. */
 const VERIFICATION_GRACE_DAYS = 7;
+/**
+ * How many times an unverified trial is extended (tracked in subscription metadata
+ * `grace_extensions`). 2 × 7 days on top of the 14-day trial = at most 28 days before the card is
+ * charged; after that the trial ends normally (RUNBOOK.md "Trial ending before verification").
+ */
+export const MAX_VERIFICATION_GRACE_EXTENSIONS = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -148,6 +155,38 @@ function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
   return idOf(invoice.parent?.subscription_details?.subscription ?? null);
 }
 
+/**
+ * Resolves the account an invoice belongs to independently of webhook delivery order. Stripe emits
+ * `customer.subscription.created`, `invoice.paid` and `checkout.session.completed` at the same
+ * instant with no ordering guarantee, so the `subscriptions` row / `accounts.stripe_customer_id`
+ * may not exist yet: the invoice carries a snapshot of the subscription metadata (`account_id`,
+ * set by lib/billing/checkout.ts), and syncing the subscription first creates the row and links
+ * the customer. Throws when a subscription invoice cannot be resolved so Stripe retries it instead
+ * of the event being recorded as seen and lost.
+ */
+async function accountForInvoice(invoice: Stripe.Invoice): Promise<AccountForBilling | null> {
+  const subscriptionId = invoiceSubscriptionId(invoice);
+  const metaAccountId = invoice.parent?.subscription_details?.metadata?.account_id ?? null;
+  if (metaAccountId) {
+    if (subscriptionId) await syncSubscriptionById(subscriptionId, { accountId: metaAccountId });
+    const account = await loadAccount(metaAccountId);
+    if (account) return account;
+  }
+  if (subscriptionId) {
+    const synced = await syncSubscriptionById(subscriptionId);
+    if (synced) {
+      const account = await loadAccount(synced.accountId);
+      if (account) return account;
+    }
+    const byRow = await accountBySubscription(subscriptionId);
+    if (byRow) return byRow;
+  }
+  const byCustomer = await accountByCustomer(idOf(invoice.customer));
+  if (byCustomer) return byCustomer;
+  if (subscriptionId) throw new Error(`no account for subscription invoice ${invoice.id} (subscription ${subscriptionId})`);
+  return null; // one-off invoice for a customer we don't know: ignore
+}
+
 // ---------------------------------------------------------------------------
 
 async function onCheckoutCompleted(session: Stripe.Checkout.Session): Promise<string | null> {
@@ -180,10 +219,14 @@ async function onCheckoutCompleted(session: Stripe.Checkout.Session): Promise<st
     await syncSubscriptionById(subscriptionId, { accountId, paidNow: path === "paynow", setupFeePaid });
   }
 
-  // 3. Referral attribution.
+  // 3. Referral attribution — and, for a pay-now checkout whose `invoice.paid` may already have been
+  //    processed (no `referrals` row existed then), the reward. `rewardReferral` is idempotent.
   if (meta.ref) {
     try {
       await applyReferralOnCheckout(accountId, meta.ref);
+      if (path === "paynow" && session.payment_status === "paid" && (session.amount_total ?? 0) > 0) {
+        await rewardReferral(accountId);
+      }
     } catch (err) {
       console.error("[stripe/webhook] referral apply failed", err);
     }
@@ -222,7 +265,8 @@ async function onCheckoutCompleted(session: Stripe.Checkout.Session): Promise<st
 
 async function onInvoicePaid(invoice: Stripe.Invoice): Promise<string | null> {
   const subscriptionId = invoiceSubscriptionId(invoice);
-  const account = (await accountBySubscription(subscriptionId)) ?? (await accountByCustomer(idOf(invoice.customer)));
+  // Also syncs the subscription row (past_due → active after a retry, period end moves).
+  const account = await accountForInvoice(invoice);
   if (!account) return null;
   const db = createAdminSupabase();
 
@@ -254,15 +298,6 @@ async function onInvoicePaid(invoice: Stripe.Invoice): Promise<string | null> {
     { accountId: account.id }
   );
 
-  // Keep the subscription row fresh (past_due → active after a successful retry, period end moves).
-  if (subscriptionId) {
-    try {
-      await syncSubscriptionById(subscriptionId);
-    } catch (err) {
-      console.error("[stripe/webhook] sync after invoice.paid failed", err);
-    }
-  }
-
   if (firstPaid) {
     await track("subscription_active", { source: "first_invoice_paid", amount_paid_usd: amountPaidUsd }, { accountId: account.id });
     await sendCapiEvent({
@@ -276,6 +311,12 @@ async function onInvoicePaid(invoice: Stripe.Invoice): Promise<string | null> {
       currency: "USD",
       customData: { plan: account.plan ?? undefined, predicted_ltv: getPlan(account.plan).priceMonthlyUsd * 12 },
     });
+  }
+
+  // Referral reward is state-based, not event-based: any paid invoice rewards a still-pending
+  // referral (idempotent on `referrals.status`), so a `referrals` row created after the first
+  // `invoice.paid` (checkout.session.completed arriving last) is still rewarded.
+  if (paid) {
     try {
       await rewardReferral(account.id);
     } catch (err) {
@@ -287,7 +328,7 @@ async function onInvoicePaid(invoice: Stripe.Invoice): Promise<string | null> {
 
 async function onInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<string | null> {
   const subscriptionId = invoiceSubscriptionId(invoice);
-  const account = (await accountBySubscription(subscriptionId)) ?? (await accountByCustomer(idOf(invoice.customer)));
+  const account = await accountForInvoice(invoice);
   if (!account) return null;
   const db = createAdminSupabase();
 
@@ -327,9 +368,13 @@ async function onTrialWillEnd(sub: Stripe.Subscription): Promise<string | null> 
   if (!account) return null;
   const db = createAdminSupabase();
 
-  const { data: subRow } = await db.from("subscriptions").select("paid_now, plan, interval").eq("account_id", accountId).maybeSingle();
+  const { data: subRow } = await db.from("subscriptions").select("paid_now, plan, interval, stripe_subscription_id").eq("account_id", accountId).maybeSingle();
   // A paid-now subscription parked in a Stripe trial window is a paid month, not a trial: no reminder.
   if (subRow?.paid_now) return accountId;
+  // Only the subscription the account runs on, and only while it is actually trialing (Stripe also
+  // replays this event after a plan change / early end).
+  if (subRow && subRow.stripe_subscription_id !== sub.id) return accountId;
+  if (sub.status !== "trialing") return accountId;
 
   const { data: verified } = await db
     .from("numbers")
@@ -341,23 +386,55 @@ async function onTrialWillEnd(sub: Stripe.Subscription): Promise<string | null> 
     .maybeSingle();
 
   const to = await ownerEmail(account);
+  const plan = getPlan(subRow?.plan ?? account.plan);
+  const interval: BillingInterval = subRow?.interval === "year" ? "year" : "month";
 
   if (!verified) {
     // Carriers haven't approved the number yet: the trial never really started. Push trial_end out
-    // (no proration) so nobody is charged for a service whose text-backs aren't on. `onVerified()`
-    // will set the real TRIAL_DAYS clock once the number is approved.
-    const currentEnd = sub.trial_end ? sub.trial_end * 1000 : Date.now();
-    const newEnd = new Date(Math.max(currentEnd, Date.now()) + VERIFICATION_GRACE_DAYS * DAY_MS);
-    const updated = await stripe().subscriptions.update(sub.id, { trial_end: toUnix(newEnd), proration_behavior: "none" });
-    await syncSubscriptionFromStripe(updated, { accountId });
-    await track("trial_extended_pending_verification", { new_trial_end: newEnd.toISOString(), grace_days: VERIFICATION_GRACE_DAYS }, { accountId });
-    if (to) await sendTrialExtendedPendingVerification({ to, businessName: businessName(account), newTrialEndIso: newEnd.toISOString() });
+    // (no proration) so nobody is charged for a service whose text-backs aren't on — at most
+    // MAX_VERIFICATION_GRACE_EXTENSIONS times. `onVerified()` sets the real TRIAL_DAYS clock once
+    // the number is approved. A customer who already asked to cancel keeps their cancellation:
+    // moving trial_end would move the cancellation date with it.
+    const extensions = Number.parseInt(sub.metadata?.grace_extensions ?? "0", 10) || 0;
+    const customerCancelled = sub.cancel_at_period_end || sub.cancel_at != null;
+
+    if (!customerCancelled && extensions < MAX_VERIFICATION_GRACE_EXTENSIONS) {
+      const currentEnd = sub.trial_end ? sub.trial_end * 1000 : Date.now();
+      const newEnd = new Date(Math.max(currentEnd, Date.now()) + VERIFICATION_GRACE_DAYS * DAY_MS);
+      const updated = await stripe().subscriptions.update(sub.id, {
+        trial_end: toUnix(newEnd),
+        proration_behavior: "none",
+        metadata: { grace_extensions: String(extensions + 1) },
+      });
+      await syncSubscriptionFromStripe(updated, { accountId });
+      await track("trial_extended_pending_verification", { new_trial_end: newEnd.toISOString(), grace_days: VERIFICATION_GRACE_DAYS, extensions: extensions + 1, max: MAX_VERIFICATION_GRACE_EXTENSIONS }, { accountId });
+      if (to) await sendTrialExtendedPendingVerification({ to, businessName: businessName(account), newTrialEndIso: newEnd.toISOString() });
+      return accountId;
+    }
+
+    if (customerCancelled) {
+      await track("trial_ending_unverified", { reason: "customer_cancelled", extensions }, { accountId });
+      return accountId;
+    }
+
+    // Grace used up: the trial ends on schedule and the card is charged; tell the owner and put a
+    // human in the loop (escalate the verification, or extend/refund by hand — RUNBOOK.md).
+    const trialEndIso = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : new Date().toISOString();
+    await track("trial_ending_unverified", { reason: "grace_exhausted", extensions, trial_end: trialEndIso }, { accountId });
+    if (to) {
+      await sendTrialEndingUnverified({ to, businessName: businessName(account), trialEndIso, planName: plan.name, priceUsd: recurringPriceUsd(plan.id, interval), interval });
+    }
+    const admins = env.adminEmails();
+    if (admins.length > 0) {
+      const text = `Account ${accountId} (${businessName(account)}) trial ends ${trialEndIso} with no verified number after ${extensions} grace extension(s); the card will be charged. Escalate the verification (RUNBOOK §1) or extend/refund in Stripe (subscription ${sub.id}).`;
+      await sendEmail({ to: admins, subject: `Trial ending unverified: ${businessName(account)}`, text, html: `<p>${text}</p>`, tags: [{ name: "type", value: "billing_alert" }] }).catch((e) =>
+        console.error("[stripe/webhook] admin notice failed", e)
+      );
+    }
     return accountId;
   }
 
   if (to && sub.trial_end) {
-    const plan = getPlan(subRow?.plan ?? account.plan);
-    const interval: BillingInterval = subRow?.interval === "year" ? "year" : "month";
     await sendTrialEndingReminder({
       to,
       businessName: businessName(account),

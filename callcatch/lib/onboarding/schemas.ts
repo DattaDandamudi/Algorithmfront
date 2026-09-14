@@ -202,6 +202,30 @@ export const forwardingSchema = z.object({
 });
 export type ForwardingData = z.output<typeof forwardingSchema>;
 
+/**
+ * Texting-window bounds. The Terms of Service (§4) and SMS Terms (§5) promise consumers that
+ * automated texts only go out between 8:00 AM and 9:00 PM local time and that owners cannot
+ * disable that; owners may narrow the window but never widen it. Must match QUIET_HOURS_LABEL in
+ * components/marketing/site.ts.
+ */
+export const QUIET_FLOOR_MIN = 8 * 60; // 08:00
+export const QUIET_CEIL_MIN = 21 * 60; // 21:00
+export const QUIET_FLOOR_LABEL = "8:00 AM";
+export const QUIET_CEIL_LABEL = "9:00 PM";
+
+export function timeToMinutes(t: string): number {
+  return Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+}
+
+/** Shared refinement for quiet_start / quiet_end (onboarding step 6 + Settings → Hours). */
+export function refineQuietWindow(a: { quiet_start: string; quiet_end: string }, ctx: z.RefinementCtx): void {
+  const s = timeToMinutes(a.quiet_start);
+  const e = timeToMinutes(a.quiet_end);
+  if (s < QUIET_FLOOR_MIN) ctx.addIssue({ code: "custom", path: ["quiet_start"], message: `Texting can't start before ${QUIET_FLOOR_LABEL} (SMS terms)` });
+  if (e > QUIET_CEIL_MIN) ctx.addIssue({ code: "custom", path: ["quiet_end"], message: `Texting can't run past ${QUIET_CEIL_LABEL} (SMS terms)` });
+  if (e <= s) ctx.addIssue({ code: "custom", path: ["quiet_end"], message: "Stop time must be after start time" });
+}
+
 export const alertsSchema = z
   .object({
     alert_phone: phoneSchema,
@@ -209,7 +233,7 @@ export const alertsSchema = z
     quiet_start: timeSchema,
     quiet_end: timeSchema,
   })
-  .refine((a) => a.quiet_start !== a.quiet_end, { message: "Quiet hours can't start and end at the same time", path: ["quiet_end"] });
+  .superRefine(refineQuietWindow);
 export type AlertsData = z.output<typeof alertsSchema>;
 
 export const verifyAlertPhoneBody = z.discriminatedUnion("action", [

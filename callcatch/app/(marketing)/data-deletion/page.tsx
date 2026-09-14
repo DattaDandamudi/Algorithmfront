@@ -13,13 +13,17 @@ export default function DataDeletionPage() {
   return (
     <LegalPage
       title="Data Deletion Requests"
-      summary="Anyone can ask us to delete their personal information. Business customers can delete their whole account from Settings; callers and leads can email us or reply STOP; Meta users whose lead-form data reached CallCatch through a business's Facebook Page can use the process below. We confirm within 3 business days and complete deletion within 30 days."
+      summary="Anyone can ask us to delete their personal information. Business customers email us from their account address and we delete the whole account; callers and leads can email us or reply STOP; Meta users whose lead-form data reached CallCatch through a business's Facebook Page can use the process below. We confirm within 3 business days and complete deletion within 30 days."
     >
       <H2 id="customers">1. Business customers (account owners and staff)</H2>
+      <P>
+        Account deletion is handled by our team, not by a button in the app: email{" "}
+        <a className="underline" href={`mailto:${PRIVACY_EMAIL}`}>{PRIVACY_EMAIL}</a> from the email address you log in with, with the subject &ldquo;Delete my account&rdquo;. Then:
+      </P>
       <OL
         items={[
-          "Log in and go to Settings → Account → Delete account, or email us from your account email.",
-          "Turn off call forwarding with your carrier first, otherwise your missed calls will ring a disconnected number.",
+          "Turn off call forwarding with your carrier first, otherwise your missed calls will ring a disconnected number. (To stop only the alerts or the weekly report while keeping your account, use Settings → Alerts.)",
+          "We reply within 3 business days to confirm the request came from the account owner.",
           "We cancel any active subscription (no further charges), release your CallCatch number to the carrier after 30 days, and delete your account, staff logins, business profile, calls, messages, voicemails, transcripts, leads and reports within 30 days of the request.",
           "We retain: invoices and payment records for 7 years (tax law); text-message consent and opt-out records for 4 years (carrier and TCPA requirements), in a form that is not linked to your business profile; and security logs for 12 months.",
         ]}
@@ -62,7 +66,7 @@ export default function DataDeletionPage() {
 
       <H2 id="demo">4. Demo line callers</H2>
       <P>
-        If you called our demo line, we keep your number and the demo thread for 30 days, then delete them automatically. To delete sooner, reply STOP to the demo text or email <a className="underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
+        If you called our demo line, we keep your number and the demo thread only so we can show you the owner&apos;s view of the demo. Reply STOP to the demo text or email <a className="underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> and we delete both within 30 days of your request.
       </P>
 
       <H2 id="subprocessors">5. Deletion at our service providers</H2>
@@ -72,7 +76,7 @@ export default function DataDeletionPage() {
 
       <H2 id="verify">6. Verifying your request</H2>
       <P>
-        To protect people&apos;s data we verify requests: account owners must email from the account address or confirm from within the app; callers must email from, or reply from, the phone number or email address on record, or answer a confirmation text we send to that number. We will not delete data based on a request we cannot verify, and we will tell you why.
+        To protect people&apos;s data we verify requests: account owners must email from the address they log in with; callers must email from, or reply from, the phone number or email address on record, or answer a confirmation text we send to that number. We will not delete data based on a request we cannot verify, and we will tell you why.
       </P>
 
       <H2 id="timeline">7. Timeline and confirmation</H2>

@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAccount } from "@/lib/auth/session";
 import { readAttribution } from "@/lib/meta/attribution";
-import { checkoutInputSchema, createCheckoutSession } from "@/lib/billing/checkout";
+import { AlreadySubscribedError, checkoutInputSchema, createCheckoutSession, normalizeReferralCode, TrialNotEligibleError } from "@/lib/billing/checkout";
 import { changePlan, createPortalSession, pauseSubscription, resumeSubscription, pauseMonthsSchema, type PortalFlow } from "@/lib/billing/manage";
 import { REFERRAL_COOKIE } from "@/lib/billing/referrals";
 
@@ -32,10 +32,9 @@ export async function startCheckoutAction(_prev: ActionState, formData: FormData
 
   const store = await cookies();
   const attribution = readAttribution(store);
-  const cookieRef = store.get(REFERRAL_COOKIE)?.value;
-  const ref = parsed.data.ref ?? (cookieRef && /^[a-z0-9]{4,32}$/i.test(cookieRef) ? cookieRef : undefined);
+  const ref = parsed.data.ref ?? normalizeReferralCode(store.get(REFERRAL_COOKIE)?.value);
 
-  let url: string;
+  let redirectTo: string | null = null;
   try {
     const session = await createCheckoutSession({
       accountId: account.id,
@@ -48,12 +47,20 @@ export async function startCheckoutAction(_prev: ActionState, formData: FormData
       attribution: { fbc: attribution.fbc, fbp: attribution.fbp, utm_source: attribution.utm_source, utm_medium: attribution.utm_medium, utm_campaign: attribution.utm_campaign },
       eventId: randomUUID(),
     });
-    url = session.url;
+    redirectTo = session.url;
   } catch (err) {
-    console.error("[billing/checkout] failed", err);
-    return { error: message(err) };
+    if (err instanceof AlreadySubscribedError) {
+      // Plan changes / restarts happen on /billing (changePlan, portal); never a second subscription.
+      redirectTo = `/billing?already_subscribed=1&plan=${parsed.data.plan}`;
+    } else if (err instanceof TrialNotEligibleError) {
+      redirectTo = `/billing/checkout?plan=${parsed.data.plan}&interval=${parsed.data.interval}&path=paynow&trial_used=1`;
+    } else {
+      console.error("[billing/checkout] failed", err);
+      return { error: message(err) };
+    }
   }
-  redirect(url);
+  // redirect() throws; keep it outside the try/catch.
+  redirect(redirectTo);
 }
 
 const portalFlowSchema = z.enum(["home", "cancel", "payment_method", "update_plan"]).default("home");

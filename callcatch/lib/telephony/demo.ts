@@ -9,16 +9,14 @@ import type { NumberRow } from "@/lib/db/types";
 import { env } from "@/lib/env";
 import { track } from "@/lib/events";
 import { sendCapiEvent } from "@/lib/meta/capi";
-import { DEMO_PROFILE } from "@/lib/ai/prompts";
 import { sendFirstTextback } from "@/lib/ai/engine";
 import { findOrCreateContact } from "@/lib/telephony/consent";
 import { normalizePhone } from "@/lib/telephony/client";
 import { sayAndHangup } from "@/lib/telephony/twiml";
 
-export const DEMO_GREETING = [
-  `Hi, you've reached ${DEMO_PROFILE.businessName}. Sorry we missed your call.`,
-  "Watch your phone — you'll get a text from us in a few seconds. That's CallCatch working for you. Goodbye.",
-];
+/** Leads with CallCatch (the verified owner of the demo number); the fictional business only appears in the role-play text. */
+import { DEMO_GREETING } from "@/lib/telephony/demoCopy";
+export { DEMO_GREETING };
 
 export function demoCallTwiml(): string {
   return sayAndHangup(DEMO_GREETING);

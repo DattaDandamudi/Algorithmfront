@@ -18,6 +18,12 @@ export type QuietHoursAccount = {
 export const DEFAULT_TIMEZONE = "America/Chicago";
 const DEFAULT_START_MINUTES = 8 * 60; // 08:00
 const DEFAULT_END_MINUTES = 21 * 60; // 21:00
+/**
+ * Replies (owner or AI) within this many minutes of a customer text bypass quiet hours: the
+ * customer is awake and asked (COMPLIANCE.md §4, Settings copy, /sms-terms §5). Unsolicited
+ * sends never qualify because they have no recent inbound row.
+ */
+export const INBOUND_REPLY_GRACE_MINUTES = 15;
 
 /** Returns a valid IANA timezone, falling back to the default when missing/invalid. */
 export function safeTimeZone(tz: string | null | undefined): string {
@@ -96,10 +102,12 @@ export function parseTimeOfDay(value: string | null | undefined, fallbackMinutes
 }
 
 export function quietWindow(account: QuietHoursAccount): { startMinutes: number; endMinutes: number } {
-  return {
-    startMinutes: parseTimeOfDay(account.quiet_start, DEFAULT_START_MINUTES),
-    endMinutes: parseTimeOfDay(account.quiet_end, DEFAULT_END_MINUTES),
-  };
+  // Belt and braces: owners may narrow the 8 AM - 9 PM window but never widen it (ToS), and an
+  // inverted/legacy row falls back to the defaults instead of an overnight window.
+  const start = Math.max(DEFAULT_START_MINUTES, parseTimeOfDay(account.quiet_start, DEFAULT_START_MINUTES));
+  const end = Math.min(DEFAULT_END_MINUTES, parseTimeOfDay(account.quiet_end, DEFAULT_END_MINUTES));
+  if (end <= start) return { startMinutes: DEFAULT_START_MINUTES, endMinutes: DEFAULT_END_MINUTES };
+  return { startMinutes: start, endMinutes: end };
 }
 
 /**

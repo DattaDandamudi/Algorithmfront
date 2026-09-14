@@ -12,12 +12,13 @@ import { redirect } from "next/navigation";
 import type { z } from "zod";
 import type { AccountRow, Json, TablesUpdate } from "@/lib/db/types";
 import type { Db } from "@/lib/db/client";
+import { getBillingGate } from "@/lib/billing/status";
 import { env } from "@/lib/env";
 import { track } from "@/lib/events";
 import { readAttribution } from "@/lib/meta/attribution";
 import { sendCapiEvent } from "@/lib/meta/capi";
-import { shortCode } from "@/lib/utils";
 import { loadCustomerNumber, patchAiProfile, requireMemberAccount, type MemberContext } from "@/lib/onboarding/account";
+import { ensureLeadSources } from "@/lib/onboarding/lead-sources";
 import {
   aiProfileSchema,
   alertsSchema,
@@ -35,7 +36,7 @@ import { submitVerification } from "@/lib/onboarding/submit-verification";
 
 export type StepResult = { ok: true; completedStep: number; number?: WizardNumber | null } | { ok: false; error?: string; fieldErrors?: Record<string, string> };
 
-export type FinishResult = { ok: false; error: string; code: "unauthorized" | "incomplete" | "no_number" | "alert_phone" };
+export type FinishResult = { ok: false; error: string; code: "unauthorized" | "incomplete" | "no_number" | "alert_phone" | "no_subscription" };
 
 async function guard(): Promise<{ ok: true; ctx: MemberContext } | { ok: false; result: StepResult }> {
   const auth = await requireMemberAccount();
@@ -204,24 +205,14 @@ export async function saveAlerts(input: { alert_phone: string; alert_email: stri
   }
 }
 
-/** Creates the per-account lead intake sources module c consumes (idempotent). */
-async function ensureLeadSources(db: Db, account: AccountRow): Promise<void> {
-  const { data: existing } = await db.from("lead_sources").select("type").eq("account_id", account.id);
-  const have = new Set((existing ?? []).map((r) => r.type));
-  const rows: Array<{ account_id: string; type: string; inbound_email?: string; webhook_secret?: string; enabled: boolean }> = [];
-  const domain = env.get("LEADS_INBOUND_DOMAIN", "leads.callcatch.co")!;
-  if (!have.has("resend_inbox")) rows.push({ account_id: account.id, type: "resend_inbox", inbound_email: `acct-${account.referral_code}@${domain}`, enabled: true });
-  if (!have.has("webhook")) rows.push({ account_id: account.id, type: "webhook", webhook_secret: `cc_${shortCode(12)}${randomUUID().replace(/-/g, "").slice(0, 16)}`, enabled: true });
-  if (rows.length) {
-    const { error } = await db.from("lead_sources").insert(rows);
-    if (error) console.error("[onboarding/finish] lead_sources insert failed", error.message);
-  }
-}
-
 /**
  * Finish: submit carrier verification, flip the account to pending_verification, fire analytics,
  * then redirect to the dashboard. Verification submission failures don't block finishing —
  * the number stays `not_submitted` and can be re-submitted from the dashboard/admin.
+ *
+ * Billing gate: an account only leaves `onboarding` (and only gets a carrier registration that will
+ * switch on metered SMS + AI) with an entitled subscription — trialing / active / past_due. Without
+ * one the wizard sends the owner to /billing/checkout instead.
  */
 export async function finishOnboarding(): Promise<FinishResult> {
   const auth = await requireMemberAccount();
@@ -238,7 +229,13 @@ export async function finishOnboarding(): Promise<FinishResult> {
   const number = await loadCustomerNumber(db, account.id);
   if (!number) return { ok: false, error: "Your CallCatch number hasn't been provisioned yet (step 2).", code: "no_number" };
 
-  await ensureLeadSources(db, account);
+  const gate = await getBillingGate(account.id, db);
+  if (!gate.allowed) {
+    await track("onboarding_finish_blocked", { reason: gate.reason, subscription_status: gate.subscription?.status ?? null }, { accountId: account.id, userId: user.id });
+    return { ok: false, error: "Set up billing before going live — complete checkout under Billing, then press Finish again.", code: "no_subscription" };
+  }
+
+  await ensureLeadSources(db, account.id);
 
   const submission = await submitVerification(account, user);
   if (!submission.ok) {

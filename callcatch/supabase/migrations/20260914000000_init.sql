@@ -271,7 +271,7 @@ create table if not exists public.alerts (
   channel text not null check (channel in ('sms', 'email', 'voice')),
   sent_at timestamptz,
   twilio_sid text,
-  status text not null default 'queued' check (status in ('queued', 'sent', 'delivered', 'failed')),
+  status text not null default 'queued' check (status in ('queued', 'sending', 'sent', 'delivered', 'failed', 'received')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -523,17 +523,39 @@ alter table public.weekly_reports      enable row level security;
 alter table public.referrals           enable row level security;
 alter table public.admin_notes         enable row level security;
 
--- accounts: members can read and update; rows are created by the signup trigger only
+-- -----------------------------------------------------------------------------
+-- Writer model (enforced here, not just by convention):
+--
+--   * MEMBER-WRITABLE (signed-in members of the account, through the anon key + RLS):
+--       contacts, conversations, messages, calls, leads  -> select / insert / update
+--       leads, contacts                                   -> delete (clean-up of own data)
+--       events                                            -> insert (own account, own user_id)
+--     These are the tables the dashboard's inbox / leads Server Functions write with the
+--     user-scoped client.
+--
+--   * SERVICE-ROLE ONLY (webhooks, crons, provisioning, onboarding + settings Server Functions,
+--     which all check membership first and then write with the service-role client):
+--       accounts, account_members, numbers, subscriptions, usage_monthly, verification_events,
+--       alerts, lead_sources, weekly_reports, referrals, admin_notes, rate_limits
+--     Members can SELECT their own rows on these (except admin_notes / rate_limits) but never
+--     INSERT / UPDATE / DELETE them. That is what keeps accounts.plan / accounts.status /
+--     alert_phone_verified / numbers.sms_enabled / usage_monthly.overage_reported /
+--     subscriptions.* / lead_sources.meta_page_id out of reach of the browser: with the public
+--     anon key and their own JWT a member could otherwise PATCH those columns over PostgREST.
+--
+--   Policies alone are not enough on hosted Supabase (ALTER DEFAULT PRIVILEGES grants ALL to
+--   `authenticated` at table creation), so the grants block at the bottom of this file also
+--   REVOKEs the write privileges explicitly. Keep both in sync when adding a table.
+-- -----------------------------------------------------------------------------
+
+-- accounts: members can read; rows are created by the signup trigger and written by the
+-- service role only (onboarding / settings Server Functions verify membership first).
 drop policy if exists "accounts_select_member" on public.accounts;
 create policy "accounts_select_member" on public.accounts
   for select to authenticated
   using (public.is_account_member(id));
 
 drop policy if exists "accounts_update_member" on public.accounts;
-create policy "accounts_update_member" on public.accounts
-  for update to authenticated
-  using (public.is_account_member(id))
-  with check (public.is_account_member(id));
 
 -- account_members: a user sees their own memberships and their teammates
 drop policy if exists "account_members_select_own" on public.account_members;
@@ -546,6 +568,7 @@ do $$
 declare
   t text;
 begin
+  -- SELECT for every account-scoped table a member may look at.
   foreach t in array array[
     'numbers', 'contacts', 'conversations', 'messages', 'calls', 'leads', 'alerts',
     'subscriptions', 'usage_monthly', 'verification_events', 'lead_sources', 'weekly_reports'
@@ -556,12 +579,19 @@ begin
       'create policy %I on public.%I for select to authenticated using (public.is_account_member(account_id))',
       t || '_select_member', t
     );
+    -- Drop any member write policies from earlier revisions of this file (re-run safety);
+    -- the writable set below re-creates the ones that should exist.
     execute format('drop policy if exists %I on public.%I', t || '_insert_member', t);
+    execute format('drop policy if exists %I on public.%I', t || '_update_member', t);
+  end loop;
+
+  -- INSERT / UPDATE only for the conversation data the dashboard writes as the user.
+  foreach t in array array['contacts', 'conversations', 'messages', 'calls', 'leads']
+  loop
     execute format(
       'create policy %I on public.%I for insert to authenticated with check (public.is_account_member(account_id))',
       t || '_insert_member', t
     );
-    execute format('drop policy if exists %I on public.%I', t || '_update_member', t);
     execute format(
       'create policy %I on public.%I for update to authenticated using (public.is_account_member(account_id)) with check (public.is_account_member(account_id))',
       t || '_update_member', t
@@ -630,8 +660,82 @@ end;
 $$;
 
 -- =============================================================================
--- Grants (Supabase default privileges normally cover these; explicit for local Postgres)
+-- Rate limits: sliding-window counters for code sends / test calls, keyed by
+-- account, destination number and a global bucket. Service role only (no policies):
+-- members must not be able to reset their own limiter (it used to live in
+-- accounts.ai_profile, which was member-writable).
+-- =============================================================================
+create table if not exists public.rate_limits (
+  key        text primary key,
+  hits       timestamptz[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+alter table public.rate_limits enable row level security;
+
+-- Atomic "count a hit unless the window is full". Returns allowed=false with the seconds until
+-- the oldest hit in the window expires. Row-locked so concurrent requests cannot both pass.
+create or replace function public.rate_limit_hit(p_key text, p_max integer, p_window_seconds integer)
+returns table (allowed boolean, retry_after_seconds integer, hits integer)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  cutoff timestamptz := now() - make_interval(secs => p_window_seconds);
+  kept   timestamptz[];
+  n      integer;
+begin
+  insert into public.rate_limits (key, hits) values (p_key, '{}')
+  on conflict (key) do nothing;
+
+  select coalesce(array(select h from unnest(r.hits) as h where h > cutoff order by h), '{}')
+    into kept
+  from public.rate_limits r
+  where r.key = p_key
+  for update;
+
+  n := coalesce(array_length(kept, 1), 0);
+  if n >= p_max then
+    update public.rate_limits set hits = kept, updated_at = now() where key = p_key;
+    return query select
+      false,
+      greatest(1, ceil(extract(epoch from (kept[1] + make_interval(secs => p_window_seconds) - now())))::integer),
+      n;
+    return;
+  end if;
+
+  kept := kept || now();
+  update public.rate_limits set hits = kept, updated_at = now() where key = p_key;
+  return query select true, 0, n + 1;
+end;
+$$;
+
+revoke all on function public.rate_limit_hit(text, integer, integer) from public;
+grant execute on function public.rate_limit_hit(text, integer, integer) to service_role;
+
+-- =============================================================================
+-- Grants. Hosted Supabase's default privileges grant ALL on new tables to anon / authenticated,
+-- so the writer model above is enforced with explicit GRANT + REVOKE, not just policies.
 -- =============================================================================
 grant usage on schema public to anon, authenticated, service_role;
-grant all on all tables in schema public to authenticated, service_role;
-grant all on all sequences in schema public to authenticated, service_role;
+
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+
+-- Members: read their own rows everywhere RLS allows it...
+grant select on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+-- ...and write only the conversation data the dashboard edits as the user.
+grant insert, update on public.contacts, public.conversations, public.messages, public.calls, public.leads to authenticated;
+grant delete on public.leads, public.contacts to authenticated;
+grant insert on public.events to authenticated;
+
+-- Everything else is service-role only (explicit, so default privileges cannot re-open it).
+revoke insert, update, delete on
+  public.accounts, public.account_members, public.numbers, public.subscriptions, public.usage_monthly,
+  public.verification_events, public.alerts, public.weekly_reports, public.lead_sources,
+  public.referrals, public.admin_notes
+from authenticated;
+revoke update, delete on public.events from authenticated;
+revoke all on public.rate_limits from authenticated, anon;
+revoke all on public.admin_notes from anon;

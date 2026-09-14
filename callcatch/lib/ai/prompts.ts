@@ -7,7 +7,7 @@
  */
 import type { AccountRow, Json, LeadRow } from "@/lib/db/types";
 import { env } from "@/lib/env";
-import { STOP_DISCLOSURE } from "@/lib/telephony/consent";
+import { AI_DISCLOSURE, hasAiDisclosure, hasStopDisclosure, STOP_DISCLOSURE } from "@/lib/telephony/consent";
 
 export type Trade = "hvac" | "plumbing" | "electrical" | "other";
 export type Tone = "friendly" | "professional" | "plain";
@@ -189,7 +189,14 @@ export function profileFromAccount(account: AccountRow): BusinessProfile {
   };
 }
 
-/** Fixed business used by the public demo line (/api/demo/call). */
+/**
+ * How the public demo line identifies itself to the person texting (first message, keyword
+ * replies, greeting). The fictional business below is only the role-play context: every demo
+ * message must be recognisable as CallCatch, the verified sender of TWILIO_DEMO_NUMBER.
+ */
+export const DEMO_SENDER_NAME = "CallCatch demo line";
+
+/** Fixed (fictional) business the demo assistant role-plays as (/api/demo/call). */
 export const DEMO_PROFILE: BusinessProfile = {
   businessName: "Summit Air Heating & Cooling",
   trade: "hvac",
@@ -233,11 +240,12 @@ export function buildBusinessProfileBlock(p: BusinessProfile): string {
     `- ${TONE_GUIDE[p.tone]}`,
     "",
     "HARD RULES (the software enforces these too):",
+    `- You are an automated assistant. Never claim or imply you are a person. If asked whether this is a bot, an AI or a real person, answer plainly: "Yes - I'm ${p.businessName}'s automated assistant; the owner will call you."`,
     "- Never quote a price, estimate, hourly rate or fee. If asked, say the owner will go over pricing when they call" +
       (priceLines.length ? ", except you may repeat the published starting prices below verbatim." : "."),
     "- Never promise an arrival time, a same-day slot or a specific technician. Say the owner will confirm timing.",
     "- Never discuss competitors, warranties, refunds or legal matters.",
-    "- If the customer says STOP or asks not to be texted, say okay and stop.",
+    "- If the customer says STOP or asks not to be texted in any wording, reply with one short okay and nothing else; the system records the opt-out and no further texts are sent.",
     "- If they mention a gas smell, sparks, smoke, flooding, sewage, a CO alarm, or no heat with a baby or elderly person, treat it as an emergency: call the escalate_to_owner tool with the reason and keep the reply to safety and 'the owner is being called now'.",
     `- ${trade.emergencyNotes}`,
     "",
@@ -259,7 +267,7 @@ export function buildBusinessProfileBlock(p: BusinessProfile): string {
     "Common issues for this trade: " + trade.commonIssues.join("; ") + ".",
     "Useful clarifiers: " + trade.clarifiers.join(" ") ,
     p.isDemo
-      ? "\nDEMO MODE: this is CallCatch's public demo line. The person texting is a contractor trying the product, playing the role of a homeowner. Qualify them exactly as you would a real homeowner; do not mention that this is a demo."
+      ? `\nDEMO MODE: this is CallCatch's public demo line (the first text already said so). The person texting is a contractor trying the product, playing the role of a homeowner. Role-play as the front desk of the fictional business above and qualify them exactly as you would a real homeowner. Stay in the role-play unless asked: if they ask whether this is a demo, a bot, or who is texting, say plainly that this is the CallCatch demo assistant playing ${p.businessName}, then continue.`
       : null,
   ]
     .filter((line): line is string => line !== null)
@@ -289,7 +297,7 @@ export function buildDynamicBlock(ctx: DynamicContext): string {
   if (lead?.urgency) known.push(`urgency: ${lead.urgency}`);
   if (lead?.preferred_window) known.push(`preferred window: ${lead.preferred_window}`);
   return [
-    `Current local time: ${ctx.localTimeLabel}. Texting window: ${ctx.quietHoursLabel} (${ctx.withinHours ? "currently inside the window" : "currently outside the window; the customer's reply arrived anyway"}).`,
+    `Current local time: ${ctx.localTimeLabel}. Texting window: ${ctx.quietHoursLabel} (${ctx.withinHours ? "currently inside the window" : "currently outside the window; the customer texted anyway, so your reply to them goes out now"}).`,
     `This is assistant turn ${ctx.turnCount + 1} of ${ctx.maxTurns}. ${ctx.maxTurns - ctx.turnCount <= 2 ? "Wrap up: get the last missing detail and tell them the owner will call." : ""}`,
     known.length ? `Already known (do not ask again): ${known.join("; ")}.` : "Nothing is known yet beyond their phone number.",
     lead?.status === "qualified" ? "The lead is already marked qualified." : null,
@@ -311,22 +319,42 @@ function firstName(name: string | null | undefined): string | null {
   return f && f.length <= 20 ? f : null;
 }
 
-/** First text-back after a missed call (spec §6.5 / task): business name + trade-specific question + STOP. */
+/**
+ * Every first outbound message identifies the business, says it is an automated assistant and
+ * carries "Reply STOP to opt out" (spec §4.4, /sms-terms §2 and §9, COMPLIANCE.md §3.1).
+ * Templates below are written to pass as-is; this normalises model replies and any other
+ * text that ends up as a thread's first outbound (emergency template, booking-link fallback).
+ */
+export function ensureFirstOutboundDisclosure(text: string, p: BusinessProfile): string {
+  let t = text.trim();
+  if (!hasAiDisclosure(t)) t = `This is ${AI_DISCLOSURE} ${p.businessName}. ${t}`;
+  else if (!t.toLowerCase().includes(p.businessName.toLowerCase())) t = `${p.businessName}: ${t}`;
+  if (!hasStopDisclosure(t)) t = `${t} ${STOP_DISCLOSURE}`;
+  return t;
+}
+
+/** "Hi Dana, this is the automated assistant for Acme." — the opener shared by the first-message templates. */
+function firstMessageOpener(p: BusinessProfile, contactName?: string | null): string {
+  const name = firstName(contactName);
+  return name ? `Hi ${name}, this is ${AI_DISCLOSURE} ${p.businessName}.` : `Hi, this is ${AI_DISCLOSURE} ${p.businessName}.`;
+}
+
+/** First text-back after a missed call (spec §6.5 / task): business name + automated-assistant disclosure + trade-specific question + STOP. */
 export function firstTextbackTemplate(p: BusinessProfile, contactName?: string | null): string {
   const trade = TRADES[p.trade];
-  const hi = firstName(contactName) ? `Hi ${firstName(contactName)}, this is ${p.businessName}.` : `Hi, this is ${p.businessName}.`;
   const ask =
     p.tone === "plain"
       ? `what's going on with your ${trade.thing}?`
       : p.tone === "professional"
         ? `how can we help with your ${trade.thing} today?`
         : `what's going on with your ${trade.thing}?`;
-  return `${hi} Sorry we missed your call — ${ask} ${STOP_DISCLOSURE}`;
+  // Plain hyphen (not an em dash) keeps the message in GSM-7: one 160-char segment instead of 70-char UCS-2 segments.
+  return `${firstMessageOpener(p, contactName)} Sorry we missed your call - ${ask} ${STOP_DISCLOSURE}`;
 }
 
 /** A caller with an open thread called again: short re-engagement instead of the full first message. */
 export function repeatTextbackTemplate(p: BusinessProfile): string {
-  return `${p.businessName}: Sorry we missed you again — reply here with what you need and we'll get right on it. ${STOP_DISCLOSURE}`;
+  return `${p.businessName}'s automated assistant: Sorry we missed you again - reply here with what you need and we'll get right on it. ${STOP_DISCLOSURE}`;
 }
 
 /** First message to a web-form / Meta lead (Pro): acknowledge the form and ask the next missing detail. */
@@ -335,8 +363,6 @@ export function leadFormFirstMessage(
   lead: { name?: string | null; issue?: string | null; zip?: string | null; address?: string | null }
 ): string {
   const trade = TRADES[p.trade];
-  const name = firstName(lead.name);
-  const hi = name ? `Hi ${name}, this is ${p.businessName}.` : `Hi, this is ${p.businessName}.`;
   const issue = lead.issue ? lead.issue.replace(/\s+/g, " ").trim().slice(0, 80) : null;
   const ack = issue ? `Thanks for reaching out about "${issue}".` : `Thanks for reaching out.`;
   const next =
@@ -344,33 +370,50 @@ export function leadFormFirstMessage(
       ? `What's going on with your ${trade.thing}?`
       : !(lead.zip || lead.address)
         ? "What's the service address or ZIP?"
-        : "How soon do you need someone — today, this week, or flexible?";
-  return `${hi} ${ack} ${next} ${STOP_DISCLOSURE}`;
+        : "How soon do you need someone - today, this week, or flexible?";
+  return `${firstMessageOpener(p, lead.name)} ${ack} ${next} ${STOP_DISCLOSURE}`;
 }
 
 /** 20-minute nudge when the first text-back got no reply (max 1). */
 export function nudgeTemplate(p: BusinessProfile): string {
-  return `${p.businessName} here — still happy to help. Reply with a few words about what's going on and we'll get you scheduled. ${STOP_DISCLOSURE}`;
+  return `${p.businessName} here - still happy to help. Reply with a few words about what's going on and we'll get you scheduled. ${STOP_DISCLOSURE}`;
 }
 
 /** Sent after the 8th AI turn, and when the model is unavailable. */
 export function closingTemplate(p: BusinessProfile): string {
-  return `Thanks — I've got everything for ${p.businessName}. The owner will call you shortly to get this scheduled.`;
+  return `Thanks - I've got everything for ${p.businessName}. The owner will call you shortly to get this scheduled.`;
 }
 
 /** Refusal / API failure fallback (RUNBOOK §11). */
 export function safeTemplate(p: BusinessProfile): string {
-  return `Thanks — got it. ${p.businessName} will call you shortly. ${STOP_DISCLOSURE}`;
+  return `Thanks - got it. ${p.businessName} will call you shortly. ${STOP_DISCLOSURE}`;
 }
 
-/** Emergency reply: safety line + "owner is being called now". No diagnosis, no ETA. */
+/**
+ * Emergency reply: safety line + "owner is being called now". No diagnosis, no ETA. Always sent
+ * immediately (quiet hours do not apply; see sendCustomerMessage). When it is the thread's first
+ * outbound the engine wraps it with `ensureFirstOutboundDisclosure`.
+ */
 export function emergencyTemplate(p: BusinessProfile, safety: string): string {
   return `${safety} We're calling ${p.businessName}'s ${p.hasOnCall ? "on-call tech" : "owner"} right now so they can reach you at this number.`;
 }
 
+/**
+ * Demo line: first text. Identifies CallCatch (the verified sender) and the automated assistant,
+ * then sets up the role-play. Wording is mirrored on /demo, the landing page and /sms-terms §3.
+ */
+export function demoFirstTextbackTemplate(): string {
+  return `Hi! This is the CallCatch demo line - the automated assistant your customers would get. Imagine we're ${DEMO_PROFILE.businessName} and you're a homeowner who just called: what's going on at the house? ${STOP_DISCLOSURE}`;
+}
+
+/** Demo line: the caller dialed again while a demo thread is open. */
+export function demoRepeatTextbackTemplate(): string {
+  return `CallCatch demo line: Sorry we missed you again - reply here the way a homeowner would and the assistant keeps going. ${STOP_DISCLOSURE}`;
+}
+
 /** Demo line: final message with the signup link. */
 export function demoClosingTemplate(): string {
-  return `That's the CallCatch demo — your callers get exactly this, in under 10 seconds, from your own number. Start your 14-day trial: ${env.appUrl()}/signup`;
+  return `That's the CallCatch demo - your callers get exactly this, in under 10 seconds, from your own number. Start your 14-day trial: ${env.appUrl()}/signup`;
 }
 
 /** Owner-facing one-liner of what the lead needs (used in alerts). */
@@ -437,17 +480,16 @@ export function sanitizeReply(raw: string, opts: SanitizeOptions): string {
     text = `${text} Book here: ${opts.bookingUrlToInclude}`;
   }
 
-  if (opts.isFirstOutbound) {
-    if (!text.toLowerCase().includes(opts.profile.businessName.toLowerCase())) text = `${opts.profile.businessName}: ${text}`;
-    if (!/\bstop\b/i.test(text)) text = `${text} ${STOP_DISCLOSURE}`;
-  }
+  if (opts.isFirstOutbound) text = ensureFirstOutboundDisclosure(text, opts.profile);
 
   const cap = opts.isFirstOutbound ? 460 : 420;
   if (text.length > cap) {
-    const cut = text.slice(0, cap);
+    // Leave room to re-append the opt-out line so the first message never exceeds the cap.
+    const budget = opts.isFirstOutbound ? cap - STOP_DISCLOSURE.length - 1 : cap;
+    const cut = text.slice(0, budget);
     const lastStop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
     text = (lastStop > 120 ? cut.slice(0, lastStop + 1) : cut).trim();
-    if (opts.isFirstOutbound && !/\bstop\b/i.test(text)) text = `${text} ${STOP_DISCLOSURE}`;
+    if (opts.isFirstOutbound && !hasStopDisclosure(text)) text = `${text} ${STOP_DISCLOSURE}`;
   }
   return text;
 }

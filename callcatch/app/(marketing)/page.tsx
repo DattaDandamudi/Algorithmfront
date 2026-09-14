@@ -1,3 +1,4 @@
+import { demoFirstTextbackTemplate } from "@/lib/ai/prompts";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
@@ -183,7 +184,7 @@ export default function LandingPage() {
                   { kind: "event", text: "You called · we didn't pick up" },
                   {
                     kind: "out",
-                    text: "Hi! This is the CallCatch demo line — the automated assistant just like your customers would get. Pretend you're a homeowner: what's going on at the house? Reply STOP to opt out.",
+                    text: demoFirstTextbackTemplate(),
                     time: "9 seconds later",
                   },
                   { kind: "in", text: "Furnace is making a grinding noise and shuts off" },

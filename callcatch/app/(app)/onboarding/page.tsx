@@ -1,13 +1,22 @@
 import CheckoutPixel from "@/components/onboarding/CheckoutPixel";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, LifeBuoy } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
 import { requireUser } from "@/lib/auth/session";
-import { createAdminSupabase } from "@/lib/db/client";
+import { getBillingGate, type BillingGate } from "@/lib/billing/status";
+import { idOf, stripe } from "@/lib/billing/stripe";
+import { syncSubscriptionById } from "@/lib/billing/sync";
+import { createAdminSupabase, type Db } from "@/lib/db/client";
+import type { AccountRow } from "@/lib/db/types";
 import { loadCustomerNumber, userFullName } from "@/lib/onboarding/account";
 import { buildWizardInitialState, currentStepFor } from "@/lib/onboarding/state";
 import { Logo } from "@/components/marketing/Logo";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
+import { signOutAction } from "@/components/dashboard/shell-actions";
+import { SUPPORT_EMAIL } from "@/components/marketing/site";
+import { BillingPending } from "./BillingPending";
 
 export const metadata: Metadata = { title: "Set up CallCatch", robots: { index: false } };
 
@@ -15,30 +24,113 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
+/** Checkout URL that keeps the plan the visitor picked at signup (stored in auth metadata by the signup action). */
+function checkoutHrefFor(account: AccountRow, user: User): string {
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const plan = account.plan === "pro" || meta.signup_plan === "pro" ? "pro" : "starter";
+  const interval = meta.signup_interval === "year" ? "year" : "month";
+  const path = meta.signup_path === "paynow" ? "paynow" : "trial";
+  return `/billing/checkout?plan=${plan}&interval=${interval}&path=${path}`;
+}
+
+/** Subscription states an `onboarding` account can only leave by checking out again (vs. paused / unpaid, handled under /billing). */
+const RECHECKOUT_STATUSES = new Set(["canceled", "incomplete", "incomplete_expired"]);
+
+/**
+ * Stripe sends the customer back here before its webhook necessarily ran. When we hold a session id
+ * that belongs to this account, mirror the subscription ourselves (same idempotent upsert the webhook
+ * uses) so the wizard opens without a wait. Returns true when a row exists afterwards.
+ */
+async function syncFromCheckoutSession(sessionId: string, accountId: string): Promise<boolean> {
+  try {
+    const session = await stripe().checkout.sessions.retrieve(sessionId);
+    const owner = session.client_reference_id ?? session.metadata?.account_id ?? null;
+    if (owner !== accountId || session.mode !== "subscription") return false;
+    const subscriptionId = idOf(session.subscription);
+    if (!subscriptionId) return false;
+    const meta = session.metadata ?? {};
+    const result = await syncSubscriptionById(subscriptionId, {
+      accountId,
+      paidNow: meta.path === "paynow",
+      setupFeePaid: meta.setup_fee === "1" && session.payment_status === "paid",
+    });
+    return result !== null;
+  } catch (err) {
+    console.error("[onboarding] checkout session sync failed", { accountId, message: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
+}
+
+function NoAccount({ email }: { email: string | null | undefined }) {
+  return (
+    <main className="mx-auto w-full max-w-md px-4 py-16 text-center sm:px-6">
+      <div className="rounded-2xl border border-brand-100 bg-white p-8 shadow-sm">
+        <LifeBuoy className="mx-auto h-8 w-8 text-accent-500" aria-hidden />
+        <h1 className="mt-4 text-xl font-bold tracking-tight text-brand-900">No CallCatch account for this sign-in</h1>
+        <p className="mt-2 text-sm text-brand-600">
+          {email ? <span className="font-medium text-brand-800">{email}</span> : "This login"} is not attached to a CallCatch account — it may have been deleted at your request, or something went wrong while it was being created.
+        </p>
+        <div className="mt-6 flex flex-col items-center gap-3 text-sm">
+          <Link href="/onboarding" className="rounded-xl bg-brand-900 px-4 py-2 font-semibold text-white hover:bg-brand-800">
+            Try again
+          </Link>
+          <form action={signOutAction}>
+            <button type="submit" className="rounded-xl border border-brand-200 px-4 py-2 font-semibold text-brand-800 hover:bg-brand-50">
+              Sign out and start a new trial
+            </button>
+          </form>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="text-brand-600 underline underline-offset-2 hover:text-brand-900">
+            Contact support
+          </a>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export default async function OnboardingPage(props: PageProps<"/onboarding">) {
   const user = await requireUser();
   const sp = await props.searchParams;
-  const db = createAdminSupabase();
+  const db: Db = createAdminSupabase();
 
   // Membership check via RLS-scoped helper is done in requireMemberAccount for mutations; here we need the full row.
+  // A signed-in user without an account row (deleted at their request, or a cleaned-up test signup) must
+  // get a page they can act on — redirecting to /login would bounce straight back here forever.
   const { data: membership } = await db.from("account_members").select("account_id").eq("user_id", user.id).limit(1).maybeSingle();
-  if (!membership) {
-    // The signup trigger creates the account; if it hasn't landed yet, bounce through login once.
-    redirect("/login?next=%2Fonboarding&error=" + encodeURIComponent("Your account is still being created — sign in again in a moment."));
-  }
-  const { data: account } = await db.from("accounts").select("*").eq("id", membership.account_id).maybeSingle();
-  if (!account) redirect("/login");
+  const { data: account } = membership ? await db.from("accounts").select("*").eq("id", membership.account_id).maybeSingle() : { data: null };
+  if (!account) return <NoAccount email={user.email} />;
   if (account.status === "cancelled") redirect("/billing");
+
+  const checkoutSuccess = first(sp.checkout) === "success";
+  const checkoutSessionId = first(sp.session_id) ?? "";
+  const checkoutHref = checkoutHrefFor(account, user);
+
+  // Billing gate: the wizard buys a Twilio number and submits carrier verification, so it is only
+  // reachable with an entitled subscription (spec §3: signup → Checkout → onboarding).
+  let gate: BillingGate = await getBillingGate(account.id, db);
+  if (!gate.allowed && account.status === "onboarding") {
+    if (checkoutSuccess && gate.reason === "no_subscription") {
+      // Race with the Stripe webhook: try to mirror the session ourselves, else wait for the webhook.
+      if (checkoutSessionId && (await syncFromCheckoutSession(checkoutSessionId, account.id))) {
+        gate = await getBillingGate(account.id, db);
+      }
+      if (!gate.allowed) {
+        return (
+          <main className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6">
+            <BillingPending checkoutHref={checkoutHref} />
+          </main>
+        );
+      }
+    } else if (gate.reason === "no_subscription" || RECHECKOUT_STATUSES.has(gate.subscription?.status ?? "")) {
+      redirect(checkoutHref);
+    } else {
+      redirect("/billing");
+    }
+  }
 
   const number = await loadCustomerNumber(db, account.id);
   const initial = buildWizardInitialState(account, number, { email: user.email ?? "", fullName: userFullName(user) });
-  const checkoutSuccess = first(sp.checkout) === "success";
-  const checkoutSessionId = first(sp.session_id) ?? "";
-  let checkoutEvent: "StartTrial" | "Purchase" = "StartTrial";
-  if (checkoutSuccess && checkoutSessionId) {
-    const { data: sub } = await db.from("subscriptions").select("paid_now").eq("account_id", account.id).maybeSingle();
-    if (sub?.paid_now) checkoutEvent = "Purchase";
-  }
+  const checkoutEvent: "StartTrial" | "Purchase" = checkoutSuccess && checkoutSessionId && gate.subscription?.paid_now ? "Purchase" : "StartTrial";
   const requestedStep = Number(first(sp.step));
   const startStep = Number.isInteger(requestedStep) && requestedStep >= 1 && requestedStep <= initial.completedStep + 1 ? requestedStep : currentStepFor(initial.completedStep);
 

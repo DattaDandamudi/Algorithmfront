@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Alert } from "@/components/ui/Card";
 import { saveForwarding } from "@/app/(app)/onboarding/actions";
 import { CARRIER_INSTRUCTIONS, carrierById, renderDialCode } from "@/lib/onboarding/carriers";
-import { pollForwardingTest, startForwardingTest } from "@/lib/onboarding/client-api";
+import { pollForwardingTest, startForwardingTest, isBillingRequired, BILLING_REQUIRED_MESSAGE } from "@/lib/onboarding/client-api";
 import { formatUsPhone, type Carrier } from "@/lib/onboarding/schemas";
 import { StepShell, Tip } from "./StepShell";
 import type { Patch, WizardState } from "./OnboardingWizard";
@@ -74,7 +74,7 @@ export function StepForwarding({ state, onPatch, onSaved, onBack }: { state: Wiz
       onPatch({ forwardingTest: { attempt_id: res.attemptId, started_at: res.startedAt, seen_at: null } });
     } catch (err) {
       setStatus("error");
-      setTestError(err instanceof Error ? err.message : "Could not place the test call");
+      setTestError(isBillingRequired(err) ? BILLING_REQUIRED_MESSAGE : err instanceof Error ? err.message : "Could not place the test call");
       return;
     }
     stopPolling();

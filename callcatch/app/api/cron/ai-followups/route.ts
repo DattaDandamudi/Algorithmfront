@@ -1,7 +1,11 @@
 /**
  * GET /api/cron/ai-followups — every 5 minutes.
  *  1. Releases queued outbound messages whose quiet-hours window has opened (`messages.send_after`).
- *  2. Sends the single 20-minute nudge after an unanswered first text-back (max 1 nudge; the
+ *     Each row is claimed atomically (queued -> sending) before Twilio is called, so a row that
+ *     an inline send is transmitting at the same moment is skipped, never duplicated.
+ *  2. Sweeps rows stuck in `sending` for 10+ minutes (process died mid-send) to failed /
+ *     `send_state_unknown` — never re-sent, since Twilio may have accepted them.
+ *  3. Sends the single 20-minute nudge after an unanswered first text-back (max 1 nudge; the
  *     3-unanswered-outbound cap is enforced in sendCustomerMessage).
  * Idempotent: queued rows flip to sent/failed; nudges only fire when exactly one outbound and
  * zero inbound messages exist.
@@ -10,7 +14,7 @@ import type { NextRequest } from "next/server";
 import { createAdminSupabase } from "@/lib/db/client";
 import { nudgeTemplate, profileFromAccount } from "@/lib/ai/prompts";
 import { ZERO_USAGE } from "@/lib/ai/cost";
-import { deliverQueuedMessage, isDemoContext, loadConversationContext, sendCustomerMessage } from "@/lib/telephony/outbound";
+import { deliverQueuedMessage, isDemoContext, loadConversationContext, sendCustomerMessage, sweepStuckSending } from "@/lib/telephony/outbound";
 import { authorizeCron, cronError, cronResponse } from "../_lib/cron";
 
 export const runtime = "nodejs";
@@ -24,10 +28,11 @@ export async function GET(request: NextRequest) {
   const denied = authorizeCron(request);
   if (denied) return denied;
   const started = Date.now();
-  const counts = { queued_seen: 0, sent: 0, deferred: 0, dropped: 0, failed: 0, nudge_candidates: 0, nudged: 0, nudge_queued: 0, nudge_skipped: 0 };
+  const counts = { queued_seen: 0, sent: 0, deferred: 0, dropped: 0, failed: 0, swept_sending: 0, nudge_candidates: 0, nudged: 0, nudge_queued: 0, nudge_skipped: 0 };
   const db = createAdminSupabase();
   try {
-    // 1. Queue drain.
+    // 1. Queue drain. Rows inserted in the last few seconds are normally mid-flight in an inline
+    //    send; the atomic claim inside deliverQueuedMessage makes that safe, this just avoids churn.
     const nowIso = new Date().toISOString();
     const queued = await db
       .from("messages")
@@ -35,6 +40,7 @@ export async function GET(request: NextRequest) {
       .eq("status", "queued")
       .eq("direction", "out")
       .or(`send_after.is.null,send_after.lte.${nowIso}`)
+      .lt("created_at", new Date(Date.now() - 30_000).toISOString())
       .order("created_at", { ascending: true })
       .limit(200);
     for (const row of queued.data ?? []) {
@@ -44,7 +50,10 @@ export async function GET(request: NextRequest) {
       counts[r.status]++;
     }
 
-    // 2. Nudges.
+    // 2. Stuck `sending` rows (claimed, then the process died before bookkeeping).
+    counts.swept_sending = await sweepStuckSending(db);
+
+    // 3. Nudges.
     const now = Date.now();
     const oldest = new Date(now - NUDGE_WINDOW_HOURS * 3600_000).toISOString();
     const newest = new Date(now - NUDGE_AFTER_MINUTES * 60_000).toISOString();

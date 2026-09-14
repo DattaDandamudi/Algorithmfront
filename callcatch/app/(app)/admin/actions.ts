@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { isAdminEmail, requireUser } from "@/lib/auth/session";
 import { createAdminSupabase } from "@/lib/db/client";
@@ -57,6 +57,7 @@ export async function addAdminNoteAction(_prev: AdminActionState, formData: Form
     revalidatePath(`/admin/accounts/${parsed.data.accountId}`);
     return { ok: "Note added." };
   } catch (err) {
+    unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : "Could not add the note." };
   }
 }

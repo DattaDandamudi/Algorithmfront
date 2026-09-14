@@ -31,6 +31,16 @@ export function Bubble({ message, businessName, time }: { message: BubbleMessage
   const system = message.author === "system";
   const failed = message.status === "failed";
   const queued = message.status === "queued";
+  const sending = message.status === "sending";
+  const notSent = failed && message.error_code && ["canceled_by_owner", "superseded", "send_state_unknown"].includes(message.error_code);
+  const failedLabel =
+    message.error_code === "canceled_by_owner"
+      ? "Not sent — you replied first"
+      : message.error_code === "superseded"
+        ? "Not sent — the thread moved on"
+        : message.error_code === "send_state_unknown"
+          ? "Delivery unknown (check Twilio)"
+          : `Failed${message.error_code ? ` (${message.error_code})` : ""}`;
 
   if (system) {
     return (
@@ -54,15 +64,20 @@ export function Bubble({ message, businessName, time }: { message: BubbleMessage
                 ? "rounded-br-md bg-brand-700 text-white"
                 : "rounded-br-md bg-brand-900 text-white"
               : "rounded-bl-md border border-brand-100 bg-white text-brand-900",
-            failed && "ring-2 ring-red-300"
+            failed && !notSent && "ring-2 ring-red-300",
+            notSent && "opacity-60"
           )}
         >
           {message.body}
         </div>
-        <span className={cn("flex items-center gap-1 px-1 text-[11px]", failed ? "text-red-600" : "text-brand-400")}>
+        <span className={cn("flex items-center gap-1 px-1 text-[11px]", failed && !notSent ? "text-red-600" : "text-brand-400")}>
           {failed ? (
             <>
-              <AlertTriangle className="h-3 w-3" aria-hidden /> Failed{message.error_code ? ` (${message.error_code})` : ""} · {time}
+              {notSent ? <Clock className="h-3 w-3" aria-hidden /> : <AlertTriangle className="h-3 w-3" aria-hidden />} {failedLabel} · {time}
+            </>
+          ) : sending ? (
+            <>
+              <Clock className="h-3 w-3" aria-hidden /> Sending… · {time}
             </>
           ) : queued ? (
             <>
