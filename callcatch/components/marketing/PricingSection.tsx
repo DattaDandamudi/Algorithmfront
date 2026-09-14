@@ -163,7 +163,35 @@ export function ComparisonTable() {
   return (
     <div className="mt-14">
       <h3 className="text-center text-2xl font-bold text-brand-900">Compare plans</h3>
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-brand-100 bg-white">
+
+      {/* Phone layout: one card per feature (the 3-column table needs ~640px). */}
+      <ul className="mt-6 space-y-3 sm:hidden" aria-label="Feature comparison of Starter and Pro plans">
+        {[
+          ...COMPARISON_ROWS,
+          { label: "Annual (2 months free)", starter: `${usd(PLANS.starter.priceAnnualUsd)}/yr`, pro: `${usd(PLANS.pro.priceAnnualUsd)}/yr` },
+          { label: "Done-for-you setup (optional)", starter: `${usd(SETUP_FEE_USD)} on monthly · waived on annual`, pro: `${usd(SETUP_FEE_USD)} on monthly · waived on annual` },
+        ].map((row) => (
+          <li key={row.label} className="rounded-2xl border border-brand-100 bg-white p-4">
+            <p className="font-semibold text-brand-900">{row.label}</p>
+            <dl className="mt-2 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-brand-500">Starter</dt>
+                <dd className="mt-0.5 text-brand-800">
+                  <CompactValue value={row.starter} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-accent-600">Pro</dt>
+                <dd className="mt-0.5 text-brand-800">
+                  <CompactValue value={row.pro} />
+                </dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-6 hidden overflow-x-auto rounded-2xl border border-brand-100 bg-white sm:block">
         <table className="w-full min-w-[640px] text-left text-sm">
           <caption className="sr-only">Feature comparison of Starter and Pro plans</caption>
           <thead className="bg-brand-50 text-brand-900">
@@ -207,6 +235,17 @@ export function ComparisonTable() {
         </table>
       </div>
     </div>
+  );
+}
+
+function CompactValue({ value }: { value: string | boolean }) {
+  if (typeof value === "string") return <>{value}</>;
+  return value ? (
+    <span className="inline-flex items-center gap-1 text-success-500">
+      <Check className="h-4 w-4" aria-hidden="true" /> Included
+    </span>
+  ) : (
+    <span className="text-brand-400">—</span>
   );
 }
 
