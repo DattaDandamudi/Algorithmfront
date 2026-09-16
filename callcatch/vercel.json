@@ -1,9 +1,32 @@
 {
   "crons": [
-    { "path": "/api/cron/ai-followups", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/verification-poll", "schedule": "*/30 * * * *" },
-    { "path": "/api/cron/weekly-report", "schedule": "0 * * * *" },
-    { "path": "/api/cron/usage-rollup", "schedule": "15 2 * * *" },
-    { "path": "/api/cron/dunning", "schedule": "30 14 * * *" }
+    {
+      "path": "/api/cron/ai-followups",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/verification-poll",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/weekly-report",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/usage-rollup",
+      "schedule": "15 2 * * *"
+    },
+    {
+      "path": "/api/cron/dunning",
+      "schedule": "30 14 * * *"
+    },
+    {
+      "path": "/api/cron/agents",
+      "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/metrics-daily",
+      "schedule": "45 1 * * *"
+    }
   ]
 }

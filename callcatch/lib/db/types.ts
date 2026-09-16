@@ -796,6 +796,319 @@ export type Database = {
           },
         ];
       };
+      agent_memory: {
+        Row: { key: string; role: string; updated_at: string; value: Json };
+        Insert: { key: string; role: string; updated_at?: string; value: Json };
+        Update: { key?: string; role?: string; updated_at?: string; value?: Json };
+        Relationships: [];
+      };
+      agent_runs: {
+        Row: {
+          cost_usd: number;
+          created_at: string;
+          error: string | null;
+          finished_at: string | null;
+          id: string;
+          input: Json;
+          iterations: number;
+          model: string | null;
+          output: Json | null;
+          role: string;
+          started_at: string | null;
+          status: string;
+          summary: string | null;
+          tokens_in: number;
+          tokens_out: number;
+          trigger: string;
+          updated_at: string;
+        };
+        Insert: {
+          cost_usd?: number;
+          created_at?: string;
+          error?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          input?: Json;
+          iterations?: number;
+          model?: string | null;
+          output?: Json | null;
+          role: string;
+          started_at?: string | null;
+          status?: string;
+          summary?: string | null;
+          tokens_in?: number;
+          tokens_out?: number;
+          trigger?: string;
+          updated_at?: string;
+        };
+        Update: {
+          cost_usd?: number;
+          created_at?: string;
+          error?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          input?: Json;
+          iterations?: number;
+          model?: string | null;
+          output?: Json | null;
+          role?: string;
+          started_at?: string | null;
+          status?: string;
+          summary?: string | null;
+          tokens_in?: number;
+          tokens_out?: number;
+          trigger?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      agent_tasks: {
+        Row: {
+          approved_at: string | null;
+          approved_by: string | null;
+          created_at: string;
+          error: string | null;
+          estimated_cost_usd: number;
+          executed_at: string | null;
+          expires_at: string | null;
+          id: string;
+          kind: string;
+          payload: Json;
+          rationale: string | null;
+          requires_approval: boolean;
+          result: Json | null;
+          risk: string;
+          role: string;
+          run_id: string | null;
+          status: string;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          approved_at?: string | null;
+          approved_by?: string | null;
+          created_at?: string;
+          error?: string | null;
+          estimated_cost_usd?: number;
+          executed_at?: string | null;
+          expires_at?: string | null;
+          id?: string;
+          kind: string;
+          payload?: Json;
+          rationale?: string | null;
+          requires_approval?: boolean;
+          result?: Json | null;
+          risk?: string;
+          role: string;
+          run_id?: string | null;
+          status?: string;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          approved_at?: string | null;
+          approved_by?: string | null;
+          created_at?: string;
+          error?: string | null;
+          estimated_cost_usd?: number;
+          executed_at?: string | null;
+          expires_at?: string | null;
+          id?: string;
+          kind?: string;
+          payload?: Json;
+          rationale?: string | null;
+          requires_approval?: boolean;
+          result?: Json | null;
+          risk?: string;
+          role?: string;
+          run_id?: string | null;
+          status?: string;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_tasks_run_id_fkey";
+            columns: ["run_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_runs";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      metrics_daily: {
+        Row: { computed_at: string; day: string; metrics: Json };
+        Insert: { computed_at?: string; day: string; metrics?: Json };
+        Update: { computed_at?: string; day?: string; metrics?: Json };
+        Relationships: [];
+      };
+      outreach: {
+        Row: {
+          body: string;
+          channel: string;
+          created_at: string;
+          id: string;
+          prospect_id: string;
+          provider_id: string | null;
+          reply_excerpt: string | null;
+          scheduled_for: string | null;
+          sent_at: string | null;
+          status: string;
+          step: number;
+          subject: string | null;
+          task_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          body: string;
+          channel: string;
+          created_at?: string;
+          id?: string;
+          prospect_id: string;
+          provider_id?: string | null;
+          reply_excerpt?: string | null;
+          scheduled_for?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          step?: number;
+          subject?: string | null;
+          task_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          body?: string;
+          channel?: string;
+          created_at?: string;
+          id?: string;
+          prospect_id?: string;
+          provider_id?: string | null;
+          reply_excerpt?: string | null;
+          scheduled_for?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          step?: number;
+          subject?: string | null;
+          task_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "outreach_prospect_id_fkey";
+            columns: ["prospect_id"];
+            isOneToOne: false;
+            referencedRelation: "prospects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "outreach_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_tasks";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      prospects: {
+        Row: {
+          account_id: string | null;
+          address: string | null;
+          business_name: string;
+          city: string | null;
+          created_at: string;
+          disqualify_reason: string | null;
+          email: string | null;
+          employees_est: number | null;
+          external_ref: string | null;
+          fit_score: number;
+          id: string;
+          last_touch_at: string | null;
+          next_touch_at: string | null;
+          notes: Json;
+          owner_name: string | null;
+          phone: string | null;
+          phone_type: string | null;
+          rating: number | null;
+          review_count: number | null;
+          runs_meta_ads: boolean | null;
+          source: string;
+          state: string | null;
+          status: string;
+          trade: string;
+          updated_at: string;
+          uses_software: string | null;
+          website: string | null;
+          zip: string | null;
+        };
+        Insert: {
+          account_id?: string | null;
+          address?: string | null;
+          business_name: string;
+          city?: string | null;
+          created_at?: string;
+          disqualify_reason?: string | null;
+          email?: string | null;
+          employees_est?: number | null;
+          external_ref?: string | null;
+          fit_score?: number;
+          id?: string;
+          last_touch_at?: string | null;
+          next_touch_at?: string | null;
+          notes?: Json;
+          owner_name?: string | null;
+          phone?: string | null;
+          phone_type?: string | null;
+          rating?: number | null;
+          review_count?: number | null;
+          runs_meta_ads?: boolean | null;
+          source?: string;
+          state?: string | null;
+          status?: string;
+          trade?: string;
+          updated_at?: string;
+          uses_software?: string | null;
+          website?: string | null;
+          zip?: string | null;
+        };
+        Update: {
+          account_id?: string | null;
+          address?: string | null;
+          business_name?: string;
+          city?: string | null;
+          created_at?: string;
+          disqualify_reason?: string | null;
+          email?: string | null;
+          employees_est?: number | null;
+          external_ref?: string | null;
+          fit_score?: number;
+          id?: string;
+          last_touch_at?: string | null;
+          next_touch_at?: string | null;
+          notes?: Json;
+          owner_name?: string | null;
+          phone?: string | null;
+          phone_type?: string | null;
+          rating?: number | null;
+          review_count?: number | null;
+          runs_meta_ads?: boolean | null;
+          source?: string;
+          state?: string | null;
+          status?: string;
+          trade?: string;
+          updated_at?: string;
+          uses_software?: string | null;
+          website?: string | null;
+          zip?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prospects_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       rate_limits: {
         Row: {
           hits: string[];
@@ -1117,6 +1430,12 @@ export type EventRow = Tables<"events">;
 export type WeeklyReportRow = Tables<"weekly_reports">;
 export type ReferralRow = Tables<"referrals">;
 export type RateLimitRow = Tables<"rate_limits">;
+export type AgentRunRow = Tables<"agent_runs">;
+export type AgentTaskRow = Tables<"agent_tasks">;
+export type ProspectRow = Tables<"prospects">;
+export type OutreachRow = Tables<"outreach">;
+export type AgentMemoryRow = Tables<"agent_memory">;
+export type MetricsDailyRow = Tables<"metrics_daily">;
 export type AdminNoteRow = Tables<"admin_notes">;
 
 /**
@@ -1139,6 +1458,12 @@ export type MessageAuthor = "ai" | "owner" | "contact" | "system";
 export type MessageStatus = "queued" | "sending" | "sent" | "delivered" | "failed" | "received";
 export type CallStatus = "missed" | "voicemail" | "answered_by_greeting" | "test";
 export type LeadUrgency = "emergency" | "today" | "this_week" | "flexible";
+export type AgentRunStatus = "queued" | "running" | "succeeded" | "failed" | "needs_approval" | "skipped";
+export type AgentTaskStatus = "proposed" | "approved" | "rejected" | "executing" | "executed" | "failed" | "expired";
+export type ProspectStatus = "new" | "enriched" | "queued" | "contacted" | "replied" | "demo_booked" | "trial" | "customer" | "lost" | "disqualified" | "do_not_contact";
+export type ProspectTrade = "hvac" | "plumbing" | "electrical" | "roofing" | "other";
+export type OutreachChannel = "email" | "call" | "dm" | "letter";
+export type OutreachStatus = "draft" | "approved" | "scheduled" | "sent" | "delivered" | "bounced" | "replied" | "failed" | "skipped";
 export type LeadStatus = "new" | "qualified" | "booked" | "lost";
 export type AlertChannel = "sms" | "email" | "voice";
 export type AlertStatus = "queued" | "sent" | "delivered" | "failed";
