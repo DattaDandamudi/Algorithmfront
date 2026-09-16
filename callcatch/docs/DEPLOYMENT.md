@@ -236,3 +236,14 @@ the account id, the two phone numbers (must equal `TWILIO_NOTIFICATION_NUMBER`, 
 `/api/demo/call` and its SMS webhook at `/api/twilio/sms/inbound`; the notification number's SMS webhook also goes
 to `/api/twilio/sms/inbound` (STOP/HELP handling for owners). Until both numbers are toll-free verified, the demo
 line plays its greeting but logs `demo_number_not_configured` instead of texting back.
+
+## 10. Company OS setup (multi-agent operations)
+
+1. [ ] Run `supabase/migrations/20260914120000_company_os.sql` (agent tables, service-role only).
+2. [ ] Env: `AGENT_AUTONOMY=approval_required`, `AGENT_DAILY_BUDGET_USD=25`, `AGENT_MAX_EMAILS_PER_DAY=10` (warm-up; raise weekly to 60), `AGENT_MAX_ADS_CHANGE_USD=50`, `FOUNDER_NAME`, `FOUNDER_MOBILE`, `FOUNDER_BOOKING_URL`.
+3. [ ] Cold-email identity: `OUTREACH_FROM_EMAIL` on a **secondary domain** (e.g. `datta@callcatch.io`) verified in Resend, `OUTREACH_REPLY_TO`, `OUTREACH_POSTAL_ADDRESS` (CMRA box is fine). SPF/DKIM/DMARC on that domain.
+4. [ ] Resend inbound: route `support@callcatch.co` and the outreach reply-to mailbox to `POST https://callcatch.co/api/support/inbound` (same `RESEND_WEBHOOK_SECRET`).
+5. [ ] Prospecting: optional `SOCRATA_APP_TOKEN` (data.texas.gov), `TWILIO_LOOKUP_ENABLED=true` (line type, $0.008/lookup). Put the AZ ROC posting-list and FL DBPR CSV URLs into agent memory `prospector/sources` from `/admin/agents` (Run prospector with input `{"sources":{"AZ":"<url>","FL":"<url>"}}` once) or import them via `/admin/prospects`.
+6. [ ] Meta Marketing API (for the ads agent): Business Settings → System Users → create, assign the ad account with `ads_management`, generate a token → `META_ADS_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID=act_…`. Until then the ads agent only drafts creatives.
+7. [ ] Crons (already in `vercel.json`): `/api/cron/agents` hourly at :05, `/api/cron/metrics-daily` 01:45 UTC. Vercel Pro is required for `maxDuration=300`.
+8. [ ] Smoke test: `/admin/agents` → Run now on `revops` (should write today's metrics), then `prospector` with `{"trade":"hvac","city":"Houston"}`, then `outreach`; approve one email to yourself first by importing a CSV row with your own email as a prospect.

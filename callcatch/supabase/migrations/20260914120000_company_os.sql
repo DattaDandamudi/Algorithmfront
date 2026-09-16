@@ -75,10 +75,11 @@ create table if not exists public.prospects (
   last_touch_at timestamptz,
   next_touch_at timestamptz,
   account_id uuid references public.accounts (id) on delete set null,
+  dedupe_key text generated always as (lower(business_name) || '|' || coalesce(phone, '') || '|' || coalesce(state, '')) stored,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint prospects_dedupe_key_unique unique (dedupe_key)
 );
-create unique index if not exists prospects_dedupe_idx on public.prospects (lower(business_name), coalesce(phone, ''), coalesce(state, ''));
 create index if not exists prospects_status_next_idx on public.prospects (status, next_touch_at);
 create index if not exists prospects_fit_idx on public.prospects (fit_score desc);
 

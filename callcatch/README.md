@@ -196,3 +196,12 @@ Production runs on Vercel Pro + Supabase Pro. The exact order (Supabase → Stri
 ## License
 
 Proprietary. Copyright © 2026 CallCatch LLC. All rights reserved. No part of this repository may be copied, modified, distributed or used to provide a competing service without written permission.
+
+## Company OS (multi-agent operations)
+
+Ten Claude agents run sales, marketing, support and ops from the same database: `lib/agents/**`, `/admin/agents`
+(runs, approval queue, run-now, founder blockers), `/admin/prospects` (pipeline, CSV import/export), hourly
+`/api/cron/agents`, `/api/cron/metrics-daily`, `/api/support/inbound` (Resend), `/u/[prospectId]` (one-click unsubscribe).
+Agents propose actions; `lib/agents/core/policy.ts` decides what runs without you (`AGENT_AUTONOMY`, caps).
+CLI: `npx tsx scripts/agent.ts run <role> | tasks list|approve|reject | prospects import|export | metrics | schedule`.
+Tests: `npm test`. Docs: `docs/COMPANY_OS.md`, `docs/SCALE_PLAN.md`, `docs/research/`.

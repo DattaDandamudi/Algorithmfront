@@ -38,6 +38,12 @@ type AdminRow = {
 };
 
 export default async function AdminPage(props: PageProps<"/admin">) {
+  const osLinks = (
+    <>
+      <Link href="/admin/agents" className={btn.secondary}>Company OS</Link>
+      <Link href="/admin/prospects" className={btn.secondary}>Prospects</Link>
+    </>
+  );
   const user = await requireUser();
   if (!isAdminEmail(user.email)) redirect("/dashboard");
   const sp = await props.searchParams;
@@ -182,7 +188,7 @@ export default async function AdminPage(props: PageProps<"/admin">) {
 
   return (
     <div className="mx-auto w-full max-w-6xl">
-      <PageHeader eyebrow="Admin" title="Accounts" sub={`Signed in as ${user.email}. Verification SLA: escalate to Twilio support at ${SLA_BUSINESS_DAYS} business days.`} />
+      <PageHeader eyebrow="Admin" title="Accounts" sub={`Signed in as ${user.email}. Verification SLA: escalate to Twilio support at ${SLA_BUSINESS_DAYS} business days.`} action={osLinks} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatTile label="Accounts" value={rows.length} icon={<Users className="h-4 w-4" aria-hidden />} />

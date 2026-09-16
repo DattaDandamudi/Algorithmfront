@@ -1,12 +1,14 @@
-/**
- * Task executors: one handler per TaskKind. Builders register real handlers here
- * (email via Resend, Meta Marketing API, Stripe, prospect updates...). A kind without a
- * handler can still be proposed and approved; execution then fails loudly with `no_executor`.
- */
+/** Task executors: one handler per TaskKind, merged from the sales / growth / ops modules. */
 import type { TaskExecutor, TaskKind } from "@/lib/agents/core/types";
+import { executors as sales } from "./sales";
+import { executors as growth } from "./growth";
+import { executors as ops } from "./ops";
 
 export const EXECUTORS: Partial<Record<TaskKind, TaskExecutor>> = {
   draft: async () => ({ ok: true, result: { stored: true } }),
+  ...sales,
+  ...growth,
+  ...ops,
 };
 
 export function getExecutor(kind: TaskKind): TaskExecutor | null {

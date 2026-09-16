@@ -1015,6 +1015,7 @@ export type Database = {
           business_name: string;
           city: string | null;
           created_at: string;
+          dedupe_key: string;
           disqualify_reason: string | null;
           email: string | null;
           employees_est: number | null;
@@ -1045,6 +1046,7 @@ export type Database = {
           business_name: string;
           city?: string | null;
           created_at?: string;
+          dedupe_key?: string;
           disqualify_reason?: string | null;
           email?: string | null;
           employees_est?: number | null;
@@ -1075,6 +1077,7 @@ export type Database = {
           business_name?: string;
           city?: string | null;
           created_at?: string;
+          dedupe_key?: string;
           disqualify_reason?: string | null;
           email?: string | null;
           employees_est?: number | null;

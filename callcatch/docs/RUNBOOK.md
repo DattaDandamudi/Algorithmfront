@@ -193,3 +193,14 @@ Keep `admin_notes` with `account_id = null` for platform-level incidents: start 
 - `AI_SAFE_TEMPLATE_MODE=true` (README env table) forces every AI turn to the safe template + owner alert (see §11).
 - 10DLC (sole-proprietor) numbers are polled alongside toll-free verifications; escalation emails carry the subject
   "Escalate 10DLC (sole proprietor): …".
+
+## 14. Company OS incidents
+
+| Incident | Detect | Do |
+|---|---|---|
+| Runaway spend | `/admin/agents` budget tile; `agent_runs.cost_usd` | Set `AGENT_DAILY_BUDGET_USD=0` (every run skips) and remove the agents cron; inspect the run's notes; lower `maxIterations` for the role. |
+| Wrong email sent to a prospect | `outreach` row / reply | Reply personally within the hour; set the prospect `do_not_contact` if asked; add the pattern to `agent_memory outreach/learnings`; keep `AGENT_AUTONOMY=approval_required`. |
+| Ad budget changed wrongly | Meta activity log; `agent_tasks kind=update_ad_budget` | Revert in Ads Manager; lower `AGENT_MAX_ADS_CHANGE_USD`; reject similar proposals for a week (the agent reads rejections). |
+| Support reply was wrong | customer follow-up | Correct by hand; add the fact to the support prompt grounding (`lib/agents/roles/support.ts`) and RUNBOOK; consider `draft_only` for support until fixed. |
+| Pause everything | — | `AGENT_AUTONOMY=draft_only` + disable the cron in Vercel. Proposals expire after 72 h. |
+| Prospect asks to be removed | reply / call | `/admin/prospects` → select → "Do not contact" (or `/u/<id>` link). Same day. |
