@@ -1,29 +1,30 @@
 /**
- * Transcript (task item 2) — the Coach screen's surface, and the one screen in
- * the app that is NOT a bento: a conversation sitting on the ground.
+ * Transcript — the printed interview (DESIGN.md "Coach"). No bubbles.
  *
- * The two turns are told apart by material, not by colour (DESIGN.md "Depth is
- * structural"): a user turn is `.hx-raised` — the thing you did, slate glass,
- * aligned right — and a coach turn is `.hx-card` — a reading, graphite, aligned
- * left. Inside a reply: `**bold**` rendered as <strong> (the only markup the
- * coach emits, §8 OUTPUT, so the bold action line it ends with stays bold), a
- * caption naming who answered and when, the over-120-words hint, and the
- * medical escalation cue above replies to lab / medication / symptom asks
- * (task item 6) — its copy verbatim from ai/guardrails. Empty state = a short
- * intro from real numbers plus the quick-prompt chips (COACH_CHIPS, §4).
+ * Each turn is a paragraph with the speaker word hanging in a 56 px left
+ * column in .hx-label ("You" / "Coach"); the user's line is Archivo 15/22 500
+ * (the spec names that size; the ladder has no class for it), the coach's
+ * reply is .hx-body with `**bold**` rendered as <strong> (the only markup the
+ * coach emits, §8 OUTPUT), and a hairline divides the turns. Under a reply the
+ * citation line ("Offline coach, 9:41 am") is set as a hedge, the over-120-
+ * words hint after it. A reply to a lab / dosing / symptom ask carries the
+ * medical escalation cue above it as a note in amber (task item 6; copy
+ * verbatim from ./turn); a guardrail or error reply is itself a note in its
+ * tone with the tone word first, so colour is never the only carrier. The
+ * empty state is the coach's opening turn with the intro line from real
+ * numbers; the quick prompts live in the composer beneath.
  *
- * Auto-scroll sticks to the bottom while the reader is there (or has just
- * sent a message) and leaves them alone once they scroll up to re-read.
+ * The page scrolls, not the transcript: a fresh user turn takes the window to
+ * the foot of the page (where the composer is), a streaming reply follows only
+ * while the reader is already there, and a reader who has scrolled up to
+ * re-read is left alone. Nothing scrolls while the tab is hidden.
  */
-import { useEffect, useRef, type UIEvent } from 'react';
-import { AlertTriangle, Stethoscope } from 'lucide-react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { ChatMessage } from '../../data/types';
-import { COACH_CHIPS } from '../../engine';
-import { Chip } from '../../ui';
-import { SOURCE_DOT, SOURCE_LABEL, splitBold, stripDanglingBold } from './text';
+import { SOURCE_LABEL, splitBold, stripDanglingBold } from './text';
 import { MEDICAL_CUE, formatTime, needsMedicalCue, wordHint } from './turn';
 
-/** How close to the bottom (px) still counts as "reading the latest". */
+/** How close to the foot of the page (px) still counts as "reading the latest". */
 const STICK_PX = 80;
 
 export interface TranscriptProps {
@@ -31,155 +32,106 @@ export interface TranscriptProps {
   /** Empty-state one-liner built from the current context. */
   intro: string;
   busy: boolean;
-  onChip: (prompt: string) => void;
+  className?: string;
 }
 
-export default function Transcript({ chat, intro, busy, onChip }: TranscriptProps) {
-  const scroller = useRef<HTMLDivElement>(null);
+const atFoot = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - STICK_PX;
+
+export default function Transcript({ chat, intro, busy, className = '' }: TranscriptProps) {
+  const log = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
 
-  const onScroll = (e: UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_PX;
-  };
+  // Track where the reader is, but only while this tab is the visible one.
+  useEffect(() => {
+    const onScroll = () => {
+      if (log.current?.offsetParent === null) return;
+      stuck.current = atFoot();
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const last = chat[chat.length - 1];
   useEffect(() => {
-    const el = scroller.current;
-    // The empty state is read from the top: its intro and chips are the whole screen.
-    if (!el || chat.length === 0) return;
-    // A fresh user turn always jumps to the bottom; streaming follows only while stuck.
+    const el = log.current;
+    // The empty state is read from the top: the intro and the prompts are the whole page.
+    if (!el || chat.length === 0 || el.offsetParent === null) return;
+    // A fresh user turn always jumps to the foot; streaming follows only while stuck.
     if (last?.role === 'user') stuck.current = true;
-    if (stuck.current) el.scrollTop = el.scrollHeight;
+    if (stuck.current) window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' });
   }, [chat, last]);
 
   return (
-    <div
-      ref={scroller}
-      onScroll={onScroll}
-      role="log"
-      aria-label="Conversation"
-      aria-busy={busy || undefined}
-      className="flex-1 min-h-0 overflow-y-auto hx-scroll px-4 py-4 flex flex-col gap-3"
-    >
+    <div ref={log} role="log" aria-label="Conversation" aria-busy={busy || undefined} className={`flex flex-col divide-y divide-hx-border ${className}`}>
       {chat.length === 0 ? (
-        <EmptyIntro intro={intro} busy={busy} onChip={onChip} />
+        <Turn speaker="Coach">
+          <p className="hx-body">
+            I answer from your own numbers — readiness, HRV baseline, trend weight, macros, sleep, today's session and your stress signals. Short replies, one action each.
+          </p>
+          <p className="hx-hedge">{intro}</p>
+        </Turn>
       ) : (
-        chat.map((m, i) => <Bubble key={m.id} m={m} medicalCue={needsMedicalCue(chat, i)} />)
+        chat.map((m, i) => <Message key={m.id} m={m} medicalCue={needsMedicalCue(chat, i)} />)
       )}
     </div>
   );
 }
 
-function EmptyIntro({ intro, busy, onChip }: Omit<TranscriptProps, 'chat'>) {
+/** One turn: the speaker word hanging in a 56 px column, the paragraph beside it. */
+function Turn({ speaker, children }: { speaker: 'You' | 'Coach'; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-5">
-      {/* The coach's opening turn: the same graphite card its replies arrive in. */}
-      <div className="hx-card px-4 py-3.5 flex flex-col gap-2 self-start max-w-[92%]">
-        <p className="text-[15px] leading-[22px] text-hx-text">
-          I answer from your own numbers — readiness, HRV baseline, trend weight, macros, sleep, today's session and your stress signals. Short replies, one action each.
-        </p>
-        <p className="text-[13px] leading-[18px] text-hx-text2">{intro}</p>
-      </div>
-      <div className="flex flex-col gap-2">
-        <p className="hx-label">Ask me</p>
-        {/*
-         * A two-row shelf that scrolls sideways: the longest prompt is wider
-         * than the 358 px column, so a wrapping row would break the 16 px
-         * margin. Wide content scrolls inside its own container (DESIGN.md
-         * "Quality floor"). Real list + 44 px chips keep button semantics and
-         * the touch-target floor (review R2-2 / R2-13).
-         */}
-        <ul
-          className="m-0 p-0 list-none grid grid-flow-col grid-rows-2 auto-cols-max gap-2 overflow-x-auto hx-no-scrollbar"
-          role="list"
-          aria-label="Quick prompts"
-        >
-          {COACH_CHIPS.map((c) => (
-            <li key={c}>
-              <Chip size="sm" disabled={busy} onClick={() => onChip(c)}>
-                {c}
-              </Chip>
-            </li>
-          ))}
-        </ul>
-      </div>
+    <div className="grid grid-cols-[56px_minmax(0,1fr)] py-4">
+      <span className="hx-label pt-0.5">{speaker}</span>
+      <div className="min-w-0 flex flex-col gap-2">{children}</div>
     </div>
   );
 }
 
-function Bubble({ m, medicalCue }: { m: ChatMessage; medicalCue: boolean }) {
+function Message({ m, medicalCue }: { m: ChatMessage; medicalCue: boolean }) {
   if (m.role === 'user') {
     return (
-      <div className="self-end max-w-[85%] flex flex-col items-end gap-1">
-        {/* Raised glass: the thing you did. */}
-        <div className="hx-raised px-4 py-3 text-[15px] leading-[22px] text-hx-text whitespace-pre-wrap break-words">{m.text}</div>
-        <span className="px-1 text-[12px] leading-4 text-hx-muted">{formatTime(m.ts)}</span>
-      </div>
+      <Turn speaker="You">
+        <p className="text-[15px] leading-[22px] font-medium text-hx-text whitespace-pre-wrap break-words">{m.text}</p>
+      </Turn>
     );
   }
 
   const streaming = m.streaming === true;
   const source = m.source;
-  // The bezel carries the state on a reply that is not ordinary coaching.
-  const tone = source === 'error' ? '!border-hx-red/40' : source === 'guardrail' ? '!border-hx-yellow/40' : '';
   const hint = !streaming && source !== 'error' ? wordHint(m.text) : null;
   const text = streaming ? stripDanglingBold(m.text) : m.text;
+  const body = splitBold(text).map((seg, i) =>
+    seg.bold ? (
+      <strong key={i} className="font-semibold">
+        {seg.text}
+      </strong>
+    ) : (
+      <span key={i}>{seg.text}</span>
+    ),
+  );
 
   return (
-    <div className="self-start max-w-[92%] flex flex-col gap-1.5">
+    <Turn speaker="Coach">
       {medicalCue && (
-        <p className="flex items-start gap-2 px-1 text-[13px] leading-[18px] text-hx-yellow">
-          <Stethoscope className="w-4 h-4 shrink-0 mt-px" aria-hidden />
-          <span>{MEDICAL_CUE}</span>
+        <p className="hx-note border-hx-yellow hx-body">
+          <span className="hx-label text-hx-yellow">Caution</span> {MEDICAL_CUE}
         </p>
       )}
-      {/* Graphite card: a reading. */}
-      <div className={`hx-card px-4 py-3 text-[15px] leading-[22px] text-hx-text whitespace-pre-wrap break-words ${tone}`}>
-        {streaming && !text ? (
-          <TypingDots />
-        ) : (
-          <>
-            {(source === 'error' || source === 'guardrail') && (
-              <AlertTriangle className={`inline w-4 h-4 mr-1.5 -mt-0.5 ${source === 'error' ? 'text-hx-red' : 'text-hx-yellow'}`} aria-hidden />
-            )}
-            {splitBold(text).map((seg, i) =>
-              seg.bold ? (
-                <strong key={i} className="font-semibold">
-                  {seg.text}
-                </strong>
-              ) : (
-                <span key={i}>{seg.text}</span>
-              ),
-            )}
-          </>
-        )}
-      </div>
-      <div className="flex items-center gap-2 px-1 text-[12px] leading-4 text-hx-muted">
-        {streaming ? (
-          <>
-            <span className="w-1.5 h-1.5 rounded-full bg-hx-blue hx-pulse" aria-hidden />
-            <span>Replying…</span>
-          </>
-        ) : (
-          <>
-            {source && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${SOURCE_DOT[source]}`} aria-hidden />}
-            {/* A comma list, never a middle dot: "Offline coach, 9:41 am". */}
-            <span>{source ? `${SOURCE_LABEL[source]}, ${formatTime(m.ts)}` : formatTime(m.ts)}</span>
-          </>
-        )}
-      </div>
-      {hint && <p className="px-1 -mt-0.5 text-[12px] leading-4 text-hx-yellow">{hint}</p>}
-    </div>
-  );
-}
-
-function TypingDots() {
-  return (
-    <span className="inline-flex items-center gap-1 h-[22px]" role="status" aria-label="Coach is replying">
-      <span className="w-1.5 h-1.5 rounded-full bg-hx-text2 hx-pulse" aria-hidden />
-      <span className="w-1.5 h-1.5 rounded-full bg-hx-text2 hx-pulse [animation-delay:200ms]" aria-hidden />
-      <span className="w-1.5 h-1.5 rounded-full bg-hx-text2 hx-pulse [animation-delay:400ms]" aria-hidden />
-    </span>
+      {streaming && !text ? (
+        <p role="status" aria-label="Coach is replying" className="hx-hedge">
+          Replying…
+        </p>
+      ) : source === 'error' || source === 'guardrail' ? (
+        // A failure or a guardrail stop is a note in its tone, the tone word first.
+        <p className={`hx-note hx-body whitespace-pre-wrap break-words ${source === 'error' ? 'border-hx-red' : 'border-hx-yellow'}`}>
+          <span className={`hx-label ${source === 'error' ? 'text-hx-red' : 'text-hx-yellow'}`}>{source === 'error' ? 'Problem' : 'Caution'}</span> {body}
+        </p>
+      ) : (
+        <p className="hx-body whitespace-pre-wrap break-words">{body}</p>
+      )}
+      {/* The citation: who answered and when, as a comma list, never a middle dot. */}
+      {(text || !streaming) && <p className="hx-hedge">{streaming ? 'Replying…' : source ? `${SOURCE_LABEL[source]}, ${formatTime(m.ts)}` : formatTime(m.ts)}</p>}
+      {hint && <p className="hx-hedge">{hint}</p>}
+    </Turn>
   );
 }

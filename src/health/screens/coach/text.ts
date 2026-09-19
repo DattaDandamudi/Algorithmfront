@@ -10,8 +10,9 @@
  * - modelStatusLine: "Claude Opus 5" — the header's status line, a sentence-case
  *   line rather than the uppercase pill it used to be (DESIGN.md "Copy rules":
  *   no middle dots, sentence case).
- * - SOURCE_LABEL / SOURCE_DOT: caption text and dot colour per ChatMessage.source
- *   (blue = AI per §0 "Blue: informational/AI"; error red; guardrail yellow).
+ * - SOURCE_LABEL: the citation word per ChatMessage.source, the first half of
+ *   the reply's dateline ("Offline coach, 9:41 am"). The word is the whole
+ *   carrier; there is no lamp dot beside it (DESIGN.md "Ink, not accent").
  */
 import type { AISettings, ChatMessage } from '../../data/types';
 import { MODEL_OPTIONS, resolveModel } from '../../ai/config';
@@ -24,7 +25,7 @@ export interface TextSegment {
 /** `**…**` spans; the body cannot start with `*`/newline or contain `*` (so "** **" and stray stars stay literal). */
 const BOLD = /\*\*([^*\n][^*]*?)\*\*/g;
 
-/** Split "Eat more **protein** now" into plain / bold segments, in order. Empty input → []. */
+/** Split "Eat more **protein** now" into plain / bold segments, in order. Empty input gives []. */
 export function splitBold(text: string): TextSegment[] {
   const out: TextSegment[] = [];
   if (!text) return out;
@@ -65,11 +66,4 @@ export const SOURCE_LABEL: Record<ReplySource, string> = {
   offline: 'Offline coach',
   guardrail: 'Guardrail',
   error: 'Error',
-};
-
-export const SOURCE_DOT: Record<ReplySource, string> = {
-  claude: 'bg-hx-blue',
-  offline: 'bg-hx-neutral',
-  guardrail: 'bg-hx-yellow',
-  error: 'bg-hx-red',
 };
