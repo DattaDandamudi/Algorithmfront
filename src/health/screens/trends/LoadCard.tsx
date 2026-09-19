@@ -1,31 +1,30 @@
 /**
- * LoadCard — §1e training load on Trends.
+ * LoadCard — §1e training load on Trends; it opens the training-and-stress
+ * group, so it carries that group's ink rule.
  *
- * **The ratio is not the headline, and that is the whole point of this card.**
- * Impellizzeri 2020 (*Br J Sports Med* 54:1451–1452) documents the
+ * **The ratio is not the headline, and that is the whole point of this
+ * figure.** Impellizzeri 2020 (*Br J Sports Med* 54:1451–1452) documents the
  * acute:chronic workload ratio's statistical pathologies and finds no causal
- * identification — "manipulating ACWR to change injury rates remains a
- * conjecture". So the two numbers that lead are the ones that mean something
- * on their own: **absolute acute load** and **week-on-week change**, with a
- * +10%/wk soft guidance line that is guidance and not a limit. The ratio is
- * still drawn, because it is part of the load picture a lifter recognises, but
- * it sits *below* them in a smaller panel and carries
- * `LOAD_NOTES.acwrDescriptive` in the copy the user reads — not in a comment,
- * not behind a tap.
+ * identification ("manipulating ACWR to change injury rates remains a
+ * conjecture"). So the lead is **absolute acute load** with the
+ * **week-on-week change** as the word beside it, and a +10%/wk soft guidance
+ * line that is guidance and not a limit. The ratio is still drawn, because it
+ * is part of the load picture a lifter recognises, but it sits *below* in a
+ * smaller panel with its 0.8–1.3 zone as a wash and carries
+ * `LOAD_NOTES.acwrDescriptive` in the copy the user reads.
  *
  * Two panels, one x axis, never a dual y axis: load units above, the unitless
- * ratio below with its 0.8–1.3 zone as a neutral wash.
+ * ratio below.
  */
-import { Dumbbell } from 'lucide-react';
 import type { AcwrBand, TrainingContext } from '../../data/types';
 import { LOAD_NOTES, WEEKLY_LOAD_SOFT_CAP_PCT } from '../../engine';
 import { fmt, fmtSigned } from '../../lib/format';
 import { EmptyState, type Tone } from '../../ui';
 import { TimeSeriesChart } from '../../ui/charts';
-import { Note, Readout, TrendCard } from './TrendCard';
+import { Lead, TrendCard } from './TrendCard';
 import { bucketDateFormat, type LoadSeries, type RangeWindow } from './series';
 
-/** The descriptive ratio zone (Williams 2017) — shaded, never alerted on. */
+/** The descriptive ratio zone (Williams 2017): a wash, never alerted on. */
 const ACWR_SWEET: [number, number] = [0.8, 1.3];
 
 const ACWR_WORD: Record<AcwrBand, string> = {
@@ -40,7 +39,7 @@ export type LoadBlock = TrainingContext['load'];
 
 const SOURCE_NOTE: Record<LoadBlock['source'], string> = {
   logged: 'From sessions you logged.',
-  whoop: 'Converted from WHOOP day strain — an estimate, not a measurement of your session.',
+  whoop: 'Converted from WHOOP day strain: an estimate, not a measurement of your session.',
   mixed: 'Part logged sessions, part WHOOP strain converted to the same scale.',
   none: 'No sessions logged in this window.',
 };
@@ -51,9 +50,11 @@ export interface LoadCardProps {
   series: LoadSeries;
   win: RangeWindow;
   onOpenTrain?: () => void;
+  /** Draw the group's ink rule above the running head. */
+  rule?: boolean;
 }
 
-export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardProps) {
+export default function LoadCard({ load, series, win, onOpenTrain, rule }: LoadCardProps) {
   const plotted = `last ${series.days} day${series.days === 1 ? '' : 's'}`;
   // A user who trained months ago but not in this range still has a load
   // history: show them a chart of zeroes and an honest "acute load 0" rather
@@ -64,13 +65,12 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
     return (
       <TrendCard
         title="Training load"
-        tile
+        rule={rule}
         caption="How much work you are doing, and how fast it is changing"
         empty={
           <EmptyState
-            icon={<Dumbbell />}
             title="No training logged yet"
-            hint="Log a session — or import WHOOP, Strava or Apple Health — and your weekly load, its week-on-week change and the descriptive acute:chronic ratio appear here."
+            hint="Log a session, or import WHOOP, Strava or Apple Health, and your weekly load, its week-on-week change and the descriptive acute:chronic ratio appear here."
             {...(onOpenTrain ? { action: { label: 'Open Train', onClick: onOpenTrain } } : {})}
           />
         }
@@ -81,58 +81,44 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
   const wow = load.weekOverWeekPct;
   const ramping = wow !== null && wow > WEEKLY_LOAD_SOFT_CAP_PCT;
   const wowTone: Tone | undefined = wow === null ? undefined : ramping ? 'yellow' : 'green';
+  const wowWord = wow === null ? 'Week on week needs a previous week' : `Week on week ${fmtSigned(wow, 0)}%`;
+  const wowLine = wow === null ? '' : ramping ? `Above the +${WEEKLY_LOAD_SOFT_CAP_PCT}% guidance line. ` : `Within the +${WEEKLY_LOAD_SOFT_CAP_PCT}% guidance line. `;
   const acwrWord = load.acwr === null ? null : load.acwrBand ? ACWR_WORD[load.acwrBand] : 'not yet established';
 
   return (
     <TrendCard
       title="Training load"
-      tile
-      caption={`Acute load and its week-on-week change, ${plotted}`}
+      rule={rule}
+      caption={`${series.trainedDays} of ${series.days} days trained`}
+      source={`Daily load and its 7-day acute average, ${plotted}. ${SOURCE_NOTE[load.source]}${load.source === 'mixed' ? ` ${LOAD_NOTES.unitMix}` : ''}`}
       meaning="Load is effort × duration in one number, so a long easy session and a short brutal one can land in the same place. What matters is the size of the jump between weeks, not the exact figure."
     >
-      <div className="grid grid-cols-2 gap-3">
-        <Readout
-          label="Acute load (7 d)"
-          value={load.acute7}
-          unit="units"
-          sub={`Chronic 28 d ${fmt(load.chronic28)}, ${series.trainedDays} of ${series.days} days trained`}
-        />
-        <Readout
-          label="Week on week"
-          value={wow === null ? null : `${fmtSigned(wow, 0)}%`}
-          sub={wow === null ? 'Needs a previous week to compare' : ramping ? `Above the +${WEEKLY_LOAD_SOFT_CAP_PCT}% guidance line` : `Within the +${WEEKLY_LOAD_SOFT_CAP_PCT}% guidance line`}
-          tone={wowTone}
-        />
-      </div>
+      <Lead label="Acute load, 7 days" value={load.acute7} unit="units" word={wowWord} tone={wowTone} sub={`Chronic 28-day ${fmt(load.chronic28)}`} />
+
+      <p className="hx-deck">{`${wowLine}${LOAD_NOTES.weekOverWeek}`}</p>
 
       <TimeSeriesChart
         ariaLabel={`Daily training load with the 7-day acute average, ${plotted}`}
         range={win.range}
         data={series.daily}
         line={series.acute}
-        color="var(--hx-blue)"
-        dotColor="var(--hx-neutral)"
         unit="units"
-        label="Daily load"
-        lineLabel="Acute (7 d)"
+        label="Daily"
+        lineLabel="7-day acute"
         dateFormat={bucketDateFormat(win.bucket)}
         emptyText="Log a session to start your load series."
       />
 
-      <Note tone={ramping ? 'yellow' : 'neutral'}>{LOAD_NOTES.weekOverWeek}</Note>
-      <p className="text-[13px] leading-[18px] text-hx-text2">{SOURCE_NOTE[load.source]}</p>
-      {load.source === 'mixed' && <p className="text-[13px] leading-[18px] text-hx-muted">{LOAD_NOTES.unitMix}</p>}
-
       {/* --- the ratio, deliberately subordinate: smaller, lower, and captioned --- */}
-      <section aria-label="Acute:chronic ratio" className="border-t border-hx-border pt-3 flex flex-col gap-2">
+      <section aria-label="Acute:chronic ratio" className="flex flex-col gap-3">
         <div className="flex flex-col">
           <span className="hx-label">Acute:chronic ratio</span>
           {load.acwr === null ? (
-            <span className="mt-1 text-[15px] leading-[22px] text-hx-muted">Needs 28 days</span>
+            <span className="hx-cap mt-1">Needs 28 days</span>
           ) : (
-            <div className="mt-1 flex items-baseline gap-2 flex-wrap">
-              <span className="hx-display text-[17px] leading-6 font-semibold text-hx-text">{fmt(load.acwr, 2)}</span>
-              <span className="text-[13px] leading-[18px] text-hx-text2">{acwrWord}</span>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="hx-fig-sm text-hx-text">{fmt(load.acwr, 2)}</span>
+              <span className="hx-cap">{acwrWord}</span>
             </div>
           )}
         </div>
@@ -143,15 +129,15 @@ export default function LoadCard({ load, series, win, onOpenTrain }: LoadCardPro
           data={series.acwr}
           connectDots
           showDots={false}
-          color="var(--hx-neutral)"
           targetBand={{ lo: ACWR_SWEET[0], hi: ACWR_SWEET[1], label: `${ACWR_SWEET[0]}–${ACWR_SWEET[1]}` }}
+          valueFormat={(v) => fmt(v, 2)}
           label="Ratio"
           height={120}
           dateFormat={bucketDateFormat(win.bucket)}
           emptyText="The ratio needs 28 days of load before it means anything."
         />
 
-        <p className="text-[13px] leading-[18px] text-hx-muted">{LOAD_NOTES.acwrDescriptive}</p>
+        <p className="hx-cap">{LOAD_NOTES.acwrDescriptive}</p>
       </section>
     </TrendCard>
   );

@@ -1,12 +1,12 @@
 /**
- * Adherence card — SPEC §3: protein-hit days, calorie-hit days and the
- * logging-streak calendar as ONE 12-week heatmap with a lens selector (three
- * stacked calendars would push the frequency counters below the fold), plus
- * streak and hit-day counters. Hit tolerances live in engine/adherence.ts
- * (protein ≥ target − 10 g; kcal within −400/+50) — consistency, not
- * precision, is what the self-monitoring evidence rewards.
+ * Adherence figure — SPEC §3: protein-hit days, calorie-hit days and the
+ * logging-streak calendar as ONE 12-week heat map with a lens selector (three
+ * stacked calendars would push the counters below the fold), filled by ink
+ * density rather than a colour ramp, plus streak and hit-day counters as a
+ * box score. Hit tolerances live in engine/adherence.ts (protein ≥ target −
+ * 10 g; kcal within −400/+50): consistency, not precision, is what the
+ * self-monitoring evidence rewards.
  */
-import { CalendarCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { CoachContext, ISODate } from '../../data/types';
 import { EmptyState, SegmentedControl } from '../../ui';
@@ -20,8 +20,6 @@ const LENSES: Array<{ value: HeatMode; label: string }> = [
   { value: 'logging', label: 'Logging' },
 ];
 const TITLE: Record<HeatMode, string> = { protein: 'Protein-hit days', kcal: 'Calorie-hit days', logging: 'Logging calendar' };
-/** Green for the two "hit" lenses (on-track); blue for the informational logging calendar. */
-const COLOR: Record<HeatMode, string> = { protein: 'var(--hx-green)', kcal: 'var(--hx-green)', logging: 'var(--hx-blue)' };
 
 export interface AdherenceCardProps {
   today: ISODate;
@@ -44,13 +42,11 @@ export default function AdherenceCard({ today, heat, legend, loggingStreak, weig
     return (
       <TrendCard
         title="Adherence"
-        tile
         caption={`Hit days and streaks over the last ${HEAT_WEEKS} weeks`}
         empty={
           <EmptyState
-            icon={<CalendarCheck />}
             title="Nothing logged yet"
-            hint="Log your first meal to start your adherence calendar — hit days and streaks build from there."
+            hint="Log your first meal to start your adherence calendar; hit days and streaks build from there."
             action={{ label: 'Log a meal', onClick: onLogMeal }}
           />
         }
@@ -61,15 +57,15 @@ export default function AdherenceCard({ today, heat, legend, loggingStreak, weig
   return (
     <TrendCard
       title="Adherence"
-      tile
-      caption={`${TITLE[mode]}, last ${HEAT_WEEKS} weeks`}
-      meaning="Consistency beats precision — daily weigh-ins and logging on most days are what make the trend and expenditure trustworthy; breaks of a month or more risk regain."
+      caption={`Last ${HEAT_WEEKS} weeks`}
+      source={`${TITLE[mode]}, one cell a day; the darker the cell, the closer the day came.`}
+      meaning="Consistency beats precision: daily weigh-ins and logging on most days are what make the trend and expenditure trustworthy, and breaks of a month or more risk regain."
     >
       <SegmentedControl<HeatMode> options={LENSES} value={mode} onChange={setMode} ariaLabel="Adherence lens" className="self-start" />
 
-      <Heatmap ariaLabel={`${TITLE[mode]}, last ${HEAT_WEEKS} weeks`} weeks={HEAT_WEEKS} end={today} days={heat[mode]} legend={legend[mode]} color={COLOR[mode]} />
+      <Heatmap ariaLabel={`${TITLE[mode]}, last ${HEAT_WEEKS} weeks`} weeks={HEAT_WEEKS} end={today} days={heat[mode]} legend={legend[mode]} />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="hx-score-grid">
         <Readout label="Logging streak" value={loggingStreak} unit={days(loggingStreak)} />
         <Readout label="Weigh-in streak" value={weighInStreak} unit={days(weighInStreak)} />
         <Readout label="Protein hit" value={`${counts.proteinHitDays30}/30`} sub="days in the last 30" />

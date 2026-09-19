@@ -1,16 +1,16 @@
 /**
- * Steps card — SPEC §3. Daily steps (weekly / monthly means at 90D / 1Y)
- * joined by a line over the 8–10k goal band (neutral wash); readouts: today
- * vs the 30-day average (▲ is good), the range average, and goal days
- * (≥ the lower goal). NEAT is the cheapest expenditure lever in a deficit.
+ * Steps figure — SPEC §3. Daily steps (weekly / monthly means at 90D / 1Y)
+ * joined by a line over the 8–10k goal band as a wash; the lead is today
+ * with its ▲/▼ against the 30-day average and the goal-day word beside it;
+ * the deck is the range average and the goal-day count. NEAT is the cheapest
+ * expenditure lever in a deficit.
  */
-import { Footprints } from 'lucide-react';
 import type { CoachContext } from '../../data/types';
 import { fmt } from '../../lib/format';
 import { EmptyState } from '../../ui';
 import { TimeSeriesChart, type DatedValue } from '../../ui/charts';
-import { DeltaSub, Readout, TrendCard } from './TrendCard';
-import { bucketDateFormat, goalBandLabel, type RangeWindow, type StepsStats } from './series';
+import { DeltaSub, Lead, TrendCard } from './TrendCard';
+import { BUCKET_LABEL, bucketDateFormat, goalBandLabel, type RangeWindow, type StepsStats } from './series';
 
 export interface StepsCardProps {
   steps: CoachContext['steps'];
@@ -26,9 +26,8 @@ export default function StepsCard({ steps, series, stats, win }: StepsCardProps)
     return (
       <TrendCard
         title="Steps"
-        tile
         caption={`Daily steps against the ${goal} goal`}
-        empty={<EmptyState icon={<Footprints />} title="No steps yet" hint={`Log steps or connect WHOOP to see your days against the ${goal} goal band.`} />}
+        empty={<EmptyState title="No steps yet" hint={`Log steps or connect WHOOP to see your days against the ${goal} goal band.`} />}
       />
     );
   }
@@ -37,19 +36,18 @@ export default function StepsCard({ steps, series, stats, win }: StepsCardProps)
   // §0 bands (≥67 % / 34–66 % / <34 %); the word travels with the colour so the state is never colour-only (review R6-12).
   const goalTone = share >= 0.67 ? 'green' : share >= 0.34 ? 'yellow' : 'red';
   const goalWord = goalTone === 'green' ? 'on track' : goalTone === 'yellow' ? 'patchy' : 'low';
+  const days = `${stats.loggedDays} logged day${stats.loggedDays === 1 ? '' : 's'}`;
 
   return (
     <TrendCard
       title="Steps"
-      tile
-      caption={`Daily steps against the ${goal} goal band, ${win.label}`}
-      meaning={`Steps are the cheapest expenditure lever in a deficit — days inside the ${goal} band keep your daily activity steady while calories come down.`}
+      caption={days}
+      source={`Daily steps${win.bucket === 'day' ? '' : ` as ${BUCKET_LABEL[win.bucket]}`}, ${win.label}; the wash is the ${goal} goal band.`}
+      meaning={`Steps are the cheapest expenditure lever in a deficit: days inside the ${goal} band keep your daily activity steady while calories come down.`}
     >
-      <div className="grid grid-cols-3 gap-3">
-        <Readout label="Today" value={steps.today} sub={<DeltaSub value={steps.delta} good={steps.good} />} />
-        <Readout label="Average" value={stats.meanSteps} sub={`${stats.loggedDays} logged day${stats.loggedDays === 1 ? '' : 's'}`} />
-        <Readout label="Goal days" value={`${stats.goalDays}/${stats.loggedDays}`} sub={`${goalWord}, ≥ ${fmt(steps.goalMin)} steps`} tone={goalTone} />
-      </div>
+      <Lead value={steps.today} word={`${goalWord}, ${stats.goalDays} of ${stats.loggedDays} goal days`} tone={goalTone} sub={<DeltaSub value={steps.delta} good={steps.good} />} />
+
+      <p className="hx-deck">{`Averaging ${fmt(stats.meanSteps)} a day over ${days}; ${stats.goalDays} of them reached ${fmt(steps.goalMin)} steps.`}</p>
 
       <TimeSeriesChart
         ariaLabel={`Steps, ${win.label}, against the ${goal} goal band`}

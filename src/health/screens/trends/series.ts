@@ -326,10 +326,10 @@ export function weightSeries(records: DailyRecord[], win: RangeWindow, kalman: K
  */
 export function rateBandState(inBand: CoachContext['weight']['inBand'], rateLb: number | null): { tone: Band; text: string } {
   if (inBand === 'in') return { tone: 'green', text: 'Inside your target band' };
-  if (inBand === 'above') return { tone: 'yellow', text: 'Faster than target — protect lean mass' };
+  if (inBand === 'above') return { tone: 'yellow', text: 'Faster than target, protect lean mass' };
   if (inBand === 'below') {
     return rateLb !== null && rateLb > 0
-      ? { tone: 'yellow', text: 'Trend is rising — review intake' }
+      ? { tone: 'yellow', text: 'Trend is rising, review intake' }
       : { tone: 'yellow', text: 'Losing slower than target' };
   }
   return { tone: 'neutral', text: 'Needs 8+ days of weigh-ins' };

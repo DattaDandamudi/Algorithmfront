@@ -8,7 +8,7 @@ export type { BarSeriesProps, BarDatum } from './BarSeries';
 export { default as Heatmap, LEVEL_OPACITY } from './Heatmap';
 export type { HeatmapProps, HeatmapDay, HeatLevel } from './Heatmap';
 
-export { useMeasuredWidth, ChartTooltip, HiddenTable, EmptyFrame, DEFAULT_CHART_WIDTH, TOKEN } from './shared';
+export { useMeasuredWidth, ChartTooltip, HiddenTable, EmptyFrame, DEFAULT_CHART_WIDTH, TOKEN, WASH, FONT, SVG_CLASS } from './shared';
 export type { TooltipRow } from './shared';
 
 export {
@@ -34,5 +34,6 @@ export {
   definedIndices,
   textWidth,
   autoDecimals,
+  spreadLabels,
 } from './chartUtils';
 export type { ChartRange, Bucket, Aggregation, Pt, DatedValue, LinearScale } from './chartUtils';

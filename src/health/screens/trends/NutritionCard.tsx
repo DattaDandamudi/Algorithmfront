@@ -1,12 +1,11 @@
 /**
  * Nutrition frequency counters — SPEC §3 "for his labs": red-meat servings/wk,
- * fish servings/wk, home-cooked %, fiber average — over the trailing 7 days
- * and over the selected range (counts normalised per week), plus the
- * lab-linked habit lines (§7 #13/#14, engine/micronutrients.labLinkedHabits).
+ * fish servings/wk, home-cooked %, fiber average, over the trailing 7 days and
+ * over the selected range (counts normalised per week), as a ruled table, plus
+ * the lab-linked habit lines (§7 #13/#14, engine/micronutrients.labLinkedHabits).
  * Display-only: general information with the "confirm with your doctor" cue
  * (§6.7); nothing here interprets a lab as disease.
  */
-import { Utensils } from 'lucide-react';
 import { COACH_CHIPS, DOCTOR_CUE, type FrequencyCounters } from '../../engine';
 import { Button, EmptyState } from '../../ui';
 import { TrendCard } from './TrendCard';
@@ -36,14 +35,12 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
     return (
       <TrendCard
         title="Food frequency"
-        tile
         caption="Red meat, fish, home-cooked meals and fiber"
         action={action}
         empty={
           <EmptyState
-            icon={<Utensils />}
             title="No meals to count yet"
-            hint="Log meals — the AI bar tags red meat, fish and home-cooked for you — to start your weekly counters."
+            hint="Log meals (the AI bar tags red meat, fish and home-cooked for you) to start your weekly counters."
             action={{ label: 'Log a meal', onClick: onLogMeal }}
           />
         }
@@ -54,27 +51,27 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
   const showRange = win.days > 7;
   // Sentence case in a column head: "last 30 days" is a fragment mid-sentence.
   const rangeHeading = win.label.charAt(0).toUpperCase() + win.label.slice(1);
-  const cell = 'hx-display py-2 text-right text-[15px] leading-5 font-semibold';
+  const cell = 'hx-ui py-3 text-right align-baseline';
 
   return (
     <TrendCard
       title="Food frequency"
-      tile
-      caption={`${meals(week.totalMeals)} tagged this week${showRange ? `, ${meals(range.totalMeals)} in the ${win.label}` : ''}`}
+      caption={`${meals(week.totalMeals)} tagged this week`}
       action={action}
-      meaning="Counted from meal tags — these are the habits that move the labs you track: oily fish for the omega-3 index, iron-rich meals for ferritin, home cooking for lead and sodium exposure, fiber for the daily target."
+      source={`Counted from meal tags: ${meals(week.totalMeals)} this week${showRange ? `, ${meals(range.totalMeals)} in the ${win.label}, shown per week` : ''}.`}
+      meaning="These are the habits that move the labs you track: oily fish for the omega-3 index, iron-rich meals for ferritin, home cooking for lead and sodium exposure, fiber for the daily target."
     >
-      <table className="w-full text-[13px] leading-5">
+      <table className="w-full">
         <thead>
           <tr>
-            <th scope="col" className="hx-label pb-2 text-left font-medium">
+            <th scope="col" className="hx-label pb-2 text-left">
               Habit
             </th>
-            <th scope="col" className="hx-label pb-2 text-right font-medium">
+            <th scope="col" className="hx-label pb-2 text-right">
               This week
             </th>
             {showRange && (
-              <th scope="col" className="hx-label pb-2 text-right font-medium">
+              <th scope="col" className="hx-label pb-2 text-right">
                 {rangeHeading}
               </th>
             )}
@@ -83,9 +80,9 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
         <tbody>
           {rows.map((r) => (
             <tr key={r.key} className="border-t border-hx-border">
-              <th scope="row" className="py-2 text-left font-medium text-hx-text">
-                {r.label}
-                <span className="block text-[12px] leading-4 font-normal text-hx-muted">{r.hint}</span>
+              <th scope="row" className="py-3 text-left font-normal align-baseline">
+                <span className="hx-body block">{r.label}</span>
+                <span className="hx-cap block">{r.hint}</span>
               </th>
               <td className={`${cell} text-hx-text`}>{r.week}</td>
               {showRange && <td className={`${cell} text-hx-text2`}>{r.range}</td>}
@@ -95,16 +92,19 @@ export default function NutritionCard({ rows, habits, week, range, win, onLogMea
       </table>
 
       {habits.length > 0 && (
-        <ul className="flex flex-col gap-2" aria-label="Lab-linked habits">
-          {habits.map((h) => (
-            <li key={h} className="rounded-ctl border border-hx-border bg-hx-card2/60 px-3 py-2 text-[13px] leading-[18px] text-hx-text2">
-              {h}
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col">
+          <span className="hx-label">From your labs</span>
+          <ul className="flex flex-col" aria-label="Lab-linked habits">
+            {habits.map((h) => (
+              <li key={h} className="hx-body py-2 border-t border-hx-border first:border-t-0 first:pt-1">
+                {h}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
-      <p className="text-[13px] leading-[18px] text-hx-muted">General wellness information from your own labs. {DOCTOR_CUE}</p>
+      <p className="hx-hedge">General wellness information from your own labs. {DOCTOR_CUE}</p>
     </TrendCard>
   );
 }

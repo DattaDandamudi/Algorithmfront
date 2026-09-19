@@ -101,9 +101,9 @@ export function tickDecimals(ticks: number[]): number {
   return stepDecimals(Math.abs(ticks[1] - ticks[0]));
 }
 
-/** Tick label: thousands-comma'd, fixed decimals ("1,950", "7.5"). */
+/** Tick label: thousands-comma'd, fixed decimals, the true minus ("1,950", "7.5", "−100"). */
 export function formatTick(v: number, decimals = 0): string {
-  return fmt(v, decimals);
+  return fmt(v, decimals).replace(/^-/, '−');
 }
 
 /**
@@ -332,4 +332,28 @@ export function autoDecimals(values: Array<number | null | undefined>): number {
   const xs = values.filter(isNum);
   if (!xs.length || xs.every((v) => Number.isInteger(v))) return 0;
   return Math.max(...xs) - Math.min(...xs) < 20 ? 1 : 0;
+}
+
+/**
+ * Push label baselines apart so none sit closer than `gap`, inside [lo, hi].
+ * The words at the line ends are the legend, and two lines that meet at the
+ * right edge would print their words on top of each other; this nudges them
+ * apart in place of a swatch box. Returns the y values in the input order;
+ * non-finite entries pass through untouched.
+ */
+export function spreadLabels(ys: number[], gap: number, lo: number, hi: number): number[] {
+  const out = ys.slice();
+  const order = ys.map((y, i) => ({ y, i })).filter((o) => isNum(o.y)).sort((a, b) => a.y - b.y);
+  if (!order.length) return out;
+  const pos = order.map((o) => o.y);
+  pos[0] = Math.max(lo, pos[0]);
+  for (let k = 1; k < pos.length; k++) pos[k] = Math.max(pos[k], pos[k - 1] + gap);
+  if (pos[pos.length - 1] > hi) {
+    pos[pos.length - 1] = hi;
+    for (let k = pos.length - 2; k >= 0; k--) pos[k] = Math.min(pos[k], pos[k + 1] - gap);
+  }
+  order.forEach((o, k) => {
+    out[o.i] = Math.max(lo, pos[k]);
+  });
+  return out;
 }

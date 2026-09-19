@@ -82,7 +82,7 @@ const clean = (html: string) => {
 describe('WeightCard', () => {
   const win = rangeWindow('30D', TODAY);
 
-  it('draws the smoothed band and explains the hollow dots in words', () => {
+  it('draws the smoothed band and explains the amber crosses in words', () => {
     const recs = demo(40);
     const ctx = ctxOf(recs);
     const series = weightSeries(recs, win, smoothKalman(computeKalmanTrend(recs, TODAY, { cycle: { enabled: false } })), 'lb');
@@ -91,7 +91,7 @@ describe('WeightCard', () => {
         <WeightCard weight={ctx.weight} series={series} win={win} units="lb" targets={DEFAULT_TARGETS} onLogWeight={noop} onOpenCoach={noop} />,
       ),
     );
-    expect(html).toMatch(/Hollow dots are readings the outlier check set aside/);
+    expect(html).toMatch(/Amber crosses are readings the outlier check set aside/);
     expect(html).toMatch(/90%/);
     // The hidden data table twin carries the accepted/set-aside state as text.
     expect(html).toMatch(/<th scope="col">Used<\/th>/);

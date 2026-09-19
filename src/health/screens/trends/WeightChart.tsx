@@ -3,19 +3,21 @@
  * scale readings in **two states**, accepted and set aside.
  *
  * §1a's Kalman filter rejects a weigh-in whose innovation is beyond 3.5 σ (or
- * 8 lb) — a typo, a different scale, a day in shoes. Those readings must still
+ * 8 lb): a typo, a different scale, a day in shoes. Those readings must still
  * appear, because hiding a number the user typed is how an app loses their
- * trust, but they must not read as part of the trend. So they are drawn
- * **hollow**: a ring in the same neutral ink as the accepted dots, never a
- * second colour, because shape is legible to a reader who cannot separate our
- * greens from our yellows. The legend line under the chart says it in words
- * and the hidden table carries a "Used" column, so the state survives with no
- * colour, no hover and no pointer at all.
+ * trust, but they must not read as part of the trend. So they are drawn as an
+ * **amber cross** where the accepted readings are hollow circles: a different
+ * shape first, a different ink second, so the state survives greyscale. The
+ * caption under the chart says it in words and the hidden table carries a
+ * "Used" column, so it survives with no colour, no hover and no pointer.
  *
- * Everything else follows `ui/charts/TimeSeriesChart`: 2 px round-joined line
- * with null gaps, the band as a 12 % wash, a hairline grid one step off the
- * card, only the last value direct-labelled, a crosshair that snaps to the
- * nearest x on pointer or ←/→, and the visually-hidden table twin.
+ * The rest is DESIGN.md's band chart: the 90% band a 9 percent bone wash,
+ * the smoothed trend a 1.5 px bone line, readings 2.5 px hollow text2
+ * circles, two direct labels in agate in the right margin (the value beside
+ * the line end, "90% band" beside the ribbon's top, pushed apart when they
+ * meet), three date ticks on one bottom hairline, no gridlines, no y-axis
+ * line. A crosshair snaps to the nearest x
+ * on pointer or the arrow keys and the tooltip is a plate slip.
  */
 import { useMemo, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { ISODate } from '../../data/types';
@@ -24,8 +26,11 @@ import { fmt } from '../../lib/format';
 import {
   ChartTooltip,
   EmptyFrame,
+  FONT,
   HiddenTable,
+  SVG_CLASS,
   TOKEN,
+  WASH,
   autoDecimals,
   buildAreaBetween,
   buildPath,
@@ -37,10 +42,11 @@ import {
   nearestIndex,
   niceTicks,
   scaleLinear,
+  sparseIndices,
+  spreadLabels,
   textWidth,
   tickDecimals,
   useMeasuredWidth,
-  xLabelIndices,
   xPositions,
   type ChartRange,
   type Pt,
@@ -49,16 +55,15 @@ import {
   type TooltipRow,
 } from '../../ui/charts';
 
-/** Matches `ui/charts/shared` — kept local because the font sizes are not part of the barrel. */
-const FONT = { tick: 12, label: 12 } as const;
-const SVG_CLASS = 'block rounded-lg outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-hx-blue';
+/** The word at the ribbon's top edge. */
+export const BAND_WORD = '90% band';
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 export interface WeightChartProps {
   /** Accepted scale readings. */
   dots: TimeSeriesPoint[];
-  /** Readings the outlier gate set aside — drawn hollow. */
+  /** Readings the outlier gate set aside — drawn as amber crosses. */
   suspect: TimeSeriesPoint[];
   /** The smoothed Kalman level. */
   line: TimeSeriesPoint[];
@@ -137,12 +142,13 @@ export default function WeightChart({
 
   const lastLine = lastDefined(lineVals);
   const lastText = lastLine ? display(lastLine.value) : '';
+  const lastBand = lastDefined(hiVals);
 
-  // --- layout (same paddings as TimeSeriesChart so the cards line up)
+  // --- layout (same paddings as TimeSeriesChart so the figures line up)
   const top = 12;
   const bottom = 22;
   const left = Math.max(...ticks.map((t) => textWidth(formatTick(t, tickDp), FONT.tick))) + 8;
-  const right = Math.max(12, textWidth(lastText, FONT.label) + 12);
+  const right = Math.max(12, textWidth(lastText, FONT.label) + 12, lastBand ? textWidth(BAND_WORD, FONT.label) + 12 : 0);
   const plotW = Math.max(24, width - left - right);
   const plotH = Math.max(24, height - top - bottom);
   const xs = xPositions(n, left, left + plotW);
@@ -150,14 +156,17 @@ export default function WeightChart({
   const pitch = n > 1 ? plotW / (n - 1) : plotW;
   const dense = n > 1 && pitch < 6;
   const smallDots = !dense && pitch < 12;
-  const dotR = smallDots ? 2.5 : 4;
-  const dotRing = smallDots ? 2 : 4;
+  const dotR = smallDots ? 2 : 2.5;
+  const crossR = smallDots ? 3 : 3.5;
 
   const toPts = (vals: Array<number | null>): Pt[] => vals.map((v, i) => ({ x: xs[i], y: v === null ? null : y(v) }));
   const linePath = buildPath(toPts(lineVals));
   const bandPath = buildAreaBetween(toPts(loVals), toPts(hiVals));
   const px = (v: number) => Math.round(v * 100) / 100;
   const clampY = (v: number) => Math.min(top + plotH, Math.max(top, y(v)));
+  // The right margin is the legend: the value beside the line end, "90% band" beside the ribbon's top.
+  const legendYs = spreadLabels([lastLine ? clampY(lastLine.value) : NaN, lastBand ? clampY(lastBand.value) : NaN], 13, top + 6, top + plotH - 6);
+  const legendX = px(left + plotW + 8);
 
   // --- interaction
   const setFromPointer = (e: PointerEvent<SVGSVGElement>) => {
@@ -203,11 +212,11 @@ export default function WeightChart({
     const lv = lineVals[active];
     const lo = loVals[active];
     const hi = hiVals[active];
-    if (v !== null) rows.push({ value: display(v), label: 'Scale', color: TOKEN.neutral, kind: 'dot' });
-    if (s !== null) rows.push({ value: display(s), label: 'Set aside', color: TOKEN.text2, kind: 'dot' });
-    if (lv !== null) rows.push({ value: display(lv), label: 'Trend', color: TOKEN.blue, kind: 'line' });
+    if (v !== null) rows.push({ value: display(v), label: 'Scale', color: TOKEN.text2, kind: 'dot' });
+    if (s !== null) rows.push({ value: display(s), label: 'Set aside', color: TOKEN.yellow, kind: 'dot' });
+    if (lv !== null) rows.push({ value: display(lv), label: 'Trend', color: TOKEN.text, kind: 'line' });
     if (lo !== null && hi !== null) {
-      rows.push({ value: `${fmt(lo, valueDp)}–${fmt(hi, valueDp)} ${unit}`, label: '90% range', color: TOKEN.blue, kind: 'rect', opacity: 0.35 });
+      rows.push({ value: `${fmt(lo, valueDp)}–${fmt(hi, valueDp)} ${unit}`, label: BAND_WORD, color: TOKEN.text, kind: 'rect', opacity: 0.35 });
     }
     if (!rows.length) rows = [{ value: '—', label: 'No data', kind: 'none' }];
   }
@@ -239,51 +248,64 @@ export default function WeightChart({
         onFocus={() => setActive((a) => (a === null ? defined[defined.length - 1] : a))}
         onBlur={() => setActive(null)}
       >
+        {/* y ticks as agate at the left; one bottom hairline carries the dates */}
         {ticks.map((t) => (
-          <g key={t}>
-            <line x1={left} x2={left + plotW} y1={px(y(t))} y2={px(y(t))} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
-            <text x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
-              {formatTick(t, tickDp)}
-            </text>
-          </g>
+          <text key={t} x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
+            {formatTick(t, tickDp)}
+          </text>
         ))}
+        <line x1={left} x2={left + plotW} y1={px(top + plotH)} y2={px(top + plotH)} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
 
-        {bandPath ? <path d={bandPath} fill={TOKEN.blue} fillOpacity={0.12} /> : null}
+        {/* the 90% band: a 9 percent bone wash, no edge */}
+        {bandPath ? <path d={bandPath} fill={TOKEN.text} fillOpacity={WASH} /> : null}
 
-        {linePath ? <path d={linePath} fill="none" stroke={TOKEN.blue} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {/* the smoothed trend: 1.5 px bone */}
+        {linePath ? <path d={linePath} fill="none" stroke={TOKEN.text} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="butt" /> : null}
 
-        {/* accepted readings: filled neutral dot with a surface ring */}
+        {/* accepted readings: hollow text2 circles filled with the stock */}
         {!dense
-          ? values.map((v, i) =>
-              v === null ? null : (
-                <circle key={`a${i}`} cx={px(xs[i])} cy={px(y(v))} r={dotR} fill={TOKEN.neutral} stroke={TOKEN.card} strokeWidth={dotRing} style={{ paintOrder: 'stroke' }} />
-              ),
-            )
+          ? values.map((v, i) => (v === null ? null : <circle key={`a${i}`} cx={px(xs[i])} cy={px(y(v))} r={dotR} fill={TOKEN.base} stroke={TOKEN.text2} strokeWidth={1} />))
           : null}
 
-        {/* set aside by the outlier gate: hollow ring, same ink — shape, not colour */}
-        {suspects.map((v, i) =>
-          v === null ? null : (
-            <circle key={`s${i}`} cx={px(xs[i])} cy={px(y(v))} r={Math.max(3.5, dotR + 1)} fill={TOKEN.card} stroke={TOKEN.text2} strokeWidth={1.5} />
-          ),
-        )}
+        {/* set aside by the outlier gate: an amber cross, shape before ink */}
+        {suspects.map((v, i) => {
+          if (v === null) return null;
+          const cx = px(xs[i]);
+          const cy = px(y(v));
+          const r = crossR;
+          return (
+            <path
+              key={`s${i}`}
+              d={`M${px(cx - r)} ${px(cy - r)}L${px(cx + r)} ${px(cy + r)}M${px(cx - r)} ${px(cy + r)}L${px(cx + r)} ${px(cy - r)}`}
+              fill="none"
+              stroke={TOKEN.yellow}
+              strokeWidth={1.25}
+              strokeLinecap="butt"
+            />
+          );
+        })}
 
         {active !== null ? (
           <g pointerEvents="none">
             <line x1={px(xs[active])} x2={px(xs[active])} y1={top} y2={top + plotH} stroke={TOKEN.text2} strokeWidth={1} />
-            {lineVals[active] !== null ? (
-              <circle cx={px(xs[active])} cy={px(y(lineVals[active] as number))} r={3} fill={TOKEN.blue} stroke={TOKEN.card} strokeWidth={2} style={{ paintOrder: 'stroke' }} />
-            ) : null}
+            {lineVals[active] !== null ? <circle cx={px(xs[active])} cy={px(y(lineVals[active] as number))} r={2.5} fill={TOKEN.text} /> : null}
           </g>
         ) : null}
 
+        {/* two direct labels in agate in the right margin: the value beside the line end, the band's word beside its top */}
         {lastLine ? (
-          <text x={px(xs[lastLine.index] + 8)} y={px(clampY(lastLine.value))} dominantBaseline="middle" fontSize={FONT.label} fontWeight={600} fill={TOKEN.text}>
+          <text x={legendX} y={px(legendYs[0])} dominantBaseline="middle" fontSize={FONT.label} fontWeight={600} fill={TOKEN.text}>
             {lastText}
           </text>
         ) : null}
+        {lastBand ? (
+          <text x={legendX} y={px(legendYs[1])} dominantBaseline="middle" fontSize={FONT.label} fontWeight={500} fill={TOKEN.muted}>
+            {BAND_WORD}
+          </text>
+        ) : null}
 
-        {xLabelIndices(n, range).map((i) => {
+        {/* three date ticks */}
+        {sparseIndices(n, 3).map((i) => {
           const t = formatTickDate(dates[i], range);
           const half = textWidth(t, FONT.tick) / 2;
           return (

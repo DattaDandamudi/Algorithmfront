@@ -1,24 +1,26 @@
 /**
- * HRV & RHR cards — SPEC §3 / §6.3 (Plews/Buchheit, Garmin-style bands).
+ * HRV & RHR figures — SPEC §3 / §6.3 (Plews/Buchheit, Garmin-style bands).
  *
- * HRV: daily rMSSD dots, the 7-day (geometric) mean line and the SWC band
- * (mean ± 0.5 SD of ln rMSSD) shaded and labelled "normal range for you";
- * readouts carry the band, the range in ms, today's reading vs the 30-day
- * average and the "baseline forming (n/21 days)" note (≥21 readings in 30
- * days before the band is trusted). The maths is in ln space (§6.3) and the
- * chart back-transforms to ms, so the caption says so: the band is
- * exp(ln mean ± 0.5 SD), asymmetric in ms (review R2-12).
- * RHR: dots + 7-day mean + the 28-day baseline as a hairline INSIDE its
- * personal range (28-day mean ± SD, the §3 baseline band — review R2-7), with
- * the ▲/▼ delta vs that baseline (down is good).
+ * HRV opens the sleep-and-recovery group, so it carries that group's ink
+ * rule. Its lead is the 7-day (geometric) mean with the band word beside it;
+ * the deck is today's reading against the 30-day average and the normal
+ * range. The chart draws daily rMSSD as hollow circles, the 7-day mean as the
+ * bone line and the SWC band (mean ± 0.5 SD of ln rMSSD) as a wash named at
+ * its top. The maths is in ln space (§6.3) and the chart back-transforms to
+ * ms, so the source line says so: the band is exp(ln mean ± 0.5 SD),
+ * asymmetric in ms (R2-12). The baseline-forming note (≥21 readings in 30
+ * days before the band is trusted) is the dateline.
+ *
+ * RHR: readings, the 7-day mean and the 28-day baseline as a dotted hairline
+ * INSIDE its personal range (28-day mean ± SD, the §3 baseline band, R2-7),
+ * with the ▲/▼ delta vs that baseline (down is good) under the lead.
  */
-import { HeartPulse } from 'lucide-react';
 import type { BaselineDelta, CoachContext } from '../../data/types';
 import { BASELINE_READINGS, COACH_CHIPS } from '../../engine';
-import { fmt } from '../../lib/format';
-import { Button, Delta, EmptyState } from '../../ui';
+import { fmt, fmtSigned } from '../../lib/format';
+import { Button, EmptyState } from '../../ui';
 import { TimeSeriesChart } from '../../ui/charts';
-import { DeltaSub, Note, Readout, TrendCard } from './TrendCard';
+import { DeltaSub, Lead, TrendCard } from './TrendCard';
 import { bucketDateFormat, hrvBandName, hrvBandTone, type BandedSeries, type BaselineBand, type LinedSeries, type RangeWindow } from './series';
 
 const hasData = (pts: Array<{ value: number | null }>) => pts.some((p) => p.value !== null);
@@ -29,9 +31,11 @@ export interface HrvCardProps {
   win: RangeWindow;
   onOpenCoach: (prompt: string) => void;
   onOpenSettings: () => void;
+  /** Draw the group's ink rule above the running head. */
+  rule?: boolean;
 }
 
-export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCardProps) {
+export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings, rule }: HrvCardProps) {
   const tone = hrvBandTone(hrv.band);
   const n = hrv.delta.n;
   const forming = n < BASELINE_READINGS;
@@ -46,33 +50,33 @@ export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCa
     return (
       <TrendCard
         title="HRV"
-        tile
-        caption="Your ln(rMSSD) baseline and its smallest worthwhile change"
+        rule={rule}
+        caption="ln(rMSSD) baseline and its smallest worthwhile change"
         action={action}
-        empty={
-          <EmptyState
-            icon={<HeartPulse />}
-            title="No HRV yet"
-            hint="Log HRV or connect WHOOP to start your baseline."
-            action={{ label: 'Open Settings', onClick: onOpenSettings }}
-          />
-        }
+        empty={<EmptyState title="No HRV yet" hint="Log HRV or connect WHOOP to start your baseline." action={{ label: 'Open Settings', onClick: onOpenSettings }} />}
       />
     );
   }
 
+  const today = hrv.today === null ? null : `Today ${fmt(hrv.today)} ms`;
+  const delta = hrv.delta.delta === null ? null : `${fmtSigned(hrv.delta.delta)} ms against your 30-day average`;
+  const deck = [
+    today && delta ? `${today}, ${delta}` : (today ?? 'No reading yet today'),
+    range ? `your normal range is ${range}` : 'the normal range needs 7 or more readings in the last 28 days',
+  ].join('; ');
+
   return (
     <TrendCard
       title="HRV"
-      tile
-      caption={`Daily rMSSD, 7-day geometric mean and your normal range, ${win.label}`}
+      rule={rule}
+      caption={forming ? `Baseline forming, ${n} of ${BASELINE_READINGS}` : `${n} readings in 30 days`}
       action={action}
-      meaning="Dots are daily rMSSD in ms; the line is your 7-day geometric mean and the shaded band is your smallest worthwhile change, computed in ln(rMSSD) and shown back in ms (so it sits a little wider above the line than below). Below it, keep training light — and give the baseline ~30 days before acting on it."
+      source={`Daily rMSSD, 7-day geometric mean, ${win.label}; ${forming ? 'baseline forming' : 'baseline established'}. The wash is your normal range, mean ± 0.5 SD in ln rMSSD shown back in ms, so it sits a little wider above the line than below.`}
+      meaning="Below your normal range, keep training light; above it, you have room. Give the baseline about 30 days before acting on it."
     >
-      <div className="grid grid-cols-2 gap-3">
-        <Readout label="7-day mean" value={hrv.baseline7} unit="ms" sub={hrvBandName(hrv.band)} tone={tone} />
-        <Readout label="Today" value={hrv.today} unit="ms" sub={<Delta value={hrv.delta.delta} good={hrv.delta.good} unit="ms" />} />
-      </div>
+      <Lead value={hrv.baseline7} unit="ms" word={hrvBandName(hrv.band)} tone={tone} sub="7-day geometric mean" />
+
+      <p className="hx-deck">{`${deck}.`}</p>
 
       <TimeSeriesChart
         ariaLabel={`HRV, ${win.label}: daily rMSSD, 7-day mean and your normal range`}
@@ -81,29 +85,12 @@ export function HrvCard({ hrv, series, win, onOpenCoach, onOpenSettings }: HrvCa
         line={series.line}
         band={series.band}
         unit="ms"
-        label="HRV"
-        lineLabel="7-day geo. mean"
-        bandLabel="Normal range for you"
+        label="Daily"
+        lineLabel="7-day mean"
+        bandLabel="Normal range"
         dateFormat={bucketDateFormat(win.bucket)}
         emptyText="Log HRV or connect WHOOP to start your baseline."
       />
-
-      <div className="flex flex-col gap-1">
-        <Note tone={range ? tone : 'neutral'}>
-          {range ? (
-            <>
-              Normal range for you: <span className="font-semibold text-hx-text">{range}</span>
-            </>
-          ) : (
-            'Normal range needs 7+ HRV readings in the last 28 days.'
-          )}
-        </Note>
-        <Note tone={forming ? 'neutral' : 'green'}>
-          {forming
-            ? `Baseline forming (${n}/${BASELINE_READINGS} days) — the band firms up at ${BASELINE_READINGS} readings in 30 days.`
-            : `Baseline established — ${n} readings in the last 30 days.`}
-        </Note>
-      </div>
     </TrendCard>
   );
 }
@@ -122,11 +109,9 @@ export function RhrCard({ rhr, series, band, win, onOpenSettings }: RhrCardProps
     return (
       <TrendCard
         title="Resting heart rate"
-        tile
-        caption="Daily RHR vs your 28-day baseline"
+        caption="Daily RHR against your 28-day baseline"
         empty={
           <EmptyState
-            icon={<HeartPulse />}
             title="No resting heart rate yet"
             hint="Log RHR or connect WHOOP to compare each morning against your 28-day baseline."
             action={{ label: 'Open Settings', onClick: onOpenSettings }}
@@ -136,18 +121,21 @@ export function RhrCard({ rhr, series, band, win, onOpenSettings }: RhrCardProps
     );
   }
 
+  const deck =
+    rhr.baseline === null
+      ? 'The 28-day baseline needs more mornings.'
+      : `7-day mean ${series.meanLast === null ? '—' : fmt(series.meanLast, 1)} bpm against a 28-day baseline of ${fmt(rhr.baseline, 1)} bpm.`;
+
   return (
     <TrendCard
       title="Resting heart rate"
-      tile
-      caption={`Daily RHR, 7-day mean and your 28-day baseline, ${win.label}`}
-      meaning="The shaded band is your usual range (28-day mean ± SD) around the baseline line. A resting heart rate creeping above it usually means fatigue, short sleep or illness — read it together with HRV before adding load."
+      caption={`${rhr.n} readings in 28 days`}
+      source={`Daily readings and the 7-day mean, ${win.label}; the wash is your usual range, 28-day mean ± SD, and the dotted line its mean.`}
+      meaning="A resting heart rate creeping above your usual range usually means fatigue, short sleep or illness. Read it together with HRV before adding load."
     >
-      <div className="grid grid-cols-3 gap-3">
-        <Readout label="Today" value={rhr.today} unit="bpm" sub={<DeltaSub value={rhr.delta} good={rhr.good} unit="bpm" caption="vs 28-day baseline" />} />
-        <Readout label="7-day mean" value={series.meanLast} dp={1} unit="bpm" />
-        <Readout label="Baseline" value={rhr.baseline} dp={1} unit="bpm" sub={`28-day, ${rhr.n} readings`} />
-      </div>
+      <Lead value={rhr.today} unit="bpm" sub={<DeltaSub value={rhr.delta} good={rhr.good} unit="bpm" caption="vs 28-day baseline" />} />
+
+      <p className="hx-deck">{deck}</p>
 
       <TimeSeriesChart
         ariaLabel={`Resting heart rate, ${win.label}: daily readings, 7-day mean and 28-day baseline`}
@@ -157,7 +145,7 @@ export function RhrCard({ rhr, series, band, win, onOpenSettings }: RhrCardProps
         targetBand={band ? { lo: band.lo, hi: band.hi, label: 'Your usual range' } : undefined}
         reference={rhr.baseline === null ? undefined : { value: rhr.baseline, label: band ? undefined : '28-day baseline' }}
         unit="bpm"
-        label="RHR"
+        label="Daily"
         lineLabel="7-day mean"
         dateFormat={bucketDateFormat(win.bucket)}
         emptyText="Log RHR or connect WHOOP to start your baseline."

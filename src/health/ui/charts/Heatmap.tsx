@@ -65,7 +65,7 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.text, legend, 
 
   if (!latest) {
     return (
-      <div role="img" aria-label={ariaLabel} className="text-[13px] text-hx-text2 py-6 text-center">
+      <div role="img" aria-label={ariaLabel} className="hx-body italic text-hx-text2 flex items-center border-t border-hx-border" style={{ height: 96 }}>
         Nothing logged yet.
       </div>
     );
@@ -236,9 +236,12 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.text, legend, 
         />
       ) : null}
 
+      {/* The legend written as words, each with its ink density; the outlined empty cell is an SVG rect, never a framed box. */}
       <ul className="hx-agate mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-hx-muted" aria-hidden>
         <li className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 border border-hx-border" />
+          <svg width={8} height={8} viewBox="0 0 8 8" className="block shrink-0">
+            <rect x={0.5} y={0.5} width={7} height={7} fill="none" stroke={TOKEN.border} strokeWidth={1} />
+          </svg>
           <span>Not logged</span>
         </li>
         {([0, 1, 2, 3] as HeatLevel[]).map((lv) => (

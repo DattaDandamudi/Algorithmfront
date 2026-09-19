@@ -2,12 +2,14 @@
  * BarSeries — simple column chart for weekly / monthly aggregates and the
  * tobacco 7-day counts (SPEC §3, §6.6).
  *
- * Marks (DESIGN.md "Data marks"): square bone columns no thicker than 24 px
- * on one baseline hairline, a 2 px gap between neighbours, no gridlines (the
- * y ticks sit as agate at the left), the target a dotted hairline. Only the
+ * Marks (DESIGN.md "Data marks"): square-ended bone columns no thicker than
+ * 24 px growing from one solid baseline hairline (the zero line, when the
+ * data goes negative), a 2 px gap between neighbours, no gridlines (the y
+ * ticks sit as agate at the left), the target a dotted hairline. Only the
  * last column carries a direct label; each column's value is in the tooltip
  * (pointer: the whole slot is the hit target, at least 24 px; keyboard: ←/→)
- * and in the visually-hidden table.
+ * and in the visually-hidden table. `barPath` keeps its radius parameter for
+ * callers, but nothing here passes one: radius belongs to controls.
  */
 import { useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { fmt } from '../../lib/format';
@@ -51,8 +53,9 @@ export interface BarSeriesProps {
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /**
- * Column path with a 4 px radius at the data end and a square baseline. The
- * radius shrinks for very short or narrow bars so the curve never inverts.
+ * Column path: square at the baseline and, with `r` = 0 (the default), square
+ * at the data end too. A radius shrinks for very short or narrow bars so the
+ * curve never inverts.
  */
 export function barPath(x: number, yValue: number, yBase: number, w: number, r = 0): string {
   const h = Math.abs(yBase - yValue);
@@ -198,10 +201,10 @@ export default function BarSeries({
           </g>
         ) : null}
 
-        {/* selective direct label: last column's value on its cap */}
+        {/* selective direct label: last column's value on its cap, kept inside the frame */}
         {last ? (
           <text
-            x={px(centers[last.index])}
+            x={px(Math.min(width - textWidth(display(last.value), FONT.tick) / 2, Math.max(textWidth(display(last.value), FONT.tick) / 2, centers[last.index])))}
             y={px(last.value >= 0 ? y(last.value) - 4 : y(last.value) + FONT.tick + 2)}
             textAnchor="middle"
             fontSize={FONT.tick}
