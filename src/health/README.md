@@ -10,7 +10,7 @@ local food database.
 src/health/
   HealthApp.tsx        shell: providers, 6-tab bottom nav, onboarding gate
   nav.tsx              tab state + deep links (open Coach pre-filled, open Log section, open Train view/session)
-  health.css           design tokens and the material system (obsidian / graphite / slate, lume, semantic states) — see DESIGN.md
+  health.css           design tokens, the type ladder and the dividers and blocks (ink rule, hairline, box score, ledger, figure) — see DESIGN.md
   DESIGN.md            the visual specification every screen is built to
   data/
     types.ts           THE contract: DailyRecord (compact short-key schema), Profile, Targets, CoachContext…
@@ -56,7 +56,7 @@ src/health/
     foodDb.ts          Indian / Middle-Eastern / basics food database (per 100 g)
     barcode.ts         Open Food Facts lookup for barcodes (the app's only non-AI third-party call, made only on a scan/lookup)
     foodImage.ts       photo estimation through Claude vision (same strict JSON schema, confidence capped at 0.6)
-  ui/                  design-system primitives (Ring dial, bento Tile, Sparkline, MacroBar, Sheet, …) and charts/
+  ui/                  design-system primitives (hairline Ring, Tile as cell or ledger row, Sparkline, MacroBar, Sheet, …) and charts/
   screens/             Today, Log, Train, Trends, Coach, Settings, Onboarding
     Train.tsx          the sixth tab: Today / Log / History / Analysis sub-views
     train/             session logger, exercise picker, history list, e1RM, volume and load analysis
@@ -65,16 +65,18 @@ src/health/
 
 ## Design
 
-The interface is an instrument panel under glass — `DESIGN.md` is the spec and every
-screen is built to it. Two ideas carry it: **the accent is light** (nothing decorative is
-coloured; the only saturated hues are the semantic states, so if something is coloured it
-means something) and **depth is structural** (three elevations that each mean something:
-a tile is a reading, a raised surface is something you act on, a well is a gauge track).
-Layout is a bento grid where tile size encodes importance; the readiness dial is the
-largest thing on Today because it is the answer. Type is Bricolage Grotesque for
-numerals and headings, Figtree for everything you read; labels are sentence case, and
-there are no middle-dot meta strings. Tailwind token names (`text-hx-red`, `.hx-label`)
-are unchanged because tests pin them; only their values moved.
+The interface is a sports quarterly printed on black stock — `DESIGN.md` is the spec and
+every screen is built to it. Three ideas carry it: **hierarchy is typographic** (size,
+width, weight and two kinds of rule; no card ever wraps a reading, and nothing you only
+read has a ground, a shadow or a radius), **ink, not accent** (bone on warm charcoal is
+the page; the four semantic inks appear only as a word, an arc, a tag rule or a tone
+square) and **rules mean something** (a full-bleed ink rule is a section boundary, an
+inset hairline is a leader or a table row, and nothing is framed on four sides). Every
+reading is one of three blocks: a box score, a ledger or a figure. Type is Archivo across
+its width axis for numerals and interface, Literata for everything you read; labels are
+sentence case, and there are no middle-dot meta strings. Tailwind token names
+(`text-hx-red`, `.hx-label`) are unchanged because tests pin them; only their values
+moved.
 
 ## Running
 
