@@ -3,9 +3,9 @@
  * collapsed list still tells the user what is set). Pure functions of state;
  * every number is read from settings / storage, never invented.
  *
- * Each one reads as a sentence or a comma list — no middle dots (DESIGN.md
- * "Copy rules") — and is written to survive being truncated on a narrow tile,
- * so the part that identifies the section comes first.
+ * Each one reads as a sentence or a comma list, with no middle dots and no
+ * dashed fragments (DESIGN.md "Copy voice"), and is written to survive being
+ * truncated in a 56 px row, so the part that identifies the section comes first.
  */
 import { isAIConfigured, MODEL_OPTIONS } from '../../ai/config';
 import type { AppSettings, DailyRecord, ISODate, StorageStatus } from '../../data/types';
@@ -78,7 +78,7 @@ export function coachCaption(s: AppSettings): string {
   if (ai.provider === 'none') return 'Offline coach, local food database';
   const model = MODEL_OPTIONS.find((m) => m.id === ai.model)?.label.replace(/\s*\(.*\)$/, '') ?? ai.model;
   const via = ai.provider === 'proxy' ? 'Proxy' : 'API key';
-  return isAIConfigured(ai) ? `${via}, ${model}, ${ai.tone}` : `${via} not set — offline until configured`;
+  return isAIConfigured(ai) ? `${via}, ${model}, ${ai.tone}` : `${via} not set, offline until configured`;
 }
 
 export function dataCaption(storage: StorageStatus, records: DailyRecord[], now: number): string {
@@ -100,7 +100,7 @@ export function trainingCaption(s: AppSettings): string {
 
 export function checkInCaption(s: AppSettings): string {
   const c = s.checkIn;
-  if (!c.enabled) return 'Prompt off — nothing is asked';
+  if (!c.enabled) return 'Prompt off, nothing is asked';
   const extra = [c.weeklySrss ? 'SRSS' : null, c.monthlyPss ? 'PSS-4' : null].filter(Boolean).join(' + ');
   return `${c.items.length} item${c.items.length === 1 ? '' : 's'} from ${c.promptAfter}${extra ? `, plus ${extra}` : ''}`;
 }

@@ -3,8 +3,9 @@
  *
  * The built-in 4-day upper/lower program ships in the engine, not in settings,
  * so it can be improved between releases without rewriting anyone's data. This
- * card lists the built-ins read-only, and "Make an editable copy" writes a deep
- * clone into `settings.training.programs`, which the Train tab then prefers.
+ * block lists the built-ins read-only as ledger rows, and "Make an editable
+ * copy" writes a deep clone into `settings.training.programs`, which the Train
+ * tab then prefers.
  *
  * A copy can be renamed, made active, edited set-by-set, and deleted. Both
  * overwriting an existing copy and deleting one are destructive, so both
@@ -12,12 +13,11 @@
  * inline disclosure, not a modal).
  */
 import { useState, type ReactNode } from 'react';
-import { ChevronDown, Copy, Plus, Trash2 } from 'lucide-react';
 import { useHealth } from '../../data/store';
 import type { Program, ProgramExercise, SessionType } from '../../data/types';
 import { DEFAULT_PROGRAMS, exerciseName } from '../../engine/exerciseDb';
 import { Button, toast } from '../../ui';
-import { NumberField, Note, Pill, SelectField, SubHeading, TextField } from './fields';
+import { NumberField, Note, SelectField, StateWord, SubHeading, TextField } from './fields';
 import { useConfirm } from './useConfirm';
 import { SESSION_OPTIONS, copyIdOf, programSummary } from './util';
 
@@ -60,7 +60,7 @@ export default function ProgramList() {
   const remove = async (p: Program) => {
     const ok = await confirm({
       title: `Delete “${p.name}”?`,
-      body: 'Removes this program from Settings. Sessions you already logged against it keep their exercises — only the plan goes.',
+      body: 'Removes this program from Settings. Sessions you already logged against it keep their exercises; only the plan goes.',
       confirmLabel: 'Delete program',
       danger: true,
     });
@@ -79,7 +79,7 @@ export default function ProgramList() {
 
   return (
     <>
-      <SubHeading>Programs</SubHeading>
+      <SubHeading title="Programs" caption={`${custom.length} of yours`} />
       <SelectField
         label="Active program"
         value={all.some((p) => p.id === activeId) ? activeId : ''}
@@ -88,30 +88,32 @@ export default function ProgramList() {
         hint="What the Train tab plans from. Nothing is locked: you can always log something else."
       />
 
-      <ul className="flex flex-col gap-2">
+      <ul className="hx-ledger m-0 p-0 list-none">
         {all.map((p) => {
           const mine = !p.builtIn;
           const open = openId === p.id;
           return (
-            <li key={p.id} className="hx-well !rounded-ctl px-3 py-3">
-              <div className="flex items-start justify-between gap-2">
+            <li key={p.id} className="hx-row gap-3">
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[15px] leading-[22px] text-hx-text truncate">{p.name}</p>
-                  <p className="text-[13px] leading-[18px] text-hx-muted">{programSummary(p)}</p>
+                  <p className="hx-body truncate">{p.name}</p>
+                  <p className="hx-cap">{programSummary(p)}</p>
                 </div>
-                <Pill tone={mine ? 'blue' : 'neutral'}>{mine ? 'Yours' : 'Built-in'}</Pill>
+                <StateWord tone={mine ? 'blue' : 'neutral'} className="pt-0.5">
+                  {mine ? 'Yours' : 'Built-in'}
+                </StateWord>
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-3">
                 {p.builtIn ? (
-                  <Button variant="secondary" size="sm" icon={<Copy aria-hidden />} onClick={() => makeCopy(p)}>
+                  <Button variant="secondary" size="sm" onClick={() => makeCopy(p)}>
                     {custom.some((c) => c.id === copyIdOf(p.id)) ? 'Replace my copy' : 'Make an editable copy'}
                   </Button>
                 ) : (
                   <>
-                    <Button variant="secondary" size="sm" icon={<ChevronDown className={open ? 'rotate-180 transition-transform' : 'transition-transform'} aria-hidden />} aria-expanded={open} onClick={() => setOpenId(open ? null : p.id)}>
+                    <Button variant="secondary" size="sm" aria-expanded={open} onClick={() => setOpenId(open ? null : p.id)}>
                       {open ? 'Done editing' : 'Edit'}
                     </Button>
-                    <Button variant="danger" size="sm" icon={<Trash2 aria-hidden />} onClick={() => remove(p)}>
+                    <Button variant="danger" size="sm" onClick={() => remove(p)}>
                       Delete
                     </Button>
                   </>
@@ -122,7 +124,7 @@ export default function ProgramList() {
           );
         })}
       </ul>
-      <Note className="text-hx-muted">
+      <Note>
         The built-in program lives in the app, so it improves with each release; a copy is yours and never changes underneath you. Add exercises to a session on the Train tab, where the picker and the
         exercise library live.
       </Note>
@@ -157,68 +159,54 @@ function ProgramEditor({ program, onChange, onConfirm }: { program: Program; onC
   };
 
   return (
-    <div className="mt-3 pt-3 border-t border-hx-border/60 flex flex-col gap-3">
+    <div className="pt-3 flex flex-col gap-6">
       <TextField label="Program name" value={program.name} maxLength={60} onChange={(name) => onChange({ name })} />
       {sessionKeys.map((key) => (
         <div key={key}>
-          <h4 className="hx-label mb-1">{SESSION_OPTIONS.find((o) => o.value === key)?.label ?? key}</h4>
-          <ul className="flex flex-col gap-2">
-            {(program.sessions[key] ?? []).map((e, i) => (
-              <li key={`${e.exerciseId}-${i}`} className="rounded-ctl border border-hx-border/70 px-2.5 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[15px] leading-[22px] text-hx-text truncate">{exerciseName(e.exerciseId, customExercises)}</span>
-                  <Button variant="ghost" size="sm" aria-label={`Remove ${exerciseName(e.exerciseId, customExercises)} from ${key}`} icon={<Trash2 aria-hidden />} onClick={() => removeExercise(key, i)} />
-                </div>
-                <div className="mt-2 grid grid-cols-4 gap-1.5">
-                  <MiniField label="Sets">
-                    <NumberField label={`${exerciseName(e.exerciseId, customExercises)} sets`} hideLabel value={e.sets} min={1} max={12} onCommit={(sets) => setExercise(key, i, { sets })} />
-                  </MiniField>
-                  <MiniField label="Reps">
-                    <NumberField
-                      label={`${exerciseName(e.exerciseId, customExercises)} lowest reps`}
-                      hideLabel
-                      value={e.reps[0]}
-                      min={1}
-                      max={50}
-                      validate={(n) => (n > e.reps[1] ? `Not above ${e.reps[1]}.` : null)}
-                      onCommit={(lo) => setExercise(key, i, { reps: [lo, e.reps[1]] })}
-                    />
-                  </MiniField>
-                  <MiniField label="to">
-                    <NumberField
-                      label={`${exerciseName(e.exerciseId, customExercises)} highest reps`}
-                      hideLabel
-                      value={e.reps[1]}
-                      min={1}
-                      max={50}
-                      validate={(n) => (n < e.reps[0] ? `Not below ${e.reps[0]}.` : null)}
-                      onCommit={(hi) => setExercise(key, i, { reps: [e.reps[0], hi] })}
-                    />
-                  </MiniField>
-                  <MiniField label="RPE">
-                    <NumberField
-                      label={`${exerciseName(e.exerciseId, customExercises)} target RPE`}
-                      hideLabel
-                      value={e.rpe ?? null}
-                      min={5}
-                      max={10}
-                      step={0.5}
-                      dp={1}
-                      placeholder="—"
-                      onCommit={(rpe) => setExercise(key, i, { rpe })}
-                      onClear={() => setExercise(key, i, { rpe: undefined })}
-                    />
-                  </MiniField>
-                </div>
-              </li>
-            ))}
+          <h4 className="hx-label">{SESSION_OPTIONS.find((o) => o.value === key)?.label ?? key}</h4>
+          <ul className="hx-ledger m-0 p-0 list-none mt-1">
+            {(program.sessions[key] ?? []).map((e, i) => {
+              const name = exerciseName(e.exerciseId, customExercises);
+              return (
+                <li key={`${e.exerciseId}-${i}`} className="hx-row gap-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="hx-body truncate">{name}</span>
+                    <Button variant="ghost" size="sm" aria-label={`Remove ${name} from ${key}`} onClick={() => removeExercise(key, i)} className="-my-3">
+                      Remove
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-x-3">
+                    <MiniField label="Sets">
+                      <NumberField label={`${name} sets`} hideLabel value={e.sets} min={1} max={12} onCommit={(sets) => setExercise(key, i, { sets })} />
+                    </MiniField>
+                    <MiniField label="Reps">
+                      <NumberField label={`${name} lowest reps`} hideLabel value={e.reps[0]} min={1} max={50} validate={(n) => (n > e.reps[1] ? `Not above ${e.reps[1]}.` : null)} onCommit={(lo) => setExercise(key, i, { reps: [lo, e.reps[1]] })} />
+                    </MiniField>
+                    <MiniField label="to">
+                      <NumberField label={`${name} highest reps`} hideLabel value={e.reps[1]} min={1} max={50} validate={(n) => (n < e.reps[0] ? `Not below ${e.reps[0]}.` : null)} onCommit={(hi) => setExercise(key, i, { reps: [e.reps[0], hi] })} />
+                    </MiniField>
+                    <MiniField label="RPE">
+                      <NumberField
+                        label={`${name} target RPE`}
+                        hideLabel
+                        value={e.rpe ?? null}
+                        min={5}
+                        max={10}
+                        step={0.5}
+                        dp={1}
+                        placeholder="Optional"
+                        onCommit={(rpe) => setExercise(key, i, { rpe })}
+                        onClear={() => setExercise(key, i, { rpe: undefined })}
+                      />
+                    </MiniField>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}
-      <Note className="text-hx-muted flex items-start gap-1.5">
-        <Plus className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
-        <span>Adding an exercise happens on Train, where you can search the library and see what a session already covers.</span>
-      </Note>
+      <Note>Adding an exercise happens on Train, where you can search the library and see what a session already covers.</Note>
     </div>
   );
 }
@@ -226,7 +214,7 @@ function ProgramEditor({ program, onChange, onConfirm }: { program: Program; onC
 function MiniField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <span className="block text-[13px] leading-[18px] text-hx-muted mb-1">{label}</span>
+      <span className="hx-label block">{label}</span>
       {children}
     </div>
   );

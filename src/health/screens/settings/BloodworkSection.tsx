@@ -1,30 +1,32 @@
 /**
  * Settings §4 — Bloodwork summary (SPEC §6.7, display-only).
  *
- * Rows show the label, the value with its unit and a status pill (low/high/elevated red,
- * low-normal yellow, normal green). Expanding a row edits value / unit /
- * status / tested-on / retest dates and shows the engine's per-marker
- * guidance (`micronutrients.markerGuidance`): general ranges + habits with
- * the doctor cue, or — for elevated lead — an escalation card that says
- * "Needs physician follow-up" and never a self-care tip. Retest reminders
- * come from `micronutrients.retestReminders` (planned retest date, else
- * tested-on + 90 days for low/elevated markers). The app never invents a lab
- * date: a flagged marker with no test date gets an explicit "add your test
- * date to schedule a retest" row in the same banner, so the reminder is
- * visible on a fresh install (review R2-5; `util.bloodworkAttention`).
+ * A ledger of markers: the label, the status as a word with its tone square
+ * (low/high/elevated red, low-normal amber, normal green), the test date, and
+ * the value flush right as a table figure with its unit. Opening a row edits
+ * value / unit / status / tested-on / retest dates and shows the engine's
+ * per-marker guidance (`micronutrients.markerGuidance`): general ranges and
+ * habits with the doctor cue as a read-only inset, or, for elevated lead, an
+ * escalation note that says "Needs physician follow-up" and never a self-care
+ * tip. Retest reminders come from `micronutrients.retestReminders` (planned
+ * retest date, else tested-on + 90 days for low/elevated markers). The app
+ * never invents a lab date: a flagged marker with no test date gets an
+ * explicit "add your test date to schedule a retest" line in the same note, so
+ * the reminder is visible on a fresh install (review R2-5;
+ * `util.bloodworkAttention`).
  *
  * The app never interprets a lab as disease; every number rendered here is
  * the user's own marker value.
  */
 import { useMemo, useState } from 'react';
-import { ChevronDown, Plus, Stethoscope, Trash2 } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useHealth } from '../../data/store';
 import type { BloodMarker, ISODate, MarkerStatus } from '../../data/types';
 import { markerGuidance, retestReminders, type RetestReminder } from '../../engine/micronutrients';
 import { formatDateShort } from '../../lib/dates';
 import { Banner, Button, toast } from '../../ui';
 import { useConfirm } from './useConfirm';
-import { DateField, Note, NumberField, Pill, SelectField, SubHeading, TextField } from './fields';
+import { DateField, Inset, Note, NumberField, SelectField, StateWord, SubHeading, TextField } from './fields';
 import { MARKER_STATUS_OPTIONS, bloodworkAttention, markerTone, markerValueText, slugKey } from './util';
 
 export const GENERAL_RANGES_SENTENCE = 'General ranges for information only — confirm dosing and any changes with your doctor.';
@@ -35,6 +37,13 @@ function reminderText(r: RetestReminder): string {
   if (r.dueInDays < 0) return `${r.marker.label} retest overdue by ${Math.abs(r.dueInDays)} day${Math.abs(r.dueInDays) === 1 ? '' : 's'} (${when})`;
   if (r.dueInDays === 0) return `${r.marker.label} retest due today`;
   return `${r.marker.label} retest in ${r.dueInDays} day${r.dueInDays === 1 ? '' : 's'} (${when})`;
+}
+
+/** "19 ng/mL" splits into the figure and its unit so the unit never shares the numeral's face. */
+function valueParts(m: BloodMarker): { figure: string; unit: string } {
+  const text = markerValueText(m);
+  const match = /^([\d.,]+)\s*(.*)$/.exec(text);
+  return match ? { figure: match[1], unit: match[2] } : { figure: text, unit: '' };
 }
 
 export default function BloodworkSection({ today }: { today: ISODate }) {
@@ -72,32 +81,25 @@ export default function BloodworkSection({ today }: { today: ISODate }) {
     toast(`Added ${draft.label.trim()}`);
   };
 
+  const dueText = due.map(reminderText).filter(Boolean).join('; ');
+
   return (
     <>
       {(due.length > 0 || undated.length > 0) && (
         <Banner kind={due.some((r) => r.overdue) ? 'warn' : 'info'}>
-          <span className="font-semibold">Retest reminders</span>
-          <ul className="mt-1 space-y-0.5">
-            {due.map((r) => (
-              <li key={r.marker.key} className={r.overdue ? 'text-hx-red' : undefined}>
-                {reminderText(r)}
-              </li>
-            ))}
-            {undated.length > 0 && (
-              <li>
-                <button type="button" onClick={() => setOpenKey(undated[0].key)} className="min-h-[44px] -my-2 py-2 text-left underline decoration-hx-border underline-offset-2 hover:text-hx-text">
-                  {undated.map((m) => m.label).join(', ')}: add your test date to schedule a retest (~90 days for low or elevated markers).
-                </button>
-              </li>
-            )}
-          </ul>
+          {dueText && <span>{dueText}. </span>}
+          {undated.length > 0 && (
+            <button type="button" onClick={() => setOpenKey(undated[0].key)} className="min-h-11 -my-2 py-2 text-left underline decoration-1 underline-offset-[3px] hover:text-hx-text">
+              {undated.map((m) => m.label).join(', ')}: add your test date to schedule a retest (about 90 days for low or elevated markers).
+            </button>
+          )}
         </Banner>
       )}
 
       {markers.length === 0 ? (
-        <Note>No markers on file. Add the results you want the coach to keep in mind — it will only ever describe them, never diagnose.</Note>
+        <Note>No markers on file. Add the results you want the coach to keep in mind; it will only ever describe them, never diagnose.</Note>
       ) : (
-        <ul className="divide-y divide-hx-border/60 -mx-1">
+        <ul className="m-0 p-0 list-none flex flex-col">
           {markers.map((m) => (
             <MarkerRow key={m.key} marker={m} open={openKey === m.key} reminder={reminderFor(m.key)} today={today} onToggle={() => setOpenKey((k) => (k === m.key ? null : m.key))} onChange={(patch) => update(m.key, patch)} onRemove={() => remove(m)} />
           ))}
@@ -107,12 +109,12 @@ export default function BloodworkSection({ today }: { today: ISODate }) {
       {adding ? (
         <AddMarkerForm today={today} onAdd={add} onCancel={() => setAdding(false)} />
       ) : (
-        <Button variant="secondary" fullWidth icon={<Plus aria-hidden />} onClick={() => setAdding(true)}>
+        <Button variant="secondary" fullWidth onClick={() => setAdding(true)}>
           Add a marker
         </Button>
       )}
 
-      <Note className="text-hx-muted">{GENERAL_RANGES_SENTENCE}</Note>
+      <Note>{GENERAL_RANGES_SENTENCE}</Note>
     </>
   );
 }
@@ -136,70 +138,63 @@ function MarkerRow({ marker: m, open, reminder, today, onToggle, onChange, onRem
   const statusLabel = MARKER_STATUS_OPTIONS.find((o) => o.value === m.status)?.label ?? m.status;
   const panelId = `hx-marker-${m.key}`;
   const guidance = markerGuidance(m);
+  const { figure, unit } = valueParts(m);
 
   return (
-    <li>
-      {/* aria-controls only while the panel exists — no dangling ARIA reference when collapsed (review R6-10). */}
-      <button type="button" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle} className="hx-press w-full min-h-[52px] flex items-center gap-3 px-1 py-2 text-left hover:bg-hx-card2/60 rounded-ctl transition-colors">
+    <li className="border-t border-hx-border first:border-t-0">
+      {/* aria-controls only while the panel exists: no dangling ARIA reference when collapsed (review R6-10). */}
+      <button type="button" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle} className="hx-row hx-press flex-row items-center gap-4">
         <span className="flex-1 min-w-0">
-          <span className="block text-[15px] leading-[22px] font-medium text-hx-text truncate">{m.label}</span>
-          <span className="block text-[13px] leading-[18px] text-hx-muted">
+          <span className="hx-body block truncate">{m.label}</span>
+          <span className="hx-cap block">
+            <StateWord tone={tone}>{statusLabel}</StateWord>
+            {'  '}
             {m.testedOn ? `Tested ${formatDateShort(m.testedOn)}` : 'Test date not set'}
             {reminder?.overdue ? ', retest overdue' : ''}
           </span>
         </span>
-        <span className="hx-display text-[17px] leading-6 font-semibold text-hx-text whitespace-nowrap">{markerValueText(m)}</span>
-        <Pill tone={tone}>{statusLabel}</Pill>
-        <ChevronDown className={`w-4 h-4 shrink-0 text-hx-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
+        <span className={`hx-fig-sm whitespace-nowrap ${figure === '—' ? 'text-hx-text2' : 'text-hx-text'}`}>
+          {figure}
+          {unit && <span className="hx-unit">{unit}</span>}
+        </span>
+        <ChevronDown className={`w-4 h-4 shrink-0 text-hx-text2 ${open ? 'rotate-180' : ''}`} strokeWidth={1.5} aria-hidden />
       </button>
 
       {open && (
-        <div id={panelId} className="px-1 pb-4 pt-1 flex flex-col gap-4">
+        <div id={panelId} className="pt-2 pb-8 flex flex-col gap-6">
           <TextField label="Label" value={m.label} maxLength={40} onChange={(label) => onChange({ label })} />
-          <div className="grid grid-cols-2 gap-3">
-            <NumberField label="Value" value={Number.isFinite(m.value) && !(m.value === 0 && !m.unit) ? m.value : null} min={0} max={100000} dp={2} step={m.unit === '%' ? 0.1 : 1} placeholder="—" onCommit={(value) => onChange({ value })} onClear={() => onChange({ value: 0 })} />
+          <div className="grid grid-cols-2 gap-x-6 gap-y-6">
+            <NumberField label="Value" value={Number.isFinite(m.value) && !(m.value === 0 && !m.unit) ? m.value : null} min={0} max={100000} dp={2} step={m.unit === '%' ? 0.1 : 1} placeholder="Not set" onCommit={(value) => onChange({ value })} onClear={() => onChange({ value: 0 })} />
             <TextField label="Unit" value={m.unit} maxLength={12} placeholder="ng/mL" onChange={(unit) => onChange({ unit })} />
           </div>
           <SelectField<MarkerStatus> label="Status (from your lab report)" value={m.status} options={MARKER_STATUS_OPTIONS} onChange={(status) => onChange({ status })} />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-6">
             <DateField label="Tested on" value={m.testedOn} max={today} onChange={(testedOn) => onChange({ testedOn })} />
             <DateField label="Retest on" value={m.retestOn} hint={!m.retestOn && reminder?.suggestedRetest ? `Suggested ${formatDateShort(reminder.suggestedRetest)}` : undefined} onChange={(retestOn) => onChange({ retestOn })} />
           </div>
-          <TextField label="Your note" value={m.note ?? ''} multiline rows={2} maxLength={280} placeholder="What your doctor said, dose agreed, next steps…" onChange={(note) => onChange({ note: note || undefined })} />
+          <TextField label="Your note" value={m.note ?? ''} multiline rows={2} maxLength={280} placeholder="What your doctor said, dose agreed, next steps" onChange={(note) => onChange({ note: note || undefined })} />
 
           {guidance.escalate ? (
-            <Banner kind="error">
-              <span className="flex items-center gap-2 font-semibold">
-                <Stethoscope className="w-4 h-4" aria-hidden /> {guidance.headline}
-              </span>
-              <p className="mt-1 text-hx-text2">{guidance.generalInfo}</p>
-              {guidance.habits.length > 0 && (
-                <>
-                  <p className="mt-2 font-medium">To raise with your doctor</p>
-                  <ul className="mt-0.5 list-disc pl-4 space-y-0.5 text-hx-text2">
-                    {guidance.habits.map((h) => (
-                      <li key={h}>{h}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
+            <Banner kind="error" lead={guidance.headline}>
+              {guidance.generalInfo}
+              {guidance.habits.length > 0 && ` To raise with your doctor: ${guidance.habits.join('; ')}.`}
             </Banner>
           ) : (
-            <div className="hx-well !rounded-ctl px-3 py-3 flex flex-col gap-2">
-              <p className="hx-display text-[15px] leading-5 font-semibold text-hx-text">{guidance.headline}</p>
-              <p className="text-[15px] leading-[22px] text-hx-text2">{guidance.generalInfo}</p>
+            <Inset>
+              <p className="hx-label text-hx-text">{guidance.headline}</p>
+              <p className="hx-body text-hx-text2">{guidance.generalInfo}</p>
               {guidance.habits.length > 0 && (
-                <ul className="list-disc pl-4 space-y-1 text-[15px] leading-[22px] text-hx-text2">
+                <ul className="m-0 pl-4 list-disc hx-body text-hx-text2 flex flex-col gap-1">
                   {guidance.habits.map((h) => (
                     <li key={h}>{h}</li>
                   ))}
                 </ul>
               )}
-            </div>
+            </Inset>
           )}
 
           <div className="flex justify-end">
-            <Button variant="danger" size="sm" icon={<Trash2 aria-hidden />} onClick={onRemove}>
+            <Button variant="danger" size="sm" onClick={onRemove}>
               Remove marker
             </Button>
           </div>
@@ -225,18 +220,18 @@ function AddMarkerForm({ today, onAdd, onCancel }: { today: ISODate; onAdd: (m: 
   const [draft, setDraft] = useState<NewMarker>({ label: '', value: null, unit: '', status: 'normal', testedOn: today });
   const canAdd = draft.label.trim().length > 0;
   return (
-    <div className="hx-raised !rounded-ctl px-3 py-3 flex flex-col gap-3">
-      <SubHeading>New marker</SubHeading>
-      <TextField label="Label" value={draft.label} maxLength={40} placeholder="e.g. HbA1c" onChange={(label) => setDraft((d) => ({ ...d, label }))} />
-      <div className="grid grid-cols-2 gap-3">
-        <NumberField label="Value" value={draft.value} min={0} max={100000} dp={2} placeholder="—" onCommit={(value) => setDraft((d) => ({ ...d, value }))} onClear={() => setDraft((d) => ({ ...d, value: null }))} />
+    <div className="flex flex-col gap-6">
+      <SubHeading title="New marker" first />
+      <TextField label="Label" value={draft.label} maxLength={40} placeholder="HbA1c" onChange={(label) => setDraft((d) => ({ ...d, label }))} />
+      <div className="grid grid-cols-2 gap-x-6 gap-y-6">
+        <NumberField label="Value" value={draft.value} min={0} max={100000} dp={2} placeholder="Not set" onCommit={(value) => setDraft((d) => ({ ...d, value }))} onClear={() => setDraft((d) => ({ ...d, value: null }))} />
         <TextField label="Unit" value={draft.unit} maxLength={12} placeholder="%" onChange={(unit) => setDraft((d) => ({ ...d, unit }))} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-6">
         <SelectField<MarkerStatus> label="Status" value={draft.status} options={MARKER_STATUS_OPTIONS} onChange={(status) => setDraft((d) => ({ ...d, status }))} />
         <DateField label="Tested on" value={draft.testedOn} max={today} onChange={(testedOn) => setDraft((d) => ({ ...d, testedOn }))} />
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-3">
         <Button variant="secondary" fullWidth onClick={onCancel}>
           Cancel
         </Button>

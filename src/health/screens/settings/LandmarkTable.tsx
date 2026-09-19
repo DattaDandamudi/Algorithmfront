@@ -3,15 +3,18 @@
  *
  * MEV / MAV / MRV are ADVISORY BANDS. Nothing in the app takes sets away
  * because a number was crossed, so this table is drawn as three editable
- * numbers per muscle with `VOLUME_ADVISORY_NOTE` beneath it — never as a limit,
+ * figures per muscle with `VOLUME_ADVISORY_NOTE` above it, never as a limit,
  * a progress bar toward a ceiling, or a red row. `mrv` in particular has no
- * trial support and is labelled "context" in its own column note.
+ * trial support and is labelled "context" in the note beneath.
+ *
+ * It is a ruled table: hairlines between rows, the column heads in .hx-label,
+ * the figures right-aligned in .hx-fig-sm on their own underline fields, and
+ * `role="table"` semantics so the Train volume grid can read it as data.
  *
  * Reset restores `landmarkDefaults(trainingLevel)`, whose level multipliers are
  * our heuristic (the module says so, and so does the copy beside the button).
- * It is destructive — it discards every row the user tuned — so it confirms.
+ * It is destructive, it discards every row the user tuned, so it confirms.
  */
-import { RotateCcw } from 'lucide-react';
 import { useHealth } from '../../data/store';
 import type { Muscle, VolumeLandmark } from '../../data/types';
 import { MUSCLES, landmarkDefaults } from '../../engine/exerciseDb';
@@ -31,6 +34,9 @@ const COLUMNS: Array<{ key: Key; head: string; full: string }> = [
   { key: 'mrv', head: 'MRV', full: 'maximum recoverable volume' },
 ];
 
+/** The muscle column takes what the three 56 px figure columns leave. */
+const ROW = 'grid grid-cols-[minmax(0,1fr)_56px_56px_56px] gap-x-3';
+
 export default function LandmarkTable() {
   const { state, actions } = useHealth();
   const confirm = useConfirm();
@@ -48,7 +54,7 @@ export default function LandmarkTable() {
   const reset = async () => {
     const ok = await confirm({
       title: 'Reset every volume landmark?',
-      body: `Replaces all 45 numbers with the ${level} table. Any row you tuned is lost — there is no undo. Nothing else changes: landmarks are advisory either way.`,
+      body: `Replaces all 45 numbers with the ${level} table. Any row you tuned is lost; there is no undo. Nothing else changes: landmarks are advisory either way.`,
       confirmLabel: 'Reset landmarks',
       danger: true,
     });
@@ -60,26 +66,24 @@ export default function LandmarkTable() {
   return (
     <>
       <SubHeading
+        title="Weekly volume landmarks"
         action={
-          <Button variant="ghost" size="sm" icon={<RotateCcw aria-hidden />} onClick={reset} disabled={isDefault}>
+          <Button variant="ghost" size="sm" onClick={reset} disabled={isDefault}>
             Reset
           </Button>
         }
-      >
-        Weekly volume landmarks
-      </SubHeading>
+      />
 
       <Note>{VOLUME_ADVISORY_NOTE}</Note>
 
       {/* A real table: the volume grid reads these cells as its hidden data. */}
       <div role="table" aria-label="Weekly set landmarks per muscle">
-        <div role="row" className="grid grid-cols-[minmax(0,1fr)_54px_54px_54px] gap-1.5 items-end pb-1.5">
+        <div role="row" className={`${ROW} items-end pb-2`}>
           <span role="columnheader" className="hx-label">
             Muscle
           </span>
           {COLUMNS.map((c) => (
-            // pl-3 lines the head up with the first digit of the cell below it.
-            <span key={c.key} role="columnheader" className="hx-label block pl-3" title={c.full}>
+            <span key={c.key} role="columnheader" className="hx-label text-right" title={c.full}>
               {c.head}
             </span>
           ))}
@@ -87,8 +91,8 @@ export default function LandmarkTable() {
         {MUSCLES.map((m) => {
           const row = landmarks[m];
           return (
-            <div role="row" key={m} className="grid grid-cols-[minmax(0,1fr)_54px_54px_54px] gap-1.5 items-start py-1 border-t border-hx-border/60">
-              <span role="rowheader" className="text-[15px] leading-[44px] text-hx-text truncate">
+            <div role="row" key={m} className={`${ROW} items-center border-t border-hx-border`}>
+              <span role="rowheader" className="hx-body truncate">
                 {muscleLabel(m)}
               </span>
               {COLUMNS.map((c) => (
@@ -96,6 +100,8 @@ export default function LandmarkTable() {
                   <NumberField
                     label={`${muscleLabel(m)} ${c.head} — ${c.full}, sets per week`}
                     hideLabel
+                    figure
+                    align="right"
                     value={row[c.key]}
                     min={0}
                     max={MAX_SETS}
@@ -110,9 +116,9 @@ export default function LandmarkTable() {
         })}
       </div>
 
-      <Note className="text-hx-muted">
-        Sets per muscle per week. MEV is where growth reliably starts, MAV the productive band, MRV context only — it is shown so the number has a name, not because crossing it means anything. Reset
-        uses the {level} table; those level multipliers are our heuristic, not a measured progression.
+      <Note>
+        Sets per muscle per week. MEV is where growth reliably starts, MAV the productive band, MRV context only: it is shown so the number has a name, not because crossing it means anything. Reset uses
+        the {level} table; those level multipliers are our heuristic, not a measured progression.
       </Note>
     </>
   );

@@ -7,21 +7,20 @@
  *
  * The progression fields are the ones `strength.suggestProgression` actually
  * uses: hit the top of the rep range on every set at or under the target RPE
- * and the load goes up by the step for that half of the body — upper and lower
+ * and the load goes up by the step for that half of the body; upper and lower
  * are separate because one 2.5 % notch under-loads a squat.
  *
  * Units here are display-only (kg/lb): loads are stored in kilograms, so
  * switching never rewrites history.
  */
 import { useState } from 'react';
-import { Check, Plus, Trash2 } from 'lucide-react';
 import { useHealth } from '../../data/store';
 import type { Equipment, Exercise, MovementPattern, Muscle, TrainingSettings } from '../../data/types';
 import { EXERCISES, MUSCLES } from '../../engine/exerciseDb';
-import { Button, SegmentedControl, toast } from '../../ui';
+import { Button, Chip, toast } from '../../ui';
 import LandmarkTable from './LandmarkTable';
 import ProgramList from './ProgramList';
-import { Field, NumberField, Note, SelectField, SubHeading, TextField, Toggle } from './fields';
+import { Field, NumberField, Note, SelectField, SubHeading, TextField, Toggle, Words } from './fields';
 import { useConfirm } from './useConfirm';
 import { EQUIPMENT_OPTIONS, PATTERN_OPTIONS, muscleLabel, restLabel, slugKey } from './util';
 
@@ -55,32 +54,26 @@ export default function TrainingSection() {
 
   return (
     <>
-      <Field label="Load units" hint="Display only — loads are stored in kilograms, so switching never rewrites a logged set.">
-        <div>
-          <SegmentedControl ariaLabel="Load units" options={UNIT_OPTIONS} value={t.units} onChange={(units) => actions.updateTraining({ units })} />
-        </div>
-      </Field>
+      <Words label="Load units" options={UNIT_OPTIONS} value={t.units} hint="Display only; loads are stored in kilograms, so switching never rewrites a logged set." onChange={(units) => actions.updateTraining({ units })} />
 
-      <Field label="Rest timer" hint={`Counts down between sets on the Train tab. Now: ${restLabel(t.restTimerSec)}.`}>
+      <Field label="Rest timer" hint={`Counts down between sets on the Train tab. Now ${restLabel(t.restTimerSec)}.`}>
         <div className="flex flex-wrap gap-2">
           {REST_PRESETS.map((sec) => {
             const on = t.restTimerSec === sec;
             return (
-              // Selected is a filled button AND a tick AND aria-pressed — never hue alone.
-              <Button key={sec} variant={on ? 'primary' : 'secondary'} size="sm" aria-pressed={on} icon={on ? <Check aria-hidden /> : undefined} onClick={() => actions.updateTraining({ restTimerSec: sec })}>
+              // The chosen preset is a pressed tag: the wash, the tone square and aria-pressed, never hue alone.
+              <Chip key={sec} size="sm" pressed={on} active={on} onClick={() => actions.updateTraining({ restTimerSec: sec })}>
                 {restLabel(sec)}
-              </Button>
+              </Chip>
             );
           })}
         </div>
       </Field>
       <NumberField label="Or a custom rest, in seconds" value={t.restTimerSec} min={0} max={900} step={15} unit="s" hint="0 turns the timer off." onCommit={(restTimerSec) => actions.updateTraining({ restTimerSec })} />
 
-      <SubHeading>Progression</SubHeading>
-      <Note>
-        Double progression: when every set hits the top of the rep range at or under the target RPE, the next session adds the load step. Below the range, or above the RPE window, the load holds.
-      </Note>
-      <div className="grid grid-cols-2 gap-3">
+      <SubHeading title="Progression" />
+      <Note>Double progression: when every set hits the top of the rep range at or under the target RPE, the next session adds the load step. Below the range, or above the RPE window, the load holds.</Note>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-6">
         <NumberField
           label="Target RPE from"
           value={p.targetRpe[0]}
@@ -106,9 +99,9 @@ export default function TrainingSection() {
         <NumberField label="Upper-body step" value={p.loadStepPctUpper} min={0.5} max={20} step={0.5} dp={1} unit="%" onCommit={(loadStepPctUpper) => setProgression({ loadStepPctUpper })} />
         <NumberField label="Lower-body step" value={p.loadStepPctLower} min={0.5} max={20} step={0.5} dp={1} unit="%" onCommit={(loadStepPctLower) => setProgression({ loadStepPctLower })} />
       </div>
-      <Note className="text-hx-muted">
-        Two steps, not one: {p.loadStepPctUpper}% of a press is a plate change you can make, while a squat needs {p.loadStepPctLower}% before the bar feels different. Rounding to the smallest plate
-        pair you own happens on the Train tab.
+      <Note>
+        Two steps, not one: {p.loadStepPctUpper}% of a press is a plate change you can make, while a squat needs {p.loadStepPctLower}% before the bar feels different. Rounding to the smallest plate pair you
+        own happens on the Train tab.
       </Note>
 
       <LandmarkTable />
@@ -165,44 +158,45 @@ function CustomExercises({ training, onConfirm }: { training: TrainingSettings; 
 
   return (
     <>
-      <SubHeading>Your exercises</SubHeading>
-      <Note className="text-hx-muted">
-        {EXERCISES.length} exercises ship with the app, aliases and typos included. Add one when your gym has a machine the library doesn’t — it joins search and counts toward the muscle you name.
-      </Note>
+      <SubHeading title="Your exercises" caption={`${EXERCISES.length} built in`} />
+      <Note>The library ships with the app, aliases and typos included. Add one when your gym has a machine it lacks; it joins search and counts toward the muscle you name.</Note>
       {list.length > 0 && (
-        <ul className="flex flex-col gap-2">
+        <ul className="hx-ledger m-0 p-0 list-none">
           {list.map((e) => (
-            <li key={e.id} className="hx-well !rounded-ctl flex items-center gap-2 px-3 py-2">
+            <li key={e.id} className="hx-row flex-row items-center justify-between gap-4">
               <span className="min-w-0 flex-1">
-                <span className="block text-[15px] leading-[22px] text-hx-text truncate">{e.name}</span>
-                <span className="block text-[13px] leading-[18px] text-hx-muted truncate">
+                <span className="hx-body block truncate">{e.name}</span>
+                <span className="hx-cap block truncate">
                   {e.muscles.primary.map(muscleLabel).join(', ')}, {EQUIPMENT_OPTIONS.find((o) => o.value === e.equipment)?.label ?? e.equipment}
                   {e.unilateral ? ', per side' : ''}
                 </span>
               </span>
-              <Button variant="ghost" size="sm" icon={<Trash2 aria-hidden />} aria-label={`Delete ${e.name}`} onClick={() => remove(e)} />
+              <Button variant="ghost" size="sm" aria-label={`Delete ${e.name}`} onClick={() => remove(e)}>
+                Delete
+              </Button>
             </li>
           ))}
         </ul>
       )}
 
       {adding ? (
-        <div className="hx-raised !rounded-ctl flex flex-col gap-3 p-3">
+        <>
+          <SubHeading title="New exercise" />
           <TextField
             label="Name"
             value={draft.name}
             maxLength={48}
-            placeholder="e.g. Pendulum Squat"
+            placeholder="Pendulum Squat"
             onChange={(name) => setDraft((d) => ({ ...d, name }))}
             hint={duplicate ? 'That name is already in the library — search finds it already.' : 'What you would type when logging it.'}
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-6">
             <SelectField<Muscle> label="Main muscle" value={draft.primary} options={MUSCLE_OPTIONS} onChange={(primary) => setDraft((d) => ({ ...d, primary }))} />
             <SelectField<Equipment> label="Equipment" value={draft.equipment} options={EQUIPMENT_OPTIONS} onChange={(equipment) => setDraft((d) => ({ ...d, equipment }))} />
           </div>
           <SelectField<MovementPattern> label="Pattern" value={draft.pattern} options={PATTERN_OPTIONS} onChange={(pattern) => setDraft((d) => ({ ...d, pattern }))} hint="Used to balance a session, not to score you." />
-          <Toggle label="Loaded per side" checked={draft.unilateral} hint="One limb at a time — the logger then asks for the load on one side." onChange={(unilateral) => setDraft((d) => ({ ...d, unilateral }))} />
-          <div className="flex gap-2">
+          <Toggle label="Loaded per side" checked={draft.unilateral} hint="One limb at a time; the logger then asks for the load on one side." onChange={(unilateral) => setDraft((d) => ({ ...d, unilateral }))} />
+          <div className="flex gap-3">
             <Button
               variant="secondary"
               fullWidth
@@ -217,9 +211,9 @@ function CustomExercises({ training, onConfirm }: { training: TrainingSettings; 
               Add exercise
             </Button>
           </div>
-        </div>
+        </>
       ) : (
-        <Button variant="secondary" fullWidth icon={<Plus aria-hidden />} onClick={() => setAdding(true)}>
+        <Button variant="secondary" fullWidth onClick={() => setAdding(true)}>
           Add an exercise
         </Button>
       )}

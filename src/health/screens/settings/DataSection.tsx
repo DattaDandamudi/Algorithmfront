@@ -1,29 +1,28 @@
 /**
  * Settings §8 — Data (SPEC §10 durability, Part D).
  *
- * - Storage usage bar against the ~5 MiB per-origin localStorage quota
- *   (warns at 70 %, matching storage.QUOTA_WARN_RATIO), last saved, last
- *   write error.
+ * - Storage used as a 2 px progress rule against the ~5 MiB per-origin
+ *   localStorage quota (the rule takes a tone from 50 %, matching the 70 %
+ *   storage.QUOTA_WARN_RATIO in words), last saved, last write error.
  * - Export: JSON is the full-fidelity primary format (also stamps
  *   settings.lastExportAt); CSV is the flattened secondary format.
  * - Import JSON with merge / replace; both confirm (replace is destructive).
  * - Integrity check re-validates every shard against the index (count +
- *   checksum) and lists problems.
+ *   checksum) and lists problems in a read-only inset.
  * - Demo data (once), Clear all data (typed double-confirm).
- * - Backup reminder when the last JSON export is older than 14 days —
+ * - Backup reminder when the last JSON export is older than 14 days;
  *   localStorage is not guaranteed durable.
  */
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { Database, FileJson, FileSpreadsheet, FileUp, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
 import { downloadText, exportFilename, parseImport } from '../../data/export';
 import { QUOTA_BYTES } from '../../data/storage';
 import { useHealth, useRecords } from '../../data/store';
 import type { ImportResult } from '../../data/types';
 import { yearMonthOf } from '../../lib/dates';
 import { fmt } from '../../lib/format';
-import { Banner, Button, SegmentedControl, toast, type Tone } from '../../ui';
+import { Banner, Button, toast, type Tone } from '../../ui';
 import { useConfirm } from './useConfirm';
-import { Field, KV, Note, SubHeading } from './fields';
+import { Field, Inset, KV, KVList, Note, ProgressRule, StateWord, SubHeading, Words } from './fields';
 import { EXPORT_REMINDER_DAYS, daysSince, formatBytes, relativeTime } from './util';
 
 type ImportMode = 'merge' | 'replace';
@@ -33,11 +32,11 @@ const MODE_OPTIONS: Array<{ value: ImportMode; label: string }> = [
 ];
 const CLEAR_WORD = 'DELETE';
 
-/** Bar colour: green under 50 %, yellow to the 70 % warn ratio, red above. */
-function usageTone(ratio: number): Tone {
+/** Rule tone: ink under 50 %, amber to the 70 % warn ratio, red above. */
+function usageTone(ratio: number): Tone | 'ink' {
   if (ratio >= 0.7) return 'red';
   if (ratio >= 0.5) return 'yellow';
-  return 'green';
+  return 'ink';
 }
 
 export default function DataSection({ now }: { now: number }) {
@@ -157,124 +156,105 @@ export default function DataSection({ now }: { now: number }) {
     toast('All data cleared');
   };
 
+  const usedText = `${formatBytes(storage.bytesUsed)} of ${formatBytes(QUOTA_BYTES)}`;
+
   return (
     <>
-      {!storage.available && <Banner kind="error">localStorage is unavailable in this browser — nothing you log will persist. Export regularly or switch browsers.</Banner>}
+      {!storage.available && <Banner kind="error">localStorage is unavailable in this browser, so nothing you log will persist. Export regularly or switch browsers.</Banner>}
       {storage.available && storage.lastError && <Banner kind="error">{storage.lastError}</Banner>}
       {storage.available && !storage.lastError && storage.quotaWarning && (
         <Banner kind="warn" action={{ label: 'Export JSON', onClick: exportJSON }}>
-          Storage is {fmt(ratio * 100)}% of the ~5 MB quota — export a JSON backup, then clear the coach history or all data to free space.
+          Storage is {fmt(ratio * 100)}% of the 5 MB quota. Export a JSON backup, then clear the coach history or all data to free space.
         </Banner>
       )}
       {needsBackup && (
         <Banner kind="info" action={{ label: 'Export JSON backup', onClick: exportJSON }}>
-          localStorage isn’t guaranteed durable — export a JSON backup. {sinceExport === null ? 'You have never exported.' : `Last export ${sinceExport} days ago.`}
+          localStorage isn’t guaranteed durable, so export a JSON backup. {sinceExport === null ? 'You have never exported.' : `Last export ${sinceExport} days ago.`}
         </Banner>
       )}
 
-      <Field label="Storage used">
-        <div
-          role="meter"
-          aria-label="Storage used"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(ratio * 100)}
-          aria-valuetext={`${formatBytes(storage.bytesUsed)} of ${formatBytes(QUOTA_BYTES)}`}
-          className="hx-well h-2.5 w-full rounded-full overflow-hidden"
-        >
-          <div className={`h-full rounded-full ${tone === 'green' ? 'bg-hx-green' : tone === 'yellow' ? 'bg-hx-yellow' : 'bg-hx-red'}`} style={{ width: `${Math.max(1, ratio * 100)}%` }} />
-        </div>
-        <div className="flex justify-between text-[13px] leading-[18px] text-hx-muted">
-          <span>
-            {formatBytes(storage.bytesUsed)} of {formatBytes(QUOTA_BYTES)} ({fmt(ratio * 100, ratio < 0.01 ? 1 : 0)}%)
-          </span>
-          <span>warns at 70%</span>
-        </div>
+      <Field label="Storage used" hint={`${usedText}${ratio >= 0.7 ? ', past the 70% warning' : ', warns at 70%'}`}>
+        <ProgressRule value={storage.bytesUsed} max={QUOTA_BYTES} tone={tone} label="Storage used" end={`${fmt(ratio * 100, ratio < 0.01 ? 1 : 0)}%`} valueText={usedText} className="py-[13px]" />
       </Field>
-      <div>
+      <KVList>
         <KV k="Records" v={`${records.length} day${records.length === 1 ? '' : 's'} in ${months} month shard${months === 1 ? '' : 's'}`} />
         <KV k="Last saved" v={relativeTime(storage.lastSavedAt, now)} />
         <KV k="Last JSON export" v={relativeTime(settings.lastExportAt, now)} />
         <KV k="Chat messages" v={state.chat.length} />
-      </div>
+      </KVList>
 
-      <SubHeading>Export</SubHeading>
-      <div className="grid grid-cols-2 gap-2">
-        <Button icon={<FileJson aria-hidden />} onClick={exportJSON}>
-          Export JSON
-        </Button>
-        <Button variant="secondary" icon={<FileSpreadsheet aria-hidden />} onClick={exportCSV} disabled={!records.length}>
+      <SubHeading title="Export" />
+      <div className="grid grid-cols-2 gap-3">
+        <Button onClick={exportJSON}>Export JSON</Button>
+        <Button variant="secondary" onClick={exportCSV} disabled={!records.length}>
           Export CSV
         </Button>
       </div>
-      <Note className="text-hx-muted">JSON round-trips everything (days, settings, chat) except your API key, which never leaves this browser. CSV is one flat row per day for spreadsheets — meals are summarised, not itemised.</Note>
+      <Note>JSON round-trips everything (days, settings, chat) except your API key, which never leaves this browser. CSV is one flat row per day for spreadsheets; meals are summarised, not itemised.</Note>
 
-      <SubHeading>Import JSON</SubHeading>
-      <div className="flex items-center gap-3">
-        <SegmentedControl<ImportMode> ariaLabel="Import mode" size="sm" options={MODE_OPTIONS} value={mode} onChange={setMode} />
-        <span className="text-[13px] leading-[18px] text-hx-muted">{mode === 'merge' ? 'Keeps your data; file wins on overlap.' : 'Wipes days, settings and chat, then loads the file.'}</span>
-      </div>
+      <SubHeading title="Import JSON" />
+      <Words<ImportMode> label="Import mode" options={MODE_OPTIONS} value={mode} hint={mode === 'merge' ? 'Keeps your data; the file wins on overlap.' : 'Wipes days, settings and chat, then loads the file.'} onChange={setMode} />
       <input ref={fileRef} type="file" accept=".json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={onFile} />
-      <Button variant="secondary" fullWidth icon={<FileUp aria-hidden />} onClick={() => fileRef.current?.click()}>
+      <Button variant="secondary" fullWidth onClick={() => fileRef.current?.click()}>
         Choose a JSON export
       </Button>
       {importResult && (
         <Banner kind={importResult.ok ? (importResult.errors.length ? 'warn' : 'success') : 'error'} onDismiss={() => setImportResult(null)}>
           {importResult.ok ? (
-            <p>
+            <span>
               Imported {importResult.recordsImported} day{importResult.recordsImported === 1 ? '' : 's'}
               {importResult.settingsImported ? ', settings' : ''}
               {importResult.chatImported ? ', chat' : ''}.
-            </p>
+            </span>
           ) : (
-            <p className="font-semibold">Import failed</p>
+            <span className="font-semibold">Import failed.</span>
           )}
           {importResult.errors.length > 0 && (
-            <ul className="mt-1 list-disc pl-4 text-hx-text2 space-y-0.5">
+            <ul className="m-0 mt-1 pl-4 list-disc hx-cap flex flex-col gap-0.5">
               {importResult.errors.slice(0, 5).map((e, i) => (
                 <li key={i}>{e}</li>
               ))}
-              {importResult.errors.length > 5 && <li>…and {importResult.errors.length - 5} more</li>}
+              {importResult.errors.length > 5 && <li>and {importResult.errors.length - 5} more</li>}
             </ul>
           )}
         </Banner>
       )}
 
-      <SubHeading>Integrity</SubHeading>
-      <Button variant="secondary" fullWidth icon={<ShieldCheck aria-hidden />} onClick={runIntegrity}>
+      <SubHeading title="Integrity" />
+      <Button variant="secondary" fullWidth onClick={runIntegrity}>
         Run integrity check
       </Button>
       {report && (
-        <div className="hx-well !rounded-ctl px-3 py-1">
-          <KV k="Schema" v={`v${report.version}`} />
-          <KV k="Shards" v={report.shards} />
-          <KV k="Records" v={report.records} />
-          <KV k="Checked" v={relativeTime(report.checkedAt, now)} />
-          <KV k="Problems" v={report.problems.length === 0 ? <span className="text-hx-green">none</span> : <span className="text-hx-red">{report.problems.length}</span>} />
+        <Inset>
+          <KVList>
+            <KV k="Schema" v={`v${report.version}`} />
+            <KV k="Shards" v={report.shards} />
+            <KV k="Records" v={report.records} />
+            <KV k="Checked" v={relativeTime(report.checkedAt, now)} />
+            <KV k="Problems" v={report.problems.length === 0 ? <StateWord tone="green">none</StateWord> : <StateWord tone="red">{report.problems.length}</StateWord>} />
+          </KVList>
           {report.problems.length > 0 && (
-            <ul className="py-2 list-disc pl-4 text-[15px] leading-[22px] text-hx-text2 space-y-0.5">
+            <ul className="m-0 py-2 pl-4 list-disc hx-body text-hx-text2 flex flex-col gap-0.5">
               {report.problems.map((p, i) => (
                 <li key={i}>{p}</li>
               ))}
             </ul>
           )}
-        </div>
+        </Inset>
       )}
-      <Note className="text-hx-muted">Validates every month shard against the index (record count + checksum). Problems found on load are repaired on the next save: index entries for missing months are dropped, unreadable months are moved to <span className="font-mono">hx:corrupt:</span> keys, and this report refreshes.</Note>
+      <Note>
+        Validates every month shard against the index (record count and checksum). Problems found on load are repaired on the next save: index entries for missing months are dropped, unreadable months
+        are moved to “hx:corrupt:” keys, and this report refreshes.
+      </Note>
 
-      <SubHeading>Demo & reset</SubHeading>
-      <Button variant="secondary" fullWidth icon={<Sparkles aria-hidden />} onClick={loadDemo} disabled={settings.demoLoaded}>
+      <SubHeading title="Demo & reset" />
+      <Button variant="secondary" fullWidth onClick={loadDemo} disabled={settings.demoLoaded}>
         {settings.demoLoaded ? 'Demo data already loaded' : 'Load 45 days of demo data'}
       </Button>
-      <Button variant="danger" fullWidth icon={<Trash2 aria-hidden />} onClick={clearAll}>
+      <Button variant="danger" fullWidth onClick={clearAll}>
         Clear all data
       </Button>
-      <Note className="text-hx-muted flex items-start gap-2">
-        <Database className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
-        <span>
-          Everything lives under this browser’s <span className="font-mono">hx:</span> localStorage keys, sharded by month. Writes are debounced (~0.5 s, 2 s max) and flushed when the tab hides.
-        </span>
-      </Note>
+      <Note>Everything lives under this browser’s “hx:” localStorage keys, sharded by month. Writes are debounced (about 0.5 s, 2 s at most) and flushed when the tab hides.</Note>
     </>
   );
 }

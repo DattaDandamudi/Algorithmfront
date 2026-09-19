@@ -3,22 +3,21 @@
  *
  * WHOOP's API is OAuth 2 and needs a server to hold a client secret; this app
  * is local-only (no backend), so "connection" means one of two honest paths:
- *   1. CSV import — the `physiological_cycles.csv` from WHOOP's data export,
+ *   1. CSV import: the `physiological_cycles.csv` from WHOOP's data export,
  *      parsed by data/whoopImport.parseWhoopCsv, overlaid with
  *      mergeWhoopRecords (only WHOOP-owned fields are written; meals, weight
  *      and tobacco are untouched) and applied with actions.patchDay per day.
- *   2. Manual entry — the morning numbers (recovery, HRV, RHR, strain, sleep,
+ *   2. Manual entry: the morning numbers (recovery, HRV, RHR, strain, sleep,
  *      need, debt, bedtime, wake) for today or any chosen date.
- * Either marks `settings.whoop.connected` so the readiness ring uses recovery %.
+ * Either marks `settings.whoop.connected` so the readiness score uses recovery %.
  */
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { FileUp, Save } from 'lucide-react';
 import { useHealth, useRecords } from '../../data/store';
 import type { DailyRecord, HHMM, ISODate } from '../../data/types';
 import { mergeWhoopRecords, parseWhoopCsv, WHOOP_FIELDS, type WhoopParseResult } from '../../data/whoopImport';
 import { formatDateShort } from '../../lib/dates';
 import { Banner, Button, toast } from '../../ui';
-import { DateField, KV, Note, NumberField, Pill, SubHeading, TimeField } from './fields';
+import { DateField, KV, KVList, Note, NumberField, StateWord, SubHeading, TimeField } from './fields';
 import { relativeTime } from './util';
 
 const MAX_ERRORS_SHOWN = 5;
@@ -104,59 +103,53 @@ export default function WhoopSection({ today, now }: { today: ISODate; now: numb
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <Pill tone={whoop.connected ? 'green' : 'neutral'}>{statusLabel}</Pill>
-        <span className="text-[13px] leading-[18px] text-hx-muted">{whoop.lastImportAt ? `Last import ${relativeTime(whoop.lastImportAt, now)}` : ''}</span>
+      <div className="flex items-baseline justify-between gap-4 min-h-6">
+        <StateWord tone={whoop.connected ? 'green' : 'neutral'}>{statusLabel}</StateWord>
+        {whoop.lastImportAt && <span className="hx-hedge text-right">Last import {relativeTime(whoop.lastImportAt, now)}</span>}
       </div>
-      <div>
+      <KVList>
         <KV k="Days with WHOOP data" v={whoopDays} />
         <KV k="Latest" v={latest ? `${formatDateShort(latest.d)}, ${latest.rec !== undefined ? `${latest.rec}% recovery` : `${latest.hrv} ms HRV`}` : '—'} />
         <KV k="Readiness source" v={whoop.connected && state.settings.profile.wearable === 'whoop' ? 'WHOOP recovery %' : 'HRV band (no recovery %)'} />
-      </div>
+      </KVList>
 
       <Note>
-        WHOOP’s API uses OAuth, which needs a server to keep a client secret — this app runs entirely in your browser with no backend, so there is no “Connect WHOOP” button. Import the CSV from
-        WHOOP’s data export or type the morning numbers in; the readiness ring, sleep need and HRV baseline work the same either way.
+        WHOOP’s API uses OAuth, which needs a server to keep a client secret; this app runs entirely in your browser with no backend, so there is no connect button. Import the CSV from WHOOP’s data
+        export or type the morning numbers in; the readiness score, sleep need and HRV baseline work the same either way.
       </Note>
 
-      <SubHeading>Import CSV</SubHeading>
+      <SubHeading title="Import CSV" />
       <Note>
-        In the WHOOP app: Profile → Data export → request → unzip → <span className="text-hx-text">physiological_cycles.csv</span>. Only recovery, HRV, RHR, strain, sleep, need, debt, bedtime and wake are
-        written; meals, weight and tobacco on those days stay as they are.
+        In the WHOOP app: Profile, then Data export; request it, unzip it and choose <span className="text-hx-text">physiological_cycles.csv</span>. Only recovery, HRV, RHR, strain, sleep, need, debt, bedtime
+        and wake are written; meals, weight and tobacco on those days stay as they are.
       </Note>
       <input ref={fileRef} type="file" accept=".csv,text/csv" className="sr-only" tabIndex={-1} aria-hidden onChange={onFile} />
-      <Button variant="secondary" fullWidth icon={<FileUp aria-hidden />} loading={importing} onClick={() => fileRef.current?.click()}>
+      <Button variant="secondary" fullWidth loading={importing} onClick={() => fileRef.current?.click()}>
         Choose physiological_cycles.csv
       </Button>
-      {summary && <ImportResultCard summary={summary} onDismiss={() => setSummary(null)} />}
+      {summary && <ImportResult summary={summary} onDismiss={() => setSummary(null)} />}
 
       <ManualEntry today={today} />
     </>
   );
 }
 
-function ImportResultCard({ summary, onDismiss }: { summary: ImportSummary; onDismiss: () => void }) {
+function ImportResult({ summary, onDismiss }: { summary: ImportSummary; onDismiss: () => void }) {
   const { parsed, updated, created, fileName } = summary;
   const ok = parsed.records.length > 0;
   const errors = parsed.errors;
   return (
     <Banner kind={ok ? (parsed.skipped > 0 || errors.length > 0 ? 'warn' : 'success') : 'error'} onDismiss={onDismiss}>
-      <p className="font-semibold truncate">{fileName}</p>
-      <p className="text-hx-text2">
-        {parsed.records.length} day{parsed.records.length === 1 ? '' : 's'} parsed, {updated} updated, {created} new, {parsed.skipped} skipped
-      </p>
-      {parsed.columnsFound.length > 0 && (
-        <p className="mt-1 text-hx-text2">
-          <span className="text-hx-muted">Columns found: </span>
-          {parsed.columnsFound.join(', ')}
-        </p>
-      )}
+      <span className="block">
+        {fileName}: {parsed.records.length} day{parsed.records.length === 1 ? '' : 's'} parsed, {updated} updated, {created} new, {parsed.skipped} skipped.
+      </span>
+      {parsed.columnsFound.length > 0 && <span className="block hx-cap mt-1">Columns found: {parsed.columnsFound.join(', ')}</span>}
       {errors.length > 0 && (
-        <ul className="mt-1 list-disc pl-4 text-hx-text2 space-y-0.5">
+        <ul className="m-0 mt-1 pl-4 list-disc hx-cap flex flex-col gap-0.5">
           {errors.slice(0, MAX_ERRORS_SHOWN).map((e, i) => (
             <li key={i}>{e}</li>
           ))}
-          {errors.length > MAX_ERRORS_SHOWN && <li>…and {errors.length - MAX_ERRORS_SHOWN} more</li>}
+          {errors.length > MAX_ERRORS_SHOWN && <li>and {errors.length - MAX_ERRORS_SHOWN} more</li>}
         </ul>
       )}
     </Banner>
@@ -195,17 +188,17 @@ function ManualEntry({ today }: { today: ISODate }) {
 
   return (
     <>
-      <SubHeading>Manual entry</SubHeading>
-      <DateField label="Day" value={date} max={today} hint={existing && filled.length ? 'Showing what is already on file — edit and save.' : 'The waking day the numbers describe.'} onChange={changeDate} />
-      <div className="grid grid-cols-2 gap-3">
+      <SubHeading title="Manual entry" />
+      <DateField label="Day" value={date} max={today} hint={existing && filled.length ? 'Showing what is already on file; edit and save.' : 'The waking day the numbers describe.'} onChange={changeDate} />
+      <div className="grid grid-cols-2 gap-x-6 gap-y-6">
         {NUMERIC.map((f) => (
-          <NumberField key={f.key} label={f.label} value={draft[f.key] ?? null} min={f.min} max={f.max} step={f.step} dp={f.dp} unit={f.unit} placeholder="—" onCommit={(n) => set(f.key, n)} onClear={() => set(f.key, undefined)} />
+          <NumberField key={f.key} label={f.label} value={draft[f.key] ?? null} min={f.min} max={f.max} step={f.step} dp={f.dp} unit={f.unit} placeholder="Not set" onCommit={(n) => set(f.key, n)} onClear={() => set(f.key, undefined)} />
         ))}
         <TimeField label="Bedtime" value={draft.bt ?? ''} hint="Last night; after midnight is fine." onChange={(bt) => set('bt', bt)} />
         <TimeField label="Wake" value={draft.wk ?? ''} onChange={(wk) => set('wk', wk)} />
       </div>
-      <Note className="text-hx-muted">Blank fields are left unchanged on the day. Sleep debt is in minutes; sleep and need in hours.</Note>
-      <Button fullWidth icon={<Save aria-hidden />} disabled={!dirty} onClick={save}>
+      <Note>Blank fields are left unchanged on the day. Sleep debt is in minutes; sleep and need in hours.</Note>
+      <Button fullWidth disabled={!dirty} onClick={save}>
         Save to {date === today ? 'today' : formatDateShort(date)}
       </Button>
     </>

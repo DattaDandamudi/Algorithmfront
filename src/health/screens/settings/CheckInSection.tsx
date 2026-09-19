@@ -3,12 +3,12 @@
  *
  * The subjective four (Hooper: sleep quality, fatigue, stress, soreness) track
  * training load with better sensitivity than the objective ones (Saw 2016), so
- * they are a real input to readiness — but only if answering stays cheap. This
- * card is the honesty valve: the prompt can be turned off entirely, any item
+ * they are a real input to readiness, but only if answering stays cheap. This
+ * section is the honesty valve: the prompt can be turned off entirely, any item
  * can be dropped, and the time it starts asking is the user's.
  *
  * The weekly SRSS and monthly PSS-4 are separate instruments with their own
- * recall windows (a week, a month) — never asked daily, and off by default.
+ * recall windows (a week, a month), never asked daily, and off by default.
  * `DailyRecord` carries `srssR`, `srssS` and `pss4`, so their answers have a
  * home and appear in the CSV export. Both are live in Log: the weekly one is
  * due whenever the current week has no answer, the monthly one whenever the
@@ -19,12 +19,11 @@
  * its band across those days instead of reading water as fat.
  */
 import { useMemo } from 'react';
-import { Check } from 'lucide-react';
 import { useHealth, useRecords } from '../../data/store';
 import type { CheckInItem } from '../../data/types';
 import { formatDateShort } from '../../lib/dates';
 import { Chip } from '../../ui';
-import { Field, KV, Note, SubHeading, TimeField, Toggle } from './fields';
+import { Field, KV, KVList, Note, SubHeading, TimeField, Toggle } from './fields';
 import { CHECK_IN_ITEMS, normalizeHHMM } from './util';
 
 export default function CheckInSection() {
@@ -61,18 +60,18 @@ export default function CheckInSection() {
           {CHECK_IN_ITEMS.map((item) => {
             const on = c.items.includes(item.key);
             return (
-              // State is the tick + aria-pressed + the wash, never the wash alone.
-              <Chip key={item.key} size="sm" pressed={on} active={on} color="blue" icon={on ? <Check aria-hidden /> : undefined} disabled={!c.enabled} onClick={() => toggleItem(item.key)}>
+              // State is the tone square, the wash and aria-pressed, never the wash alone.
+              <Chip key={item.key} size="sm" pressed={on} active={on} disabled={!c.enabled} onClick={() => toggleItem(item.key)}>
                 {item.label}
               </Chip>
             );
           })}
         </div>
       </Field>
-      <ul className="flex flex-col gap-1 text-[13px] leading-[18px] text-hx-muted">
+      <ul className="m-0 p-0 list-none flex flex-col gap-1">
         {CHECK_IN_ITEMS.filter((i) => c.items.includes(i.key)).map((i) => (
-          <li key={i.key}>
-            <span className="text-hx-text2">{i.label}</span>: {i.hint}, 1–7
+          <li key={i.key} className="hx-cap">
+            <span className="text-hx-text">{i.label}</span>: {i.hint}, 1–7
           </li>
         ))}
       </ul>
@@ -87,15 +86,13 @@ export default function CheckInSection() {
         }}
       />
 
-      <div>
+      <KVList>
         <KV k="Days with a check-in" v={answered.length} />
         <KV k="Most recent" v={last ? formatDateShort(last.d) : '—'} />
-      </div>
+      </KVList>
 
-      <SubHeading>Longer instruments</SubHeading>
-      <Note>
-        These have their own recall windows, so they are asked on their own schedule and never every day. Both are off until you want them.
-      </Note>
+      <SubHeading title="Longer instruments" caption="Off until you want them" />
+      <Note>These have their own recall windows, so they are asked on their own schedule and never every day.</Note>
       <Toggle
         label="Weekly recovery & stress (SRSS)"
         checked={c.weeklySrss}
@@ -109,7 +106,7 @@ export default function CheckInSection() {
         onChange={(monthlyPss) => set({ monthlyPss })}
       />
 
-      <SubHeading>Cycle</SubHeading>
+      <SubHeading title="Cycle" />
       <Toggle
         label="Track menstrual cycle"
         checked={profile.tracksCycle === true}

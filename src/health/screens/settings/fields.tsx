@@ -1,28 +1,36 @@
 /**
- * Settings form primitives (SPEC §5, DESIGN.md material system).
+ * Settings form primitives (DESIGN.md "Settings", the black-stock edition).
  *
  * Every component here is declared at module level so React never remounts a
- * control between keystrokes — an input that loses focus while typing is the
+ * control between keystrokes; an input that loses focus while typing is the
  * one bug the Settings screen must not have. Numeric fields keep a local
  * string draft and commit on blur / Enter after validation, so half-typed
- * values never reach the store and out-of-range values are explained inline
- * instead of being clamped silently. Text fields are bound straight to the
- * store (the writer debounces the localStorage flush).
+ * values never reach the store and out-of-range values are explained in a red
+ * caption instead of being clamped silently. Text fields are bound straight to
+ * the store (the writer debounces the localStorage flush).
  *
- * This is also the Settings screen's whole visual vocabulary: restyle a
- * primitive here and all twelve sections follow. The materials are the ones in
- * DESIGN.md and nothing is hand-rolled — a section is an `.hx-card` tile, the
- * header of the section you are acting on is `.hx-raised`, inputs are wells
- * (health.css does that globally), a toggle is a raised thumb on a well track,
- * numerals are in the display face, and labels are sentence case at 13 px.
+ * This is also the screen's whole visual vocabulary: restyle a primitive here
+ * and all twelve sections follow. A section is a 56 px ledger row whose whole
+ * width is the disclosure button; opening it inks the row's top hairline to
+ * bone. Inside, labels are .hx-label, inputs are the kit's underline fields
+ * with their side padding dropped, the unit after a number is .hx-unit, a
+ * toggle is a rule-outlined switch with a bone thumb and its state as a word,
+ * a read-only summary is a small ledger, a read-only inset is a note, and a
+ * sub-heading is a running head. The field shapes and the error treatment
+ * match the Onboarding steps, which are built to the same spec.
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { round } from '../../lib/format';
-import { bandSoftBg, bandText, type Tone } from '../../ui';
+import { fmt, round } from '../../lib/format';
+import { SectionHeader, SegmentedControl, bandBg, bandText, type SegmentedOption, type Tone } from '../../ui';
 import { isISODate, normalizeHHMM } from './util';
 
-export const CONTROL = 'h-11 w-full px-3 text-[15px] leading-5';
+/** The underline field's text: the kit draws the rule; the field only drops its side padding. */
+const FIELD = 'w-full min-w-0 px-0 leading-6';
+
+const blurOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+  if (e.key === 'Enter') e.currentTarget.blur();
+};
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -31,30 +39,29 @@ export const CONTROL = 'h-11 w-full px-3 text-[15px] leading-5';
 export interface SectionProps {
   id: string;
   title: string;
-  icon?: ReactNode;
-  /** One-line live summary shown under the title while collapsed and open. */
+  /** One-line live summary under the title, closed and open. */
   caption?: string;
   defaultOpen?: boolean;
-  /** Set (to a fresh nonce) to open the card and scroll it into view — the Settings deep link. */
+  /** Set (to a fresh nonce) to open the section and scroll it into view: the Settings deep link. */
   openSignal?: number;
   children: ReactNode;
 }
 
 /**
- * One span-2 tile in the Settings bento. Closed it is a plain `.hx-card` row —
- * title, one-line summary, chevron. Open, the same tile grows its form and its
- * header row lifts to `.hx-raised`, because that header is the control you are
- * currently acting on. Content unmounts while collapsed (drafts are cheap to
- * rebuild). The button's accessible name starts with the section title, which
- * is how both the tests and the deep links find it.
+ * One row of the index. Closed it is a 56 px ledger row: the title in .hx-ui,
+ * the summary in .hx-hedge, a chevron at the right, a hairline above. The whole
+ * row is the disclosure button and its accessible name starts with the section
+ * title, which is how the tests and the deep links find it. Open, the top
+ * hairline inks to bone and the form expands in place beneath the same row.
+ * Content unmounts while collapsed (drafts are cheap to rebuild).
  */
-export function Section({ id, title, icon, caption, defaultOpen = false, openSignal, children }: SectionProps) {
+export function Section({ id, title, caption, defaultOpen = false, openSignal, children }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   const ref = useRef<HTMLElement>(null);
   const bodyId = `${id}-body`;
   const headId = `${id}-heading`;
-  // Deep link (nav.openSettings(section)): expand and bring the card into view. A
-  // changed nonce re-fires even when the card is already mounted (review R2-10).
+  // Deep link (nav.openSettings(section)): expand and bring the row into view. A
+  // changed nonce re-fires even when the section is already mounted (review R2-10).
   useEffect(() => {
     if (!openSignal) return;
     setOpen(true);
@@ -62,26 +69,25 @@ export function Section({ id, title, icon, caption, defaultOpen = false, openSig
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [openSignal]);
   return (
-    <section ref={ref} className="hx-card hx-span-2 overflow-hidden scroll-mt-16" aria-labelledby={headId}>
+    <section ref={ref} className="scroll-mt-4" aria-labelledby={headId}>
       <h2 id={headId} className="m-0">
-        {/* Open, the header slab is raised glass: square-cornered (the tile's own radius clips it) with only its bottom bezel left. */}
+        {/* The hairline is the button's own top edge, so it inks on press and stays inked while open. */}
         <button
           type="button"
           aria-expanded={open}
           aria-controls={open ? bodyId : undefined}
           onClick={() => setOpen((o) => !o)}
-          className={`hx-press w-full min-h-[64px] flex items-center gap-3 px-4 py-3 text-left ${open ? 'hx-raised !rounded-none !border-x-0 !border-t-0 !border-b-hx-border' : 'hover:bg-hx-card2/50 transition-colors'}`}
+          className={`hx-row hx-press flex-row items-center justify-between gap-4 min-h-[57px] border-t ${open ? 'border-hx-text' : 'border-hx-border'}`}
         >
-          {icon && <span className="hx-well !rounded-ctl w-9 h-9 shrink-0 inline-flex items-center justify-center text-hx-text2 [&>svg]:w-[18px] [&>svg]:h-[18px]">{icon}</span>}
-          <span className="flex-1 min-w-0">
-            <span className="hx-display block text-[17px] leading-6 font-semibold text-hx-text">{title}</span>
-            {caption && <span className="block text-[13px] leading-[18px] text-hx-muted truncate">{caption}</span>}
+          <span className="min-w-0 flex-1">
+            <span className="hx-ui block text-hx-text">{title}</span>
+            {caption && <span className="hx-hedge block truncate">{caption}</span>}
           </span>
-          <ChevronDown className={`w-5 h-5 shrink-0 text-hx-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
+          <ChevronDown className={`w-4 h-4 shrink-0 text-hx-text2 ${open ? 'rotate-180' : ''}`} strokeWidth={1.5} aria-hidden />
         </button>
       </h2>
       {open && (
-        <div id={bodyId} className="px-4 pb-4 pt-4 flex flex-col gap-4">
+        <div id={bodyId} className="pt-2 pb-10 flex flex-col gap-6">
           {children}
         </div>
       )}
@@ -89,42 +95,93 @@ export function Section({ id, title, icon, caption, defaultOpen = false, openSig
   );
 }
 
+/** A .hx-label over its control, an optional caption (or a red error) beneath. */
 export function Field({ label, htmlFor, hint, error, children, className = '' }: { label: string; htmlFor?: string; hint?: ReactNode; error?: string | null; children: ReactNode; className?: string }) {
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
-      <label htmlFor={htmlFor} className="hx-label">
-        {label}
-      </label>
+    <div className={`flex flex-col gap-1 min-w-0 ${className}`}>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="hx-label">
+          {label}
+        </label>
+      ) : (
+        <p className="hx-label">{label}</p>
+      )}
       {children}
       {error ? (
-        <p className="text-[13px] leading-[18px] text-hx-red" role="alert">
+        <p className="hx-cap text-hx-red" role="alert">
           {error}
         </p>
-      ) : hint ? (
-        <p className="text-[13px] leading-[18px] text-hx-muted">{hint}</p>
-      ) : null}
+      ) : (
+        hint && <p className="hx-cap">{hint}</p>
+      )}
     </div>
   );
 }
 
-/** Explanatory copy inside a section — body text, so 15/22 (DESIGN.md "Type"). */
+/** Explanatory copy inside a section: reading text at the second ink density. Inline children only. */
 export function Note({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <p className={`text-[15px] leading-[22px] text-hx-text2 ${className}`}>{children}</p>;
+  return <p className={`hx-body text-hx-text2 ${className}`}>{children}</p>;
 }
 
-/** A tile's own sub-heading: display face, 15/20, sentence case. */
-export function SubHeading({ children, action }: { children: ReactNode; action?: ReactNode }) {
+/**
+ * A running head inside a section (an h3, no rule): the name flush left in
+ * .hx-label, an optional dateline flush right, a ghost verb in the action slot.
+ * It takes 40 px above itself and leaves 16 px to its content; `first` drops
+ * the space above when it opens the section.
+ */
+export function SubHeading({ title, caption, action, first }: { title: string; caption?: string; action?: ReactNode; first?: boolean }) {
+  return <SectionHeader as="h3" title={title} caption={caption} action={action} className={first ? '-mb-2' : 'mt-4 -mb-2'} />;
+}
+
+/** A state word with its tone square: the carrier beside every tone. Neutral states carry no square. */
+export function StateWord({ tone, children, className = '' }: { tone: Tone; children: ReactNode; className?: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 min-h-7">
-      <h3 className="hx-display text-[15px] leading-5 font-semibold text-hx-text">{children}</h3>
-      {action}
+    <span className={`hx-label inline-flex items-center gap-1.5 whitespace-nowrap ${tone === 'neutral' ? 'text-hx-text2' : bandText(tone)} ${className}`}>
+      {tone !== 'neutral' && <span className="hx-tone" aria-hidden />}
+      {children}
+    </span>
+  );
+}
+
+/** A read-only inset: a note behind a 2 px text2 rule. */
+export function Inset({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`hx-note border-hx-text2 py-1 flex flex-col gap-2 ${className}`}>{children}</div>;
+}
+
+/** A read-only summary as a small ledger: `<KVList>` of `<KV>` rows. */
+export function KVList({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <dl className={`m-0 flex flex-col ${className}`}>{children}</dl>;
+}
+
+/** One ledger line: the label in .hx-body, the value flush right; a bare number is set as a table figure. */
+export function KV({ k, v }: { k: string; v: ReactNode }) {
+  const figure = typeof v === 'number';
+  return (
+    <div className="flex items-baseline justify-between gap-4 min-h-11 py-2 border-t border-hx-border first:border-t-0">
+      <dt className="hx-body shrink-0">{k}</dt>
+      <dd className={`m-0 min-w-0 flex-1 text-right text-hx-text ${figure ? 'hx-fig-sm' : 'hx-ui'}`}>{v}</dd>
     </div>
   );
 }
 
-/** A state word in its own tone wash: sentence case, 13 px, no letter-spacing. */
-export function Pill({ tone, children, className = '' }: { tone: Tone; children: ReactNode; className?: string }) {
-  return <span className={`inline-flex items-center h-7 px-2.5 rounded-full text-[13px] leading-[18px] font-medium whitespace-nowrap ${bandSoftBg(tone)} ${bandText(tone)} ${className}`}>{children}</span>;
+/**
+ * The 2 px progress rule (DESIGN.md "Data marks"): a hairline track with an ink
+ * fill, a tone only where a band applies, the reading in .hx-agate at its end.
+ * `role="meter"` so the value is announced.
+ */
+export function ProgressRule({ value, max, tone = 'ink', label, end, valueText, className = '' }: { value: number; max: number; tone?: Tone | 'ink'; label: string; end?: string; valueText?: string; className?: string }) {
+  const v = Number.isFinite(value) ? Math.max(0, value) : 0;
+  const scale = max > 0 ? max : 1;
+  const frac = Math.min(1, v / scale);
+  const fill = tone === 'ink' ? 'bg-hx-text' : bandBg(tone);
+  return (
+    <div className={`w-full flex items-center gap-2 ${className}`}>
+      <div role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={scale} aria-valuenow={Math.min(v, scale)} aria-valuetext={valueText ?? `${fmt(v)} of ${fmt(scale)}`} className="relative flex-1 h-0.5 bg-hx-border">
+        <span className={`absolute inset-y-0 left-0 ${fill}`} style={{ width: `${Math.round(frac * 1000) / 10}%` }} aria-hidden />
+      </div>
+      {end && <span className="hx-agate shrink-0">{end}</span>}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -150,11 +207,14 @@ export interface NumberFieldProps {
   className?: string;
   /** Compact mode for dense rows: no visible label (the label becomes aria-label); errors still show inline. */
   hideLabel?: boolean;
+  /** Set the numeral as a table figure (.hx-fig-sm) for ruled tables. */
+  figure?: boolean;
+  align?: 'left' | 'right';
 }
 
 const draftOf = (v: number | null | undefined, dp: number) => (v === null || v === undefined || !Number.isFinite(v) ? '' : String(round(v, dp)));
 
-export function NumberField({ label, value, onCommit, onClear, min, max, step = 1, dp = 0, unit, hint, placeholder, validate, disabled, className = '', hideLabel }: NumberFieldProps) {
+export function NumberField({ label, value, onCommit, onClear, min, max, step = 1, dp = 0, unit, hint, placeholder, validate, disabled, className = '', hideLabel, figure, align = 'left' }: NumberFieldProps) {
   const id = useId();
   const [draft, setDraft] = useState(() => draftOf(value, dp));
   const [editing, setEditing] = useState(false);
@@ -215,7 +275,7 @@ export function NumberField({ label, value, onCommit, onClear, min, max, step = 
   };
 
   const control = (
-    <div className="relative">
+    <div className="flex items-baseline">
       <input
         id={id}
         type="text"
@@ -233,9 +293,9 @@ export function NumberField({ label, value, onCommit, onClear, min, max, step = 
         }}
         onBlur={commit}
         onKeyDown={onKey}
-        className={`hx-display ${CONTROL} ${unit ? 'pr-14' : ''} ${error ? '!border-hx-red' : ''}`}
+        className={`${FIELD} flex-1 disabled:opacity-40 ${figure ? 'hx-fig-sm' : ''} ${align === 'right' ? 'text-right' : ''}`}
       />
-      {unit && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] leading-[18px] text-hx-muted pointer-events-none">{unit}</span>}
+      {unit && <span className="hx-unit shrink-0">{unit}</span>}
     </div>
   );
 
@@ -244,7 +304,7 @@ export function NumberField({ label, value, onCommit, onClear, min, max, step = 
       <div className={className}>
         {control}
         {error && (
-          <p className="mt-1 text-[13px] leading-[18px] text-hx-red" role="alert">
+          <p className="hx-cap text-hx-red mt-1" role="alert">
             {error}
           </p>
         )}
@@ -271,7 +331,7 @@ export interface TextFieldProps {
   maxLength?: number;
   autoComplete?: string;
   spellCheck?: boolean;
-  /** Node rendered to the right of the input (e.g. a Clear button). */
+  /** Node rendered to the right of the input (e.g. a Save verb). */
   trailing?: ReactNode;
   className?: string;
 }
@@ -280,9 +340,9 @@ export function TextField({ label, value, onChange, hint, placeholder, type = 't
   const id = useId();
   return (
     <Field label={label} htmlFor={id} hint={hint} className={className}>
-      <div className="flex items-start gap-2">
+      <div className="flex items-end gap-3">
         {multiline ? (
-          <textarea id={id} value={value} rows={rows} maxLength={maxLength} placeholder={placeholder} spellCheck={spellCheck} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2.5 text-[15px] leading-5 min-h-[44px] resize-y" />
+          <textarea id={id} value={value} rows={rows} maxLength={maxLength} placeholder={placeholder} spellCheck={spellCheck} onChange={(e) => onChange(e.target.value)} className={`${FIELD} py-2.5 min-h-[44px] resize-y`} />
         ) : (
           <input
             id={id}
@@ -295,7 +355,8 @@ export function TextField({ label, value, onChange, hint, placeholder, type = 't
             autoCapitalize={type === 'text' ? undefined : 'off'}
             spellCheck={spellCheck ?? (type === 'text' ? undefined : false)}
             onChange={(e) => onChange(e.target.value)}
-            className={`${CONTROL} min-w-0 flex-1`}
+            onKeyDown={blurOnEnter}
+            className={`${FIELD} flex-1`}
           />
         )}
         {trailing}
@@ -319,20 +380,30 @@ export function SelectField<T extends string>({ label, value, onChange, options,
   const id = useId();
   const control = (
     <div className="relative">
-      <select id={id} value={value} onChange={(e) => onChange(e.target.value as T)} aria-label={hideLabel ? label : undefined} className={`${CONTROL} appearance-none pr-9`}>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value as T)} aria-label={hideLabel ? label : undefined} className={`${FIELD} appearance-none pr-8`}>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
       </select>
-      <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-hx-muted pointer-events-none" aria-hidden />
+      {/* The disclosure glyph of a native select: it carries meaning, so it stays. */}
+      <ChevronDown className="w-4 h-4 absolute right-0 top-1/2 -translate-y-1/2 text-hx-text2 pointer-events-none" strokeWidth={1.5} aria-hidden />
     </div>
   );
   if (hideLabel) return <div className={className}>{control}</div>;
   return (
     <Field label={label} htmlFor={id} hint={hint} className={className}>
       {control}
+    </Field>
+  );
+}
+
+/** A labelled word choice: the SegmentedControl's words on a hairline. */
+export function Words<T extends string>({ label, ariaLabel, value, options, onChange, hint, size }: { label: string; ariaLabel?: string; value: T; options: Array<SegmentedOption<T>>; onChange: (v: T) => void; hint?: ReactNode; size?: 'sm' | 'md' }) {
+  return (
+    <Field label={label} hint={hint}>
+      <SegmentedControl<T> options={options} value={value} onChange={onChange} ariaLabel={ariaLabel ?? label} size={size} className="w-full" />
     </Field>
   );
 }
@@ -349,7 +420,7 @@ export function TimeField({ label, value, onChange, hint, className = '' }: { la
           const v = normalizeHHMM(e.target.value);
           if (v) onChange(v);
         }}
-        className={CONTROL}
+        className={FIELD}
       />
     </Field>
   );
@@ -369,45 +440,37 @@ export function DateField({ label, value, onChange, hint, max, className = '' }:
           if (v === '') onChange(undefined);
           else if (isISODate(v)) onChange(v);
         }}
-        className={CONTROL}
+        className={FIELD}
       />
     </Field>
   );
 }
 
 /**
- * A switch: a raised thumb sliding on a well track. Off is a glass knob sunk
- * at the left of a dark track; on lights the track and turns the knob to lume.
- * Position, the lit track and `aria-checked` all carry the state — never a hue
- * on its own, and nothing decorative is coloured (DESIGN.md "the accent is light").
+ * A switch: a rule-outlined 44 by 24 track with a square thumb that slides,
+ * and the state as a word beside it. Off is a text2 thumb at the left of a
+ * text2 rule; on is a bone thumb at the right of a bone rule. Position, the
+ * word and `aria-checked` all carry the state; nothing is coloured. The label
+ * names the control through `htmlFor`, so the accessible name is the label.
  */
-export function Toggle({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: ReactNode }) {
+export function Toggle({ label, checked, onChange, hint, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: ReactNode; disabled?: boolean }) {
   const id = useId();
   return (
-    <div className="flex items-center justify-between gap-4 min-h-[44px]">
-      <div className="min-w-0">
-        <label htmlFor={id} className="text-[15px] leading-[22px] text-hx-text">
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0 flex-1 py-[11px]">
+        <label htmlFor={id} className="hx-body block">
           {label}
         </label>
-        {hint && <p className="text-[13px] leading-[18px] text-hx-muted">{hint}</p>}
+        {hint && <p className="hx-cap mt-0.5">{hint}</p>}
       </div>
-      {/* 44 px hit area (h-11, side padding) around the 48×28 track (review R6-2). */}
-      <button id={id} type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="hx-press shrink-0 h-11 px-1 -mr-1 inline-flex items-center rounded-ctl">
-        <span className="hx-well relative block w-12 h-7 rounded-full" aria-hidden>
-          <span className={`absolute inset-0 rounded-full bg-hx-lume/15 transition-opacity ${checked ? 'opacity-100' : 'opacity-0'}`} />
-          <span className={`hx-raised !absolute !rounded-full left-0 top-0.5 w-6 h-6 transition-transform ${checked ? 'translate-x-[22px] !bg-hx-lume' : 'translate-x-0.5'}`} />
+      <button id={id} type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className="shrink-0 h-11 -mr-1 px-1 inline-flex items-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed">
+        <span className="hx-label w-6 text-right" aria-hidden>
+          {checked ? 'On' : 'Off'}
+        </span>
+        <span className={`relative block w-11 h-6 rounded-ctl border ${checked ? 'border-hx-text' : 'border-hx-text2'}`} aria-hidden>
+          <span className={`absolute top-[3px] left-[3px] w-4 h-4 transition-transform duration-150 motion-reduce:transition-none ${checked ? 'translate-x-5 bg-hx-text' : 'translate-x-0 bg-hx-text2'}`} />
         </span>
       </button>
-    </div>
-  );
-}
-
-/** Label + value line used in read-only summaries (storage, integrity, about). */
-export function KV({ k, v }: { k: string; v: ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2 border-b border-hx-border/60 last:border-b-0">
-      <span className="text-[13px] leading-[18px] text-hx-text2">{k}</span>
-      <span className="hx-display text-[15px] leading-5 text-hx-text text-right">{v}</span>
     </div>
   );
 }

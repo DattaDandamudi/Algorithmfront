@@ -2,10 +2,10 @@
  * Settings §3 — Training split. Seven weekday selects (SessionType); the
  * default is the spec's 4-day upper/lower (Mon upper, Tue lower, Thu upper,
  * Fri lower). Lift vs rest drives carb cycling (§6.5) and the coach's
- * "progress your {split_day} loads" copy, so the caption shows the carb
- * ranges that follow from the split.
+ * "progress your {split_day} loads" copy, so the note shows the carb ranges
+ * that follow from the split. The same list, in the same shape, is the
+ * Onboarding week step.
  */
-import { RotateCcw } from 'lucide-react';
 import { DEFAULT_SPLIT } from '../../data/defaults';
 import { useHealth } from '../../data/store';
 import type { SessionType, Weekday } from '../../data/types';
@@ -15,8 +15,9 @@ import { useConfirm } from './useConfirm';
 import { Note, SelectField } from './fields';
 import { SESSION_OPTIONS, isLiftSession } from './util';
 
-/** Training weeks read Mon → Sun. */
+/** Training weeks read Mon to Sun. */
 const WEEK: Weekday[] = [1, 2, 3, 4, 5, 6, 0];
+const WEEKDAY_LONG: Record<Weekday, string> = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' };
 
 export default function SplitSection() {
   const { state, actions } = useHealth();
@@ -41,28 +42,23 @@ export default function SplitSection() {
 
   return (
     <>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-4">
         <Note>
           {liftDays} lift day{liftDays === 1 ? '' : 's'} a week. Lift days get {t.carbsLift[0]}–{t.carbsLift[1]} g carbs, rest and cardio days {t.carbsRest[0]}–{t.carbsRest[1]} g.
         </Note>
-        <Button variant="ghost" size="sm" icon={<RotateCcw aria-hidden />} onClick={reset} disabled={isDefault}>
+        <Button variant="ghost" size="sm" onClick={reset} disabled={isDefault} className="-my-3">
           Reset
         </Button>
       </div>
-      <ul className="divide-y divide-hx-border/60">
-        {WEEK.map((w) => {
-          const s = split[w];
-          const lift = isLiftSession(s);
-          return (
-            <li key={w} className="flex items-center gap-3 py-2">
-              <span className="w-10 shrink-0 text-[15px] leading-[22px] font-medium text-hx-text">{weekdayShort(w)}</span>
-              <span className={`w-2 h-2 rounded-full shrink-0 ${lift ? 'bg-hx-green' : 'bg-hx-neutral/60'}`} aria-hidden />
-              <SelectField<SessionType> label={`${weekdayShort(w)} session`} hideLabel value={s} options={SESSION_OPTIONS} onChange={(v) => set(w, v)} className="flex-1" />
-            </li>
-          );
-        })}
+      <ul className="m-0 p-0 list-none flex flex-col gap-2">
+        {WEEK.map((w) => (
+          <li key={w} className="flex items-center gap-4 min-h-11">
+            <span className="hx-label w-14 shrink-0">{weekdayShort(w)}</span>
+            <SelectField<SessionType> label={`${WEEKDAY_LONG[w]} session`} hideLabel value={split[w]} options={SESSION_OPTIONS} onChange={(v) => set(w, v)} className="flex-1 min-w-0" />
+          </li>
+        ))}
       </ul>
-      <Note>Override a single day from the Log screen (lift / rest toggle) without changing the split.</Note>
+      <Note>Override a single day from the Log screen (the lift / rest toggle) without changing the split.</Note>
     </>
   );
 }

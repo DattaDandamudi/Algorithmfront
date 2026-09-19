@@ -1,32 +1,32 @@
 /**
- * Settings — SPEC §5 and §10. Twelve collapsible span-2 tiles in one bento
- * (DESIGN.md "Bento rules"), top → bottom:
- *   1 Profile & goals   2 Targets    3 Training split  4 Training
- *   5 Daily check-in    6 Bloodwork  7 Food preferences
- *   8 WHOOP             9 Imports   10 Coach & AI     11 Data     12 About
+ * Settings — SPEC §5 and §10, set as the index page in DESIGN.md "Settings".
  *
- * Every section reads/writes the store directly (`useHealth()`); this file
- * only composes them, supplies the shared clock (`useNow()` → today / now for
- * relative times and retest math) and hosts the single confirmation sheet
- * (`ConfirmProvider`) every destructive action awaits. All section and field
- * components are module-level, so inputs never remount while typing.
+ *  masthead      "Settings" in .hx-masthead, the save promise as the dateline
+ *  index         twelve 56 px ledger rows divided by hairlines, each the
+ *                disclosure button for its section, top to bottom:
+ *                  1 Profile & goals   2 Targets    3 Training split  4 Training
+ *                  5 Daily check-in    6 Bloodwork  7 Food preferences
+ *                  8 WHOOP             9 Imports   10 Coach & AI     11 Data   12 About
+ *  colophon      the medical line under a hairline
  *
- * Training, Daily check-in and Imports landed in Phase 2e: the progression
- * rule and the advisory volume table, the Hooper prompt's on/off and item
- * choice, and the three workout imports (the Apple export is streamed in
- * chunks by settings/appleStream, never read whole).
+ * No sticky header, no icons, no cards: the masthead scrolls with the page and
+ * a section opens in place under its row. Every section reads/writes the store
+ * directly (`useHealth()`); this file only composes them, supplies the shared
+ * clock (`useNow()` for relative times and retest math) and hosts the single
+ * confirmation sheet (`ConfirmProvider`) every destructive action awaits. All
+ * section and field components are module-level, so inputs never remount while
+ * typing.
  *
- * The Data card opens by default when the durability layer has something to
- * say (quota warning, failed write, integrity problems, or a JSON backup
- * older than 14 days — §10 "prompt periodic export", review R2-6) — that is
- * where the Today header's "Open Settings" banner sends the user.
+ * The Data section opens by default when the durability layer has something
+ * to say (quota warning, failed write, integrity problems, or a JSON backup
+ * older than 14 days, §10 "prompt periodic export", review R2-6): that is
+ * where the Today notice "Open Settings" sends the user.
  *
- * Deep links: `nav.openSettings(section)` (Trends' "Open Settings" → WHOOP,
- * the coach status pill → Coach & AI) is consumed once here and handed to the
+ * Deep links: `nav.openSettings(section)` (Trends' "Open Settings" to WHOOP,
+ * the coach status line to Coach & AI) is consumed once here and handed to the
  * matching <Section> as a nonce so it expands and scrolls into view (R2-10).
  */
 import { useEffect, useState } from 'react';
-import { Bot, ClipboardCheck, Database, Dumbbell, FileUp, FlaskConical, Info, SlidersHorizontal, Target, User, Utensils, Watch } from 'lucide-react';
 import { useHealth, useRecords, useWorkouts, useNow } from '../data/store';
 import { toISODate } from '../lib/dates';
 import { useNav, type SettingsSection } from '../nav';
@@ -87,64 +87,65 @@ export default function Settings() {
 
   return (
     <ConfirmProvider>
-      <div className="flex flex-col">
-        <header className="sticky top-0 z-20 bg-hx-base/95 backdrop-blur px-4 pt-4 pb-3">
-          <h1 className="hx-display text-[22px] leading-7 font-semibold text-hx-text">Settings</h1>
-          <p className="text-[13px] leading-[18px] text-hx-muted">Saves as you edit, stored only in this browser.</p>
+      <div className="px-5 flex flex-col">
+        <header className="pt-8 flex items-baseline justify-between gap-4">
+          <h1 className="hx-masthead text-hx-text shrink-0">Settings</h1>
+          <p className="hx-hedge min-w-0 flex-1 text-right">Saves as you edit, stored only in this browser.</p>
         </header>
 
-        <div className="hx-bento px-4 pt-1 pb-5">
-          <Section id="hx-set-profile" title="Profile & goals" icon={<User aria-hidden />} caption={profileCaption(settings)} defaultOpen openSignal={signal('profile')}>
+        <div className="mt-6 flex flex-col">
+          <Section id="hx-set-profile" title="Profile & goals" caption={profileCaption(settings)} openSignal={signal('profile')}>
             <ProfileSection />
           </Section>
 
-          <Section id="hx-set-targets" title="Targets" icon={<Target aria-hidden />} caption={targetsCaption(settings)} openSignal={signal('targets')}>
+          <Section id="hx-set-targets" title="Targets" caption={targetsCaption(settings)} openSignal={signal('targets')}>
             <TargetsSection />
           </Section>
 
-          <Section id="hx-set-split" title="Training split" icon={<Dumbbell aria-hidden />} caption={splitCaption(settings)} openSignal={signal('split')}>
+          <Section id="hx-set-split" title="Training split" caption={splitCaption(settings)} openSignal={signal('split')}>
             <SplitSection />
           </Section>
 
-          <Section id="hx-set-training" title="Training" icon={<SlidersHorizontal aria-hidden />} caption={trainingCaption(settings)} openSignal={signal('training')}>
+          <Section id="hx-set-training" title="Training" caption={trainingCaption(settings)} openSignal={signal('training')}>
             <TrainingSection />
           </Section>
 
-          <Section id="hx-set-checkin" title="Daily check-in" icon={<ClipboardCheck aria-hidden />} caption={checkInCaption(settings)} openSignal={signal('checkin')}>
+          <Section id="hx-set-checkin" title="Daily check-in" caption={checkInCaption(settings)} openSignal={signal('checkin')}>
             <CheckInSection />
           </Section>
 
-          <Section id="hx-set-bloodwork" title="Bloodwork" icon={<FlaskConical aria-hidden />} caption={bloodworkCaption(settings, today)} openSignal={signal('bloodwork')}>
+          <Section id="hx-set-bloodwork" title="Bloodwork" caption={bloodworkCaption(settings, today)} openSignal={signal('bloodwork')}>
             <BloodworkSection today={today} />
           </Section>
 
-          <Section id="hx-set-food" title="Food preferences" icon={<Utensils aria-hidden />} caption={foodCaption(settings)} openSignal={signal('food')}>
+          <Section id="hx-set-food" title="Food preferences" caption={foodCaption(settings)} openSignal={signal('food')}>
             <FoodSection />
           </Section>
 
-          <Section id="hx-set-whoop" title="WHOOP" icon={<Watch aria-hidden />} caption={whoopCaption(settings, now)} openSignal={signal('whoop')}>
+          <Section id="hx-set-whoop" title="WHOOP" caption={whoopCaption(settings, now)} openSignal={signal('whoop')}>
             <WhoopSection today={today} now={now} />
           </Section>
 
-          <Section id="hx-set-imports" title="Imports" icon={<FileUp aria-hidden />} caption={importsCaption(settings, workouts.length, now)} openSignal={signal('imports')}>
+          <Section id="hx-set-imports" title="Imports" caption={importsCaption(settings, workouts.length, now)} openSignal={signal('imports')}>
             <ImportsSection now={now} />
           </Section>
 
-          <Section id="hx-set-coach" title="Coach & AI" icon={<Bot aria-hidden />} caption={coachCaption(settings)} openSignal={signal('coach')}>
+          <Section id="hx-set-coach" title="Coach & AI" caption={coachCaption(settings)} openSignal={signal('coach')}>
             <CoachSection />
           </Section>
 
-          <Section id="hx-set-data" title="Data" icon={<Database aria-hidden />} caption={dataCaption(storage, records, now)} defaultOpen={storageNeedsAttention} openSignal={signal('data')}>
+          <Section id="hx-set-data" title="Data" caption={dataCaption(storage, records, now)} defaultOpen={storageNeedsAttention} openSignal={signal('data')}>
             <DataSection now={now} />
           </Section>
 
-          <Section id="hx-set-about" title="About" icon={<Info aria-hidden />} caption={aboutCaption()} openSignal={signal('about')}>
+          <Section id="hx-set-about" title="About" caption={aboutCaption()} openSignal={signal('about')}>
             <AboutSection />
           </Section>
         </div>
 
-        <footer className="px-4 pb-2 text-left">
-          <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
+        <div className="hx-hair mt-10" aria-hidden />
+        <footer className="pt-3 pb-6">
+          <p className="hx-hedge">Wellness information only, not medical advice.</p>
         </footer>
       </div>
     </ConfirmProvider>

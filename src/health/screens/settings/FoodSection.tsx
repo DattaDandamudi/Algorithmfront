@@ -2,13 +2,12 @@
  * Settings §5 — Food preferences (SPEC §5 "food preferences/cuisine priors",
  * §9 food-AI priors) and the favorites manager.
  *
- * Cuisine chips and the notes textarea feed the food estimator's system
+ * Cuisine tags and the notes textarea feed the food estimator's system
  * prompt and the coach PROFILE line. Favorites are the starred staples the
  * Log screen shows for one-tap adds; here the user edits the default portion
- * (grams) each favorite is added at, or unstars it. Unstarring is confirmed
+ * (grams) each favorite is added at, or removes it. Removing is confirmed
  * because a favorite can only come back by starring it again from Recents.
  */
-import { RotateCcw, Star } from 'lucide-react';
 import { DEFAULT_FAVORITES } from '../../data/defaults';
 import { useHealth } from '../../data/store';
 import type { FoodItem } from '../../data/types';
@@ -58,10 +57,10 @@ export default function FoodSection() {
 
   return (
     <>
-      <Field label="Cuisine priors" hint="Tells the food estimator which dishes to assume first (e.g. “kebab” → seekh, not doner) and which portion sizes are typical.">
+      <Field label="Cuisine priors" hint="Tells the food estimator which dishes to assume first (a “kebab” is seekh, not doner) and which portion sizes are typical.">
         <div className="flex flex-wrap gap-2">
           {CUISINE_OPTIONS.map((c) => (
-            <Chip key={c.value} size="sm" color="blue" active={p.cuisines.includes(c.value)} pressed={p.cuisines.includes(c.value)} onClick={() => toggleCuisine(c.value)}>
+            <Chip key={c.value} size="sm" active={p.cuisines.includes(c.value)} pressed={p.cuisines.includes(c.value)} onClick={() => toggleCuisine(c.value)}>
               {c.label}
             </Chip>
           ))}
@@ -74,33 +73,33 @@ export default function FoodSection() {
         multiline
         rows={3}
         maxLength={400}
-        placeholder="e.g. Mostly restaurant food; weighs portions in grams; no pork."
+        placeholder="Mostly restaurant food; weighs portions in grams; no pork."
         hint="Sent with every food estimate and coach turn. Allergies and dislikes go here."
         onChange={(foodNotes) => actions.updateProfile({ foodNotes })}
       />
 
       <SubHeading
+        title="Favorites"
+        caption={`${favorites.length} starred`}
         action={
           missingDefaults.length > 0 ? (
-            <Button variant="ghost" size="sm" icon={<RotateCcw aria-hidden />} onClick={restoreDefaults}>
+            <Button variant="ghost" size="sm" onClick={restoreDefaults}>
               Restore defaults
             </Button>
           ) : undefined
         }
-      >
-        Favorites ({favorites.length})
-      </SubHeading>
+      />
 
       {favorites.length === 0 ? (
         <Note>No starred foods yet. Star a recent food on the Log screen (or restore the default staples) to keep one-tap adds here.</Note>
       ) : (
-        <ul className="divide-y divide-hx-border/60">
+        <ul className="hx-ledger m-0 p-0 list-none">
           {favorites.map((f) => (
             <FavoriteRow key={f.id} item={f} onGrams={(g) => setGrams(f.id, g)} onUnstar={() => unstar(f)} />
           ))}
         </ul>
       )}
-      <Note className="text-hx-muted">Portion is the gram amount added when you tap the favorite; macros scale from its per-100 g values.</Note>
+      <Note>Portion is the gram amount added when you tap the favorite; macros scale from its per-100 g values.</Note>
     </>
   );
 }
@@ -109,26 +108,20 @@ function FavoriteRow({ item, onGrams, onUnstar }: { item: FoodItem; onGrams: (g:
   const g = item.defaultGrams > 0 ? item.defaultGrams : 100;
   const kcal = (item.per100.kc * g) / 100;
   const protein = (item.per100.p * g) / 100;
-  const unit = item.unitName && item.unitGrams ? `, 1 ${item.unitName} = ${fmt(item.unitGrams)} g` : '';
+  const unit = item.unitName && item.unitGrams ? `, 1 ${item.unitName} is ${fmt(item.unitGrams)} g` : '';
   return (
-    <li className="flex items-center gap-3 py-2.5">
+    <li className="hx-row flex-row items-center gap-4">
       <div className="flex-1 min-w-0">
-        <p className="text-[15px] leading-[22px] font-medium text-hx-text truncate">{item.name}</p>
-        <p className="text-[13px] leading-[18px] text-hx-muted truncate">
-          {fmt(kcal)} kcal, {fmt(protein)} g protein per portion{item.cuisine ? `, ${cuisineName(item.cuisine)}` : ''}
+        <p className="hx-body truncate">{item.name}</p>
+        <p className="hx-cap">
+          {fmt(kcal)} kcal, {fmt(protein)} g protein{item.cuisine ? `, ${cuisineName(item.cuisine)}` : ''}
           {unit}
         </p>
       </div>
-      <NumberField label={`${item.name} portion`} hideLabel value={item.defaultGrams} min={5} max={2000} step={5} unit="g" className="w-24 shrink-0" onCommit={onGrams} />
-      <button
-        type="button"
-        onClick={onUnstar}
-        aria-label={`Remove ${item.name} from favorites`}
-        aria-pressed
-        className="hx-press w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-ctl text-hx-yellow hover:bg-hx-card2"
-      >
-        <Star className="w-[18px] h-[18px]" fill="currentColor" aria-hidden />
-      </button>
+      <NumberField label={`${item.name} portion`} hideLabel align="right" value={item.defaultGrams} min={5} max={2000} step={5} unit="g" className="w-20 shrink-0" onCommit={onGrams} />
+      <Button variant="ghost" size="sm" aria-label={`Remove ${item.name} from favorites`} onClick={onUnstar}>
+        Remove
+      </Button>
     </li>
   );
 }

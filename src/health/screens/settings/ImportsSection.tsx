@@ -7,8 +7,8 @@
  * `externalId`, or same day + kind within 10 minutes) and never overwrites a
  * session that was typed by hand.
  *
- * Counts are reported exactly as they come back — sessions read, added, and
- * skipped as duplicates — so re-importing a bigger export of the same history
+ * Counts are reported exactly as they come back (sessions read, added, and
+ * skipped as duplicates) so re-importing a bigger export of the same history
  * honestly reads "0 added, N already here" instead of claiming success. Rows
  * the parser could not read at all are counted separately and their reasons
  * listed, because a silent drop is how an import loses a year of training.
@@ -18,7 +18,6 @@
  * skips everything that is not a `<Workout>` element and never builds a DOM.
  */
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { Activity, FileSpreadsheet, FileUp, Watch } from 'lucide-react';
 import { downloadText, exportFilename } from '../../data/export';
 import { useHealth, useWorkouts } from '../../data/store';
 import { parseWorkoutFile, type WorkoutParseResult } from '../../data/workoutImport';
@@ -27,7 +26,7 @@ import { formatDateShort } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { Banner, Button, toast } from '../../ui';
 import { APPLE_MAX_BYTES, scanAppleWorkouts } from './appleStream';
-import { KV, Note, SubHeading } from './fields';
+import { KV, KVList, Note, SubHeading } from './fields';
 import { formatBytes, relativeTime } from './util';
 
 const MAX_ERRORS_SHOWN = 5;
@@ -40,16 +39,15 @@ interface SourceSpec {
   label: string;
   file: string;
   accept: string;
-  icon: typeof Watch;
   /** Where the file comes from, in the user's own app. */
   where: string;
   stamp: keyof NonNullable<TrainingSettings['imports']>;
 }
 
 const SOURCES: SourceSpec[] = [
-  { key: 'whoop', label: 'WHOOP', file: 'workouts.csv', accept: '.csv,text/csv', icon: Watch, where: 'WHOOP app → Profile → Data export → unzip', stamp: 'whoopAt' },
-  { key: 'strava', label: 'Strava', file: 'activities.csv', accept: '.csv,text/csv', icon: Activity, where: 'strava.com → Settings → My Account → Download or Delete Your Account → unzip', stamp: 'stravaAt' },
-  { key: 'apple', label: 'Apple Health', file: 'export.xml', accept: '.xml,text/xml,application/xml', icon: FileUp, where: 'Health app → your photo → Export All Health Data → unzip', stamp: 'appleAt' },
+  { key: 'whoop', label: 'WHOOP', file: 'workouts.csv', accept: '.csv,text/csv', where: 'In the WHOOP app: Profile, then Data export; unzip it', stamp: 'whoopAt' },
+  { key: 'strava', label: 'Strava', file: 'activities.csv', accept: '.csv,text/csv', where: 'On strava.com: Settings, My Account, then Download or Delete Your Account; unzip it', stamp: 'stravaAt' },
+  { key: 'apple', label: 'Apple Health', file: 'export.xml', accept: '.xml,text/xml,application/xml', where: 'In the Health app: your photo, then Export All Health Data; unzip it', stamp: 'appleAt' },
 ];
 
 interface Summary {
@@ -137,7 +135,7 @@ export default function ImportsSection({ now }: { now: number }) {
 
   return (
     <>
-      <div>
+      <KVList>
         <KV k="Sessions stored" v={workouts.length} />
         <KV
           k="Where they came from"
@@ -151,56 +149,54 @@ export default function ImportsSection({ now }: { now: number }) {
           }
         />
         <KV k="Most recent" v={latest ? `${formatDateShort(latest.d)}, ${latest.title ?? latest.kind}` : '—'} />
-      </div>
+      </KVList>
 
       <Note>
-        Files are parsed in this browser and never uploaded. Each session keeps the id its source gave it, so importing a longer export later adds only what is new — the rest is recognised and skipped.
+        Files are parsed in this browser and never uploaded. Each session keeps the id its source gave it, so importing a longer export later adds only what is new; the rest is recognised and skipped.
         A session you typed yourself always wins over an imported one on the same day.
       </Note>
 
       {SOURCES.map((spec) => {
-        const Icon = spec.icon;
         const at = imports[spec.stamp];
         return (
-          <div key={spec.key}>
-            <SubHeading action={<span className="text-[13px] leading-[18px] text-hx-muted">{at ? relativeTime(at, now) : 'never'}</span>}>{spec.label}</SubHeading>
-            <Note className="text-hx-muted mb-2">
-              {spec.where} → <span className="text-hx-text">{spec.file}</span>
+          <div key={spec.key} className="flex flex-col gap-4">
+            {/* The dateline is the last import, or "never". */}
+            <SubHeading title={spec.label} caption={at ? relativeTime(at, now) : 'never'} />
+            <Note>
+              {spec.where}; choose <span className="text-hx-text">{spec.file}</span>
               {spec.key === 'apple'
                 ? `. Read in 4 MB chunks; the heart-rate samples are skipped, not parsed. Over ${Math.round(APPLE_MAX_BYTES / MB)} MB only the last ${Math.round(
                     APPLE_MAX_BYTES / MB,
-                  )} MB are read — that is where Apple writes the workouts — and the result says so.`
+                  )} MB are read, which is where Apple writes the workouts, and the result says so.`
                 : '.'}
             </Note>
             <input ref={refs[spec.key]} type="file" accept={spec.accept} className="sr-only" tabIndex={-1} aria-hidden onChange={onFile(spec)} />
-            <Button variant="secondary" fullWidth icon={<Icon aria-hidden />} loading={busy === spec.key} disabled={busy !== null && busy !== spec.key} onClick={() => refs[spec.key].current?.click()}>
+            <Button variant="secondary" fullWidth loading={busy === spec.key} disabled={busy !== null && busy !== spec.key} onClick={() => refs[spec.key].current?.click()}>
               Choose {spec.file}
             </Button>
             {busy === spec.key && progress && (
-              <p role="status" className="mt-2 text-[13px] leading-[18px] text-hx-muted">
-                Read {formatBytes(progress.read)} of {formatBytes(progress.total)}…
+              <p role="status" className="hx-cap">
+                Read {formatBytes(progress.read)} of {formatBytes(progress.total)}
               </p>
             )}
           </div>
         );
       })}
 
-      {summary && <ImportSummaryCard summary={summary} onDismiss={() => setSummary(null)} />}
+      {summary && <ImportSummaryNote summary={summary} onDismiss={() => setSummary(null)} />}
 
-      <SubHeading>Export</SubHeading>
-      <Button variant="secondary" fullWidth icon={<FileSpreadsheet aria-hidden />} disabled={!workouts.length} onClick={exportWorkouts}>
+      <SubHeading title="Export" />
+      <Button variant="secondary" fullWidth disabled={!workouts.length} onClick={exportWorkouts}>
         Export workouts CSV
       </Button>
-      <Note className="text-hx-muted">
-        One row per session — date, kind, duration, session RPE, load, distance and heart rate. Sets are summarised, not itemised; the JSON export under Data is the one that round-trips every set.
-      </Note>
+      <Note>One row per session: date, kind, duration, session RPE, load, distance and heart rate. Sets are summarised, not itemised; the JSON export under Data is the one that round-trips every set.</Note>
     </>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-function ImportSummaryCard({ summary, onDismiss }: { summary: Summary; onDismiss: () => void }) {
+function ImportSummaryNote({ summary, onDismiss }: { summary: Summary; onDismiss: () => void }) {
   const { fileName, parsed, result, source, scan } = summary;
   const read = parsed.workouts.length;
   const added = result?.added ?? 0;
@@ -210,32 +206,27 @@ function ImportSummaryCard({ summary, onDismiss }: { summary: Summary; onDismiss
 
   return (
     <Banner kind={kind} onDismiss={onDismiss}>
-      <p className="font-semibold truncate">
+      <span className="block font-semibold truncate">
         {fileName}
         {source ? `, ${source}` : ''}
-      </p>
-      <p className="text-hx-text2">
+      </span>
+      <span className="block">
         {read} session{read === 1 ? '' : 's'} read, {added} added, {skipped} already here
         {parsed.skipped > 0 ? `, ${parsed.skipped} unreadable` : ''}
-      </p>
+      </span>
       {scan && (
-        <p className="mt-1 text-hx-muted">
+        <span className="block hx-cap mt-1">
           Scanned {scan.truncated ? 'the last ' : ''}
           {formatBytes(scan.bytesRead)} in {scan.chunks} chunk{scan.chunks === 1 ? '' : 's'}; {fmt(scan.recordsSkipped)} record sample{scan.recordsSkipped === 1 ? '' : 's'} skipped.
-        </p>
+        </span>
       )}
-      {parsed.columnsFound.length > 0 && (
-        <p className="mt-1 text-hx-text2">
-          <span className="text-hx-muted">Columns found: </span>
-          {parsed.columnsFound.join(', ')}
-        </p>
-      )}
+      {parsed.columnsFound.length > 0 && <span className="block hx-cap mt-1">Columns found: {parsed.columnsFound.join(', ')}</span>}
       {errors.length > 0 && (
-        <ul className="mt-1 list-disc pl-4 text-hx-text2 space-y-0.5">
+        <ul className="m-0 mt-1 pl-4 list-disc hx-cap flex flex-col gap-0.5">
           {errors.slice(0, MAX_ERRORS_SHOWN).map((e, i) => (
             <li key={i}>{e}</li>
           ))}
-          {errors.length > MAX_ERRORS_SHOWN && <li>…and {errors.length - MAX_ERRORS_SHOWN} more</li>}
+          {errors.length > MAX_ERRORS_SHOWN && <li>and {errors.length - MAX_ERRORS_SHOWN} more</li>}
         </ul>
       )}
     </Banner>
