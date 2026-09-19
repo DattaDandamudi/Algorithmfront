@@ -1,6 +1,10 @@
 /**
  * Train — the sixth tab: log a session, see what to do today, and analyse
- * what has happened (plan §2a).
+ * what has happened (plan §2a). Set as the match programme (DESIGN.md
+ * "Train"): the masthead "Train" with the day's status as its dateline, the
+ * Today / Log / History / Analysis switch as four words on a hairline, the
+ * sub-view, and the medical line as the colophon under a final hairline.
+ * Nothing is sticky; the masthead scrolls away with the page.
  *
  * This file owns two pieces of state and nothing else: which sub-view is
  * showing, and the live session draft. Everything numeric comes from
@@ -25,7 +29,6 @@
  * consumed once, guarded by a nonce so a StrictMode double-invoke is a no-op.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bike, Dumbbell, HeartPulse, PersonStanding } from 'lucide-react';
 import type { Workout, WorkoutKind } from '../data/types';
 import { useHealth } from '../data/store';
 import { detectPRs } from '../engine';
@@ -87,6 +90,20 @@ export default function Train() {
     setDetailId(null);
     setView('today');
   }, [generation]);
+
+  // A sub-view change is a page turn: back to the top, so Start at the foot of
+  // a long Today view opens the logger at its head. Not on mount, where the
+  // page is read from the top anyway. Set on the scrolling elements directly
+  // rather than window.scrollTo so a non-visual DOM stays quiet.
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [view]);
 
   // Deep link from Today / Trends / Coach.
   useEffect(() => {
@@ -184,6 +201,7 @@ export default function Train() {
     if (id) setView('history');
   };
 
+  /** The dateline beside the masthead: what today is, or what is running. */
   const status = useMemo(() => {
     if (draft) return `${kindLabel(draft.kind)} in progress`;
     const n = model.training.todayWorkouts.length;
@@ -192,23 +210,15 @@ export default function Train() {
   }, [draft, model.training]);
 
   return (
-    <div className="flex flex-col">
-      <header className="sticky top-0 z-20 bg-hx-base/90 backdrop-blur px-4 pt-5 pb-3 flex flex-col gap-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h1 className="hx-display text-[22px] leading-7 font-semibold text-hx-text">Train</h1>
-          <p className="text-[13px] leading-[18px] text-hx-muted truncate">{status}</p>
-        </div>
-        <SegmentedControl<TrainView>
-          options={VIEWS}
-          value={view}
-          onChange={setView}
-          size="sm"
-          ariaLabel="Train view"
-          className="self-start"
-        />
+    <div className="px-5 flex flex-col">
+      <header className="pt-8 flex items-baseline justify-between gap-4">
+        <h1 className="hx-masthead text-hx-text shrink-0">Train</h1>
+        <p className="hx-hedge min-w-0 flex-1 text-right">{status}</p>
       </header>
+      {/* md = 44 px words, the touch-target floor; w-full stretches the hairline under the whole row. */}
+      <SegmentedControl<TrainView> options={VIEWS} value={view} onChange={setView} size="md" ariaLabel="Train view" className="w-full mt-4" />
 
-      <section className="px-4 pt-2 pb-6" aria-label={VIEWS.find((v) => v.value === view)?.label ?? 'Train'}>
+      <section aria-label={VIEWS.find((v) => v.value === view)?.label ?? 'Train'} className="flex flex-col">
         {view === 'today' && (
           <TodayView
             model={model}
@@ -250,8 +260,10 @@ export default function Train() {
         {view === 'analysis' && <AnalysisView model={model} onStart={startSession} />}
       </section>
 
-      <footer className="px-4 pt-1 pb-2 text-left">
-        <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
+      {/* The colophon: the medical line, verbatim, under a final hairline. */}
+      <div className="hx-hair mt-10" aria-hidden />
+      <footer className="pt-3 pb-6">
+        <p className="hx-hedge">Wellness information only, not medical advice.</p>
       </footer>
     </div>
   );
@@ -261,33 +273,25 @@ export default function Train() {
 function StartPrompt({ model, onStart }: { model: ReturnType<typeof useTrainModel>; onStart: (k: WorkoutKind) => void }) {
   const session = model.training.todaySession;
   return (
-    <div className="hx-bento">
-      <div className="hx-span-2">
-        <EmptyState
-          icon={<Dumbbell />}
-          title="No session in progress"
-          hint={
-            session === 'rest'
-              ? 'Today is a rest day on your split. Start anything below if you want it logged anyway — nothing here is locked to the plan.'
-              : `Start ${sessionLabel(session).toLowerCase()} and the planned exercises come with it, ready for sets.`
-          }
-          action={{ label: `Start ${session === 'rest' ? 'a session' : sessionLabel(session).toLowerCase()}`, onClick: () => onStart('strength') }}
-        />
-      </div>
-      <section aria-label="Log another kind of session" className="hx-span-2 grid grid-cols-3 gap-2">
-        <Button variant="secondary" size="sm" icon={<Bike aria-hidden />} aria-label="Log cardio" onClick={() => onStart('cardio')}>
+    <div className="flex flex-col">
+      <EmptyState
+        className="mt-6"
+        title="No session in progress"
+        hint={
+          session === 'rest'
+            ? 'Today is a rest day on your split. Start anything below if you want it logged anyway; nothing here is locked to the plan.'
+            : `Start ${sessionLabel(session).toLowerCase()} and the planned exercises come with it, ready for sets.`
+        }
+        action={{ label: `Start ${session === 'rest' ? 'a session' : sessionLabel(session).toLowerCase()}`, onClick: () => onStart('strength') }}
+      />
+      <section aria-label="Log another kind of session" className="mt-6 grid grid-cols-3 gap-2">
+        <Button variant="secondary" aria-label="Log cardio" onClick={() => onStart('cardio')}>
           Cardio
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<PersonStanding aria-hidden />}
-          aria-label="Log mobility"
-          onClick={() => onStart('mobility')}
-        >
+        <Button variant="secondary" aria-label="Log mobility" onClick={() => onStart('mobility')}>
           Mobility
         </Button>
-        <Button variant="secondary" size="sm" icon={<HeartPulse aria-hidden />} aria-label="Log sport" onClick={() => onStart('sport')}>
+        <Button variant="secondary" aria-label="Log sport" onClick={() => onStart('sport')}>
           Sport
         </Button>
       </section>

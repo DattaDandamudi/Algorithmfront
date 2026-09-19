@@ -1,11 +1,14 @@
 /**
- * Train ▸ Today — the planned session as the screen's hero, the load gauge and
- * one tap to start.
- *
- * The view is one `.hx-bento` (DESIGN.md): the session is a span-2 hero with
- * its own call to action inside it, the other three kinds sit under it as a
- * span-2 row of controls, the load gauge contributes two 1×1 complications and
- * a span-2 tile, and the two lists (PRs, logged today) are span-2 tiles.
+ * Train ▸ Today — the match programme (DESIGN.md "Train"): the planned
+ * session as a fixture list under the running head "Today's session" with the
+ * date as its dateline; the session name in `.hx-head`, "Planned, 6 exercises"
+ * in `.hx-cap`, then one row per exercise divided by hairlines: the name in
+ * `.hx-ui`, the prescription with its load in `.hx-fig-sm`, the plan word as a
+ * tag in its tone with a tone square, the engine's reason in `.hx-cap` and the
+ * ghost "last: …" as a hedge. Start is the ink key, the other three kinds
+ * outline keys. Fitness, fatigue and form follow as a box score, PRs and the
+ * sessions logged today as ledgers. A rest day is two paragraphs and the
+ * recovery ledger with 2 px progress rules.
  *
  * Every number here comes from `ctx.training` (plan §2a): the exercise list,
  * the suggested loads and the reason attached to each are `suggestProgression`
@@ -14,8 +17,8 @@
  *
  * Two hedges are structural rather than decorative. The load block leads on
  * absolute acute load and week-on-week change with the acute:chronic ratio
- * shaded below it (see `LoadGauge`), and no volume landmark appears anywhere
- * on this view — a landmark never decides what to lift, only fatigue does
+ * below it (see `LoadGauge`), and no volume landmark appears anywhere on this
+ * view — a landmark never decides what to lift, only fatigue does
  * (`strength.suggestProgression` does not even take the landmarks as an
  * argument).
  *
@@ -25,22 +28,22 @@
  * the back-off and deload steps — have no published source, so their labels
  * (`PROGRESSION_NOTES`, `LOAD_NOTES.muscleRecovery`) are rendered **here, on a
  * training day, with the prescription they changed**, not only on the rest-day
- * card where nothing is being prescribed.
+ * block where nothing is being prescribed.
  */
-import { Bike, Dumbbell, HeartPulse, Moon, PersonStanding, Play, Trophy } from 'lucide-react';
 import type { PlannedExercise, TrainingContext, WorkoutKind } from '../../data/types';
 import { LOAD_NOTES, PROGRESSION_NOTES } from '../../engine';
 import { formatDateLong } from '../../lib/dates';
 import { fmt } from '../../lib/format';
-import { Button, EmptyState, SectionHeader, bandSoftBg, bandText } from '../../ui';
+import { Button, EmptyState, SectionHeader, bandBorder, bandText } from '../../ui';
 import LoadGauge from './LoadGauge';
-import { Note, Stat, TrainCard } from './TrainCard';
+import ProgressRule from './ProgressRule';
+import { Note } from './TrainCard';
 import type { TrainModel } from './useTrainModel';
 import {
   formatDuration,
-  formatLoad,
   formatVolume,
   ghostText,
+  loadParts,
   modeTone,
   modeWord,
   muscleLabel,
@@ -58,59 +61,50 @@ export interface TodayViewProps {
   onOpenSession: (id: string) => void;
 }
 
-/** Muscles shown in the rest-day card — the least recovered first. */
+/** Muscles shown in the rest-day ledger — the least recovered first. */
 const RECOVERY_ROWS = 3;
+
+const PR_KIND_WORD = { weight: 'heaviest set', reps: 'most reps', e1rm: 'best estimated max' } as const;
 
 export default function TodayView({ model, onStart, onLogKind, onOpenSession }: TodayViewProps) {
   const { training, units, today } = model;
   const isRest = training.todaySession === 'rest';
   const planned = training.plannedExercises;
   const title = sessionLabel(training.todaySession);
-  // A session day the active program cannot fill: there is no plan to be the
-  // hero, so the empty state takes its place on the ground.
+  // A session day the active program cannot fill: there is no plan to list, so
+  // the empty state takes its place under the running head.
   const noPlan = planned.length === 0 && !isRest;
+  const prs = training.prs7d;
+  const logged = training.todayWorkouts;
 
   return (
-    <div className="hx-bento">
+    <div className="flex flex-col">
       {noPlan ? (
-        <section className="hx-span-2 flex flex-col gap-3" aria-label={title}>
-          <SectionHeader title={title} caption={formatDateLong(today)} />
+        <section className="mt-6 flex flex-col" aria-label={title}>
+          <SectionHeader as="h2" rule={false} title={title} caption={formatDateLong(today)} />
           <EmptyState
-            icon={<Dumbbell />}
+            className="mt-4"
             title="No session planned for today"
-            hint="Your split has a session today but the active program has no exercises for it. Start an empty session and add lifts as you go, or edit the program in Settings ▸ Training."
+            hint="Your split has a session today but the active program has no exercises for it. Start an empty session and add lifts as you go, or edit the program in Settings, under Training."
             action={{ label: 'Start empty session', onClick: onStart }}
           />
         </section>
       ) : (
-        <section className="hx-card hx-span-2 p-5 flex flex-col gap-4" aria-label={title}>
-          <div className="flex flex-col gap-3">
-            <SectionHeader as="h3" title="Today’s session" caption={formatDateLong(today)} />
-            <div className="min-w-0 flex items-start gap-2.5">
-              {isRest ? (
-                <Moon className="w-5 h-5 mt-1 shrink-0 text-hx-neutral" aria-hidden />
-              ) : (
-                <Dumbbell className="w-5 h-5 mt-1 shrink-0 text-hx-blue" aria-hidden />
-              )}
-              <div className="min-w-0">
-                <p className="hx-display text-[22px] leading-7 font-semibold text-hx-text truncate">{isRest ? 'Rest day' : title}</p>
-                <p className="text-[13px] leading-[18px] text-hx-muted">
-                  {isRest ? 'Nothing planned' : `Planned, ${planned.length} exercise${planned.length === 1 ? '' : 's'}`}
-                </p>
-              </div>
-            </div>
-          </div>
+        <section className="mt-6 flex flex-col" aria-label={title}>
+          <SectionHeader as="h2" rule={false} title="Today’s session" caption={formatDateLong(today)} />
+          <p className="hx-head text-hx-text mt-4">{isRest ? 'Rest day' : title}</p>
+          <p className="hx-cap mt-1">{isRest ? 'Nothing planned' : `Planned, ${planned.length} exercise${planned.length === 1 ? '' : 's'}`}</p>
 
           {isRest ? (
-            <RestDayCard training={training} />
+            <RestDay training={training} />
           ) : (
             <>
-              <ul className="flex flex-col divide-y divide-hx-border/70 -my-1">
+              <ul className="mt-4 flex flex-col border-t border-hx-border divide-y divide-hx-border">
                 {planned.map((pe) => (
                   <PlannedRow key={pe.exerciseId} pe={pe} units={units} />
                 ))}
               </ul>
-              <div className="flex flex-col gap-2 border-t border-hx-border pt-3">
+              <div className="mt-4 flex flex-col gap-2">
                 <Note>{PROGRESSION_NOTES.steps}</Note>
                 <Note>{PROGRESSION_NOTES.increments}</Note>
                 <Note>{LOAD_NOTES.muscleRecovery}</Note>
@@ -118,70 +112,80 @@ export default function TodayView({ model, onStart, onLogKind, onOpenSession }: 
             </>
           )}
 
-          <Button icon={<Play aria-hidden />} size="lg" fullWidth onClick={onStart}>
+          <Button size="lg" fullWidth className="mt-6" onClick={onStart}>
             {isRest ? 'Start a session anyway' : `Start ${title.toLowerCase()}`}
           </Button>
         </section>
       )}
 
-      <section aria-label="Log another kind of session" className="hx-span-2 grid grid-cols-3 gap-2">
-        <Button variant="secondary" size="sm" icon={<Bike aria-hidden />} aria-label="Log cardio" onClick={() => onLogKind('cardio')}>
+      <section aria-label="Log another kind of session" className="mt-3 grid grid-cols-3 gap-2">
+        <Button variant="secondary" aria-label="Log cardio" onClick={() => onLogKind('cardio')}>
           Cardio
         </Button>
-        <Button variant="secondary" size="sm" icon={<PersonStanding aria-hidden />} aria-label="Log mobility" onClick={() => onLogKind('mobility')}>
+        <Button variant="secondary" aria-label="Log mobility" onClick={() => onLogKind('mobility')}>
           Mobility
         </Button>
-        <Button variant="secondary" size="sm" icon={<HeartPulse aria-hidden />} aria-label="Log sport" onClick={() => onLogKind('sport')}>
+        <Button variant="secondary" aria-label="Log sport" onClick={() => onLogKind('sport')}>
           Sport
         </Button>
       </section>
 
-      <SectionHeader
-        className="hx-span-2"
-        title="Fitness, fatigue and form"
-        caption={training.load.source === 'none' ? 'No load logged yet' : `From your ${training.load.source} sessions`}
-      />
-      <LoadGauge
-        load={training.load}
-        meaning="Fitness is the slow-building side of training, fatigue the fast-fading side, and form is what is left over today."
-      />
+      <section aria-label="Fitness, fatigue and form" className="mt-10 flex flex-col">
+        <SectionHeader
+          title="Fitness, fatigue and form"
+          caption={training.load.source === 'none' ? 'No load logged yet' : `From your ${training.load.source} sessions`}
+        />
+        <div className="mt-4">
+          <LoadGauge
+            load={training.load}
+            meaning="Fitness is the slow-building side of training, fatigue the fast-fading side, and form is what is left over today."
+          />
+        </div>
+      </section>
 
-      {training.prs7d.length > 0 && (
-        <TrainCard tile title="PRs this week" caption={`${training.prs7d.length} in the last 7 days`}>
-          <ul className="flex flex-col gap-2.5">
-            {training.prs7d.slice(0, 5).map((pr) => (
-              <li key={`${pr.exerciseId}-${pr.kind}-${pr.d}`} className="flex items-center gap-2 text-[15px] leading-[22px]">
-                <Trophy className="w-4 h-4 shrink-0 text-hx-green" aria-hidden />
-                <span className="text-hx-text truncate">{pr.name}</span>
-                <span className="ml-auto shrink-0 text-[13px] leading-[18px] text-hx-text2">
-                  {pr.kind === 'reps' ? `${fmt(pr.value, 0)} reps` : formatLoad(pr.value, units)}, {pr.kind === 'e1rm' ? 'est. max' : pr.kind}
-                </span>
-              </li>
-            ))}
+      {prs.length > 0 && (
+        <section aria-label="PRs this week" className="mt-10 flex flex-col">
+          <SectionHeader title="PRs this week" caption={`${prs.length} in the last 7 days`} />
+          <ul className="hx-ledger mt-1">
+            {prs.slice(0, 5).map((pr) => {
+              const load = pr.kind === 'reps' ? null : loadParts(pr.value, units);
+              return (
+                <li key={`${pr.exerciseId}-${pr.kind}-${pr.d}`} className="hx-row flex-row items-center justify-between gap-3">
+                  <span className="min-w-0 flex flex-col">
+                    <span className="hx-body truncate">{pr.name}</span>
+                    <span className="hx-cap">{PR_KIND_WORD[pr.kind]}</span>
+                  </span>
+                  <span className="hx-fig-sm text-hx-text shrink-0">
+                    {load ? load.value : fmt(pr.value, 0)}
+                    <span className="hx-unit">{load ? load.unit : 'reps'}</span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
-        </TrainCard>
+        </section>
       )}
 
-      {training.todayWorkouts.length > 0 && (
-        <TrainCard tile title="Logged today" caption={`${training.todayWorkouts.length} session${training.todayWorkouts.length === 1 ? '' : 's'}`}>
-          <ul className="flex flex-col">
-            {training.todayWorkouts.map((w) => (
+      {logged.length > 0 && (
+        <section aria-label="Logged today" className="mt-10 flex flex-col">
+          <SectionHeader as="h2" rule={false} title="Logged today" caption={`${logged.length} session${logged.length === 1 ? '' : 's'}`} />
+          <ul className="mt-1 flex flex-col divide-y divide-hx-border">
+            {logged.map((w) => (
               <li key={w.id}>
-                <button
-                  type="button"
-                  onClick={() => onOpenSession(w.id)}
-                  className="hx-press w-full min-h-11 flex items-center gap-3 rounded-ctl px-2 py-2 text-left hover:bg-hx-card2"
-                >
-                  <span className="text-[15px] leading-[22px] text-hx-text truncate">{sessionTitle(w)}</span>
-                  <span className="text-[13px] leading-[18px] text-hx-text2 ml-auto shrink-0">
-                    {formatDuration(w.durationMin)}
-                    {w.kind === 'strength' ? `, ${formatVolume(sessionVolumeKg(w.exercises), units)}` : ''}
+                <button type="button" onClick={() => onOpenSession(w.id)} className="hx-row hx-press flex-row items-center justify-between gap-3 text-left">
+                  <span className="min-w-0 flex flex-col">
+                    <span className="hx-ui text-hx-text truncate">{sessionTitle(w)}</span>
+                    <span className="hx-cap">
+                      {formatDuration(w.durationMin)}
+                      {w.kind === 'strength' ? `, ${formatVolume(sessionVolumeKg(w.exercises), units)}` : ''}
+                    </span>
                   </span>
+                  <span className="hx-ui text-hx-text shrink-0">Open</span>
                 </button>
               </li>
             ))}
           </ul>
-        </TrainCard>
+        </section>
       )}
     </div>
   );
@@ -190,26 +194,29 @@ export default function TodayView({ model, onStart, onLogKind, onOpenSession }: 
 function PlannedRow({ pe, units }: { pe: PlannedExercise; units: Units }) {
   const ghost = ghostText(pe.last, units);
   const tone = modeTone(pe.mode);
+  const load = pe.loadKg === null ? null : loadParts(pe.loadKg, units);
   return (
-    <li className="py-3 flex flex-col gap-1">
-      <div className="flex items-baseline gap-2">
-        <span className="text-[15px] leading-[22px] font-medium text-hx-text truncate">{pe.name}</span>
-        <span
-          className={`ml-auto shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-[13px] leading-[18px] font-medium ${bandSoftBg(tone)} ${bandText(tone)}`}
-        >
+    <li className="py-4 flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-3">
+        <span className="hx-ui text-hx-text min-w-0 truncate">{pe.name}</span>
+        <span className={`hx-tag hx-label shrink-0 ${tone === 'neutral' ? '' : `${bandBorder(tone)} ${bandText(tone)}`}`}>
+          {tone !== 'neutral' && <span className="hx-tone" aria-hidden />}
           {modeWord(pe.mode)}
         </span>
       </div>
-      <div className="flex items-baseline gap-2 text-[15px] leading-[22px]">
-        <span className="text-hx-text2">{setsRepsText(pe.sets, pe.reps)}</span>
-        {pe.loadKg === null ? (
-          <span className="text-hx-text2">pick a working weight</span>
+      <div className="flex items-baseline gap-3">
+        <span className="hx-ui text-hx-text2">{setsRepsText(pe.sets, pe.reps)}</span>
+        {load ? (
+          <span className="hx-fig-sm text-hx-text">
+            {load.value}
+            <span className="hx-unit">{load.unit}</span>
+          </span>
         ) : (
-          <span className="hx-display font-semibold text-hx-text">{formatLoad(pe.loadKg, units)}</span>
+          <span className="hx-cap">pick a working weight</span>
         )}
       </div>
-      <p className="text-[13px] leading-[18px] text-hx-text2">{pe.reason}</p>
-      {ghost && <p className="text-[13px] leading-[18px] text-hx-muted">{ghost}</p>}
+      <p className="hx-cap">{pe.reason}</p>
+      {ghost && <p className="hx-hedge">{ghost}</p>}
     </li>
   );
 }
@@ -218,45 +225,46 @@ function PlannedRow({ pe, units }: { pe: PlannedExercise; units: Units }) {
  * Rest day: what the day is for, and which muscles are still catching up.
  * The percentages are the 48–72 h MPS-window model in `load.muscleReadiness`
  * — a modelled recovery curve, not a measurement, which the note says. Each
- * bar sits in a `.hx-well`, because a gauge track is a sunken surface.
+ * muscle is a ledger row with a 2 px progress rule.
  */
-function RestDayCard({ training }: { training: TrainingContext }) {
+function RestDay({ training }: { training: TrainingContext }) {
   const sore = [...training.muscleReadiness]
     .filter((m) => m.hoursSince !== null)
     .sort((a, b) => a.pct - b.pct)
     .slice(0, RECOVERY_ROWS);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <p className="text-[15px] leading-[22px] text-hx-text">Rest day. This is when the last few sessions actually land.</p>
-        <p className="text-[15px] leading-[22px] text-hx-text2">
-          Active recovery that does not add fatigue: an easy walk, 10 minutes of mobility on whatever is stiff, or a
-          conversational-pace ride. Log any of them below if you want them in your load.
-        </p>
-      </div>
+    <div className="mt-4 flex flex-col gap-4">
+      <p className="hx-body">Rest day. This is when the last few sessions actually land.</p>
+      <p className="hx-body text-hx-text2">
+        Active recovery that does not add fatigue: an easy walk, 10 minutes of mobility on whatever is stiff, or a
+        conversational-pace ride. Log any of them below if you want them in your load.
+      </p>
 
       {sore.length > 0 && (
-        <div className="flex flex-col gap-2.5 border-t border-hx-border pt-3">
-          <p className="hx-label">Still recovering</p>
-          {sore.map((m) => (
-            <div key={m.muscle} className="flex items-center gap-3">
-              <span className="text-[13px] leading-[18px] text-hx-text w-20 shrink-0 truncate">{muscleLabel(m.muscle)}</span>
-              <div className="hx-well flex-1 h-2 overflow-hidden" aria-hidden>
-                <div className="h-full rounded-full bg-hx-neutral" style={{ width: `${Math.max(2, Math.min(100, m.pct))}%` }} />
-              </div>
-              <span className="text-[13px] leading-[18px] text-hx-text2 w-[104px] text-right shrink-0">
-                {fmt(m.pct, 0)}%, {m.hoursSince === null ? 'rested' : `${fmt(Math.round(m.hoursSince), 0)} h ago`}
-              </span>
-            </div>
-          ))}
-          <Note>{LOAD_NOTES.muscleRecovery}</Note>
+        <div className="mt-2 flex flex-col">
+          <SectionHeader as="h3" title="Still recovering" caption="Least recovered first" />
+          <ul className="hx-ledger mt-1">
+            {sore.map((m) => {
+              const pct = Math.max(0, Math.min(100, m.pct));
+              const label = muscleLabel(m.muscle);
+              return (
+                <li key={m.muscle} className="hx-row">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="hx-body">{label}</span>
+                    <span className="hx-fig text-hx-text shrink-0">{fmt(pct, 0)}%</span>
+                  </div>
+                  <ProgressRule className="mt-2" value={pct} max={100} label={`${label} recovery`} valueText={`${fmt(pct, 0)}% recovered`} />
+                  <span className="hx-cap mt-1">{m.hoursSince === null ? 'rested' : `${fmt(Math.round(m.hoursSince), 0)} h since you trained it`}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <Note className="mt-3">{LOAD_NOTES.muscleRecovery}</Note>
         </div>
       )}
 
-      {training.load.source === 'none' && (
-        <Stat label="Load logged" value="0" sub="Nothing to recover from yet — log a session and this fills in." />
-      )}
+      {training.load.source === 'none' && <Note>Load logged: 0. Nothing to recover from yet; log a session and this fills in.</Note>}
     </div>
   );
 }

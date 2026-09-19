@@ -1,20 +1,23 @@
 /**
  * Finish sheet — the one place a draft becomes a `Workout`.
  *
- * It shows what the session actually was: duration, session RPE (Foster's
- * 1–10 — the number `sessionLoad` turns into training load), working-set
- * count and volume, how each lift's estimated max moved, and any PR the
- * session sets. The PRs are computed against a *provisional* copy of the
- * session appended to history, using the same `detectPRs` the rest of the app
- * uses, so the badge here and the badge in History are the same finding — and
- * a first-ever session shows none, because a baseline is not a PR.
+ * A plate with the running head "Finish session": the duration as a large
+ * stepper, session RPE as a grid of tags, then the session as a box score
+ * (working sets, volume), any records as a note in green, each lift's
+ * estimated max as a ledger, and the note as an underline field. It shows
+ * what the session actually was: duration, session RPE (Foster's 1–10 — the
+ * number `sessionLoad` turns into training load), working-set count and
+ * volume, how each lift's estimated max moved, and any PR the session sets.
+ * The PRs are computed against a *provisional* copy of the session appended
+ * to history, using the same `detectPRs` the rest of the app uses, so the
+ * note here and the badge in History are the same finding — and a first-ever
+ * session shows none, because a baseline is not a PR.
  *
  * The duration stepper is seeded from the draft's own clock but is editable:
  * a phone that slept through the last three sets should not be the thing that
  * decides what goes into the load model.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Trophy } from 'lucide-react';
 import type { Exercise, Workout } from '../../data/types';
 import { detectPRs } from '../../engine';
 import { fmt } from '../../lib/format';
@@ -26,8 +29,9 @@ import {
   countWorkingSets,
   e1rmDeltas,
   formatLoad,
-  formatVolume,
+  loadParts,
   sessionVolumeKg,
+  volumeParts,
   type Units,
 } from './trainUtils';
 
@@ -84,6 +88,8 @@ export default function FinishSheet({
     };
   }, [open, draft, duration, srpe, history, today, custom]);
 
+  const volume = summary ? volumeParts(summary.volumeKg, units) : null;
+
   return (
     <Sheet
       open={open}
@@ -109,10 +115,11 @@ export default function FinishSheet({
         </div>
       }
     >
-      <div className="flex flex-col gap-5">
-        <div>
-          <p className="hx-label mb-1.5">Duration</p>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col">
+          <p className="hx-label">Duration</p>
           <Stepper
+            className="w-full mt-2"
             label="Duration in minutes"
             value={duration}
             onChange={setDuration}
@@ -124,22 +131,22 @@ export default function FinishSheet({
           />
         </div>
 
-        <div>
-          <p className="hx-label mb-2">Session RPE — how hard the whole session felt, 1 (nothing) to 10 (maximal)</p>
+        <div className="flex flex-col">
+          <p className="hx-label">Session RPE</p>
+          <p className="hx-cap mt-1">How hard the whole session felt, 1 (nothing) to 10 (maximal).</p>
           {/*
-            Two rows of five rather than one scrolling row. Ten chips cannot fit
+            Two rows of five rather than one scrolling row. Ten tags cannot fit
             across 390 px: they measured 33.2 px wide, under the 44 px touch
             floor, and "10" sat outside the scroll viewport — so the maximal
             effort, the one a user most wants after a brutal session, was the
-            option they had to go looking for. The grid gives every chip 66 px
+            option they had to go looking for. The grid gives every tag 66 px
             and puts all ten on screen.
           */}
-          <div role="group" aria-label="Session RPE" className="grid grid-cols-5 gap-1.5">
+          <div role="group" aria-label="Session RPE" className="mt-3 grid grid-cols-5 gap-1.5">
             {SRPE_CHOICES.map((v) => (
               <Chip
                 key={v}
                 size="sm"
-                color="yellow"
                 active={srpe === v}
                 pressed={srpe === v}
                 onClick={() => setSrpe(srpe === v ? null : v)}
@@ -151,35 +158,30 @@ export default function FinishSheet({
             ))}
           </div>
           {srpe === null && (
-            <Note>
-              Skipping this is fine — the load model falls back to a typical strength-session effort and says so.
+            <Note className="mt-2">
+              Skipping this is fine: the load model falls back to a typical strength-session effort and says so.
             </Note>
           )}
         </div>
 
-        {summary && draft.kind === 'strength' && (
-          <div className="flex gap-4 border-t border-hx-border pt-4">
-            <Stat label="Working sets" value={fmt(summary.sets, 0)} className="flex-1" />
-            <Stat label="Volume" value={formatVolume(summary.volumeKg, units)} className="flex-1" />
+        {summary && volume && draft.kind === 'strength' && (
+          <div className="hx-score-grid">
+            <Stat label="Working sets" value={fmt(summary.sets, 0)} />
+            <Stat label="Volume" value={volume.value} unit={volume.unit} />
           </div>
         )}
 
         {summary && summary.prs.length > 0 && (
-          <div className="flex flex-col gap-2 border-t border-hx-border pt-4">
-            <p className="hx-label">
+          <div className="hx-note border-hx-green flex flex-col">
+            <p className="hx-label text-hx-green">
+              <span className="hx-tone mr-1.5" aria-hidden />
               {summary.prs.length} personal record{summary.prs.length === 1 ? '' : 's'}
             </p>
-            <ul className="flex flex-wrap gap-1.5">
+            <ul className="mt-1 flex flex-col gap-0.5">
               {summary.prs.map((pr) => (
-                <li
-                  key={`${pr.exerciseId}-${pr.kind}`}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-hx-green/15 text-hx-green px-2.5 py-1 text-[13px] leading-[18px]"
-                >
-                  <Trophy className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                  <span>
-                    {pr.name}, {pr.kind === 'reps' ? `${fmt(pr.value, 0)} reps` : formatLoad(pr.value, units)}
-                    {pr.kind === 'e1rm' ? ' est. max' : ''}
-                  </span>
+                <li key={`${pr.exerciseId}-${pr.kind}`} className="hx-body">
+                  {pr.name}, {pr.kind === 'reps' ? `${fmt(pr.value, 0)} reps` : formatLoad(pr.value, units)}
+                  {pr.kind === 'e1rm' ? ' est. max' : ''}
                 </li>
               ))}
             </ul>
@@ -187,37 +189,45 @@ export default function FinishSheet({
         )}
 
         {summary && summary.deltas.length > 0 && (
-          <div className="flex flex-col gap-2 border-t border-hx-border pt-4">
+          <div className="flex flex-col">
             <p className="hx-label">Estimated max</p>
-            <ul className="flex flex-col gap-1">
-              {summary.deltas.map((d) => (
-                <li key={d.exerciseId} className="flex items-baseline gap-2 text-[15px] leading-[22px]">
-                  <span className="text-hx-text truncate">{d.name}</span>
-                  <span className="hx-display ml-auto shrink-0 font-semibold text-hx-text">{formatLoad(d.bestKg, units)}</span>
-                  <span className="shrink-0 w-20 text-right text-[13px] leading-[18px] text-hx-text2">
-                    {d.deltaKg === null
-                      ? 'first time'
-                      : d.deltaKg === 0
-                        ? 'no change'
-                        : `${d.deltaKg > 0 ? '+' : '−'}${formatLoad(Math.abs(d.deltaKg), units)}`}
-                  </span>
-                </li>
-              ))}
+            <ul className="hx-ledger mt-1">
+              {summary.deltas.map((d) => {
+                const best = loadParts(d.bestKg, units);
+                return (
+                  <li key={d.exerciseId} className="hx-row flex-row items-center justify-between gap-3">
+                    <span className="hx-body min-w-0 truncate">{d.name}</span>
+                    <span className="flex items-baseline gap-3 shrink-0">
+                      <span className="hx-fig-sm text-hx-text">
+                        {best.value}
+                        <span className="hx-unit">{best.unit}</span>
+                      </span>
+                      <span className="hx-cap w-20 text-right">
+                        {d.deltaKg === null
+                          ? 'first time'
+                          : d.deltaKg === 0
+                            ? 'no change'
+                            : `${d.deltaKg > 0 ? '+' : '−'}${formatLoad(Math.abs(d.deltaKg), units)}`}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
-            <Note>
+            <Note className="mt-2">
               Estimated max is a formula (Brzycki / Epley / Wathan by rep range, blended with the RPE table when RPE was
               logged), not a tested single.
             </Note>
           </div>
         )}
 
-        <label className="flex flex-col gap-1.5 border-t border-hx-border pt-4">
+        <label className="flex flex-col gap-1">
           <span className="hx-label">Note (optional)</span>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            className="px-3 py-2 text-hx-text placeholder:text-hx-muted"
+            className="w-full py-2"
             placeholder="Left shoulder cranky on the last set…"
           />
         </label>

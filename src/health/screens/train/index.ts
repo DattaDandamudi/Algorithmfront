@@ -42,8 +42,12 @@ export type { PrListProps } from './PrList';
 export { default as Callouts } from './Callouts';
 export type { CalloutsProps } from './Callouts';
 
-export { TrainCard, Stat, Note } from './TrainCard';
+export { TrainCard, Stat, StatGrid, Note } from './TrainCard';
 export type { TrainCardProps, StatProps } from './TrainCard';
+export { default as ProgressRule } from './ProgressRule';
+export type { ProgressRuleProps } from './ProgressRule';
+export { default as E1rmChart } from './E1rmChart';
+export type { E1rmChartProps, E1rmChartPoint } from './E1rmChart';
 
 export {
   PR_LIST_DAYS,

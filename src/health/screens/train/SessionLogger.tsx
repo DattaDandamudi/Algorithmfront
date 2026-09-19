@@ -1,10 +1,12 @@
 /**
- * Train ▸ Log — the set-by-set logger for a live strength session, laid out as
- * the sub-view's bento: a span-2 session tile with the clock and the rest
- * timer, then one span-2 `.hx-card` per exercise with its sets divided inside
- * it. A set row is a **reading**, so it never wears the raised glass reserved
- * for things you act on; the things you act on inside it (the steppers, the
- * chips, Finish) are already raised controls (DESIGN.md "Material system").
+ * Train ▸ Log — the set-by-set logger for a live strength session, set as the
+ * mid-workout page (DESIGN.md "Train"): the session as a running head with
+ * the clock as its dateline, the rest timer as a `.hx-fig` figure over a 2 px
+ * rule, then one running head per exercise (`h3`, no rule) with the ghost
+ * "last: …" as its dateline, and each set as a box score, a column rule
+ * between weight and reps and `.hx-fig-sm` figures in the steppers, because
+ * this is the screen read from arm's length. RPE is a row of tags. Nothing
+ * here has a ground, a border or a radius except the keys and tags you press.
  *
  * The whole session lives in the draft (`./draft.ts`, persisted to
  * `hx:wk:draft`), so every edit here is a new draft object handed back through
@@ -26,7 +28,6 @@
  * a screen-reader user must be able to tell them apart.
  */
 import { useMemo, useState } from 'react';
-import { Check, Copy, Plus, Trash2 } from 'lucide-react';
 import type { Exercise, SetEntry, Workout, WorkoutExercise } from '../../data/types';
 import { useNow } from '../../data/store';
 import { exerciseById } from '../../engine';
@@ -141,35 +142,25 @@ export default function SessionLogger({
   const clockLine = `Started ${draft.start}, ${formatDuration(elapsed)}${volumeKg > 0 ? `, ${formatVolume(volumeKg, units)}` : ''}`;
 
   return (
-    <div className="hx-bento">
-      <section aria-label="Live session" className="hx-card hx-span-2 p-4 flex flex-col gap-3">
-        <div className="flex items-baseline gap-3">
-          <div className="min-w-0">
-            <h2 className="hx-display text-[17px] leading-6 font-semibold text-hx-text truncate">
-              {draft.title ?? `${sessionLabel(draft.session)} session`}
-            </h2>
-            <p className="text-[13px] leading-[18px] text-hx-text2">{clockLine}</p>
-          </div>
-          <Button size="sm" icon={<Check aria-hidden />} className="ml-auto shrink-0" onClick={() => setSheet('finish')}>
-            Finish
-          </Button>
+    <div className="flex flex-col">
+      <section aria-label="Live session" className="mt-6 flex flex-col">
+        <SectionHeader as="h2" rule={false} title={draft.title ?? (draft.session ? `${sessionLabel(draft.session)} session` : 'Strength session')} caption={clockLine} />
+        <div className="mt-4">
+          <RestTimer
+            endsAt={draft.restEndsAt}
+            totalSec={draft.restSec}
+            defaultSec={restTimerSec}
+            onStart={startRest}
+            onStop={stopRest}
+          />
         </div>
-        <RestTimer
-          endsAt={draft.restEndsAt}
-          totalSec={draft.restSec}
-          defaultSec={restTimerSec}
-          onStart={startRest}
-          onStop={stopRest}
-        />
       </section>
 
       {draft.exercises.length === 0 && (
-        <p className="hx-span-2 text-[15px] leading-[22px] text-hx-text2">
-          Nothing logged yet. Add the first exercise — search by name or by the shorthand you actually use.
-        </p>
+        <p className="hx-body text-hx-text2 mt-8">Nothing logged yet. Add the first exercise, by name or by the shorthand you actually use.</p>
       )}
 
-      <ul className="hx-span-2 flex flex-col gap-3">
+      <ul className="flex flex-col">
         {draft.exercises.map((we, i) => (
           <ExerciseBlock
             key={`${we.exerciseId}-${i}`}
@@ -184,11 +175,13 @@ export default function SessionLogger({
         ))}
       </ul>
 
-      <Button variant="secondary" icon={<Plus aria-hidden />} fullWidth className="hx-span-2" onClick={() => setSheet('picker')}>
+      <Button variant="secondary" fullWidth className="mt-8" onClick={() => setSheet('picker')}>
         Add exercise
       </Button>
-
-      <Button variant="ghost" size="sm" onClick={onDiscard} className="hx-span-2 justify-self-center">
+      <Button size="lg" fullWidth className="mt-3" onClick={() => setSheet('finish')}>
+        Finish
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onDiscard} className="mt-3 self-start">
         Discard this session
       </Button>
 
@@ -259,37 +252,11 @@ function ExerciseBlock({ we, units, custom, last, onChange, onRemove, onSuperset
   const removeSet = (index: number) => setSets(we.sets.filter((_, i) => i !== index));
 
   return (
-    <li className="hx-card p-4 flex flex-col gap-3">
-      <SectionHeader
-        as="h3"
-        title={name}
-        caption={ghost ?? undefined}
-        action={
-          <span className="flex items-center gap-1">
-            <Chip
-              size="sm"
-              color="blue"
-              active={!!we.superset}
-              pressed={!!we.superset}
-              onClick={onSuperset}
-              aria-label={we.superset ? `Superset ${we.superset} — change` : `Tag ${name} as a superset`}
-            >
-              {we.superset ? `Superset ${we.superset}` : 'Superset'}
-            </Chip>
-            <button
-              type="button"
-              onClick={onRemove}
-              aria-label={`Remove ${name} from this session`}
-              className="w-11 h-11 -my-2 shrink-0 inline-flex items-center justify-center rounded-ctl text-hx-text2 hover:text-hx-red hover:bg-hx-card2"
-            >
-              <Trash2 className="w-4 h-4" aria-hidden />
-            </button>
-          </span>
-        }
-      />
+    <li className="mt-10 flex flex-col">
+      <SectionHeader as="h3" title={name} caption={ghost ?? undefined} />
 
       {we.sets.length > 0 && (
-        <div className="flex flex-col divide-y divide-hx-border/70 -my-1">
+        <div className="mt-2 flex flex-col divide-y divide-hx-border">
           {we.sets.map((s, i) => (
             <SetRow
               key={i}
@@ -305,27 +272,33 @@ function ExerciseBlock({ we, units, custom, last, onChange, onRemove, onSuperset
         </div>
       )}
 
-      <div className="flex gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Plus aria-hidden />}
-          onClick={addSet}
-          aria-label={`Add set to ${name}`}
-          className="flex-1"
-        >
+      <div className="mt-4 flex gap-2">
+        <Button variant="secondary" size="sm" onClick={addSet} aria-label={`Add set to ${name}`} className="flex-1">
           Add set
         </Button>
         <Button
           variant="secondary"
           size="sm"
-          icon={<Copy aria-hidden />}
           onClick={copyLast}
           disabled={we.sets.length === 0}
           aria-label={`Copy last set of ${name}`}
           className="flex-1"
         >
           Copy last set
+        </Button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <Chip
+          size="sm"
+          active={!!we.superset}
+          pressed={!!we.superset}
+          onClick={onSuperset}
+          aria-label={we.superset ? `Superset ${we.superset}, change` : `Tag ${name} as a superset`}
+        >
+          {we.superset ? `Superset ${we.superset}` : 'Superset'}
+        </Chip>
+        <Button variant="ghost" size="sm" onClick={onRemove} aria-label={`Remove ${name} from this session`}>
+          Remove
         </Button>
       </div>
     </li>
@@ -362,39 +335,31 @@ function SetRow({ index, set, units, step, name, onChange, onRemove }: SetRowPro
   };
 
   return (
-    <div className="py-3 flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="hx-label w-16 shrink-0">{isWarmup ? 'Warm-up' : `Set ${index + 1}`}</span>
-        <Chip
-          size="sm"
-          active={isWarmup}
-          pressed={isWarmup}
-          onClick={toggleWarmup}
-          aria-label={`Mark set ${index + 1} of ${name} as a warm-up`}
-        >
-          Warm-up
-        </Chip>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Delete set ${index + 1} of ${name}`}
-          className="ml-auto w-11 h-11 -my-2 shrink-0 inline-flex items-center justify-center rounded-ctl text-hx-text2 hover:text-hx-red"
-        >
-          <Trash2 className="w-4 h-4" aria-hidden />
-        </button>
+    <div className="py-3 flex flex-col">
+      <div className="flex items-center justify-between gap-2">
+        <span className="hx-ui text-hx-text">{isWarmup ? 'Warm-up' : `Set ${index + 1}`}</span>
+        <span className="flex items-center gap-1">
+          <Chip size="sm" active={isWarmup} pressed={isWarmup} onClick={toggleWarmup} aria-label={`Mark set ${index + 1} of ${name} as a warm-up`}>
+            Warm-up
+          </Chip>
+          <Button variant="ghost" size="sm" onClick={onRemove} aria-label={`Delete set ${index + 1} of ${name}`}>
+            Delete
+          </Button>
+        </span>
       </div>
 
       {/*
-        Two steppers across 390 px leave each field ~55 px, which is not enough
-        for "231.5" AND an inline unit — so the unit is a caption over the
-        column instead of a suffix inside the field. The number still keeps its
-        unit; it just is not competing with it for the same 55 px.
+        The box score: weight and reps as two cells split by the column rule
+        `.hx-score-grid` draws. Weight takes the wider column (11:9) and the
+        cell padding is tightened so the field keeps room for "231.5" between
+        its two 44 px keys; the unit is the column head rather than a suffix
+        competing for the same pixels.
       */}
-      <div className="flex gap-2">
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
+      <div className="hx-score-grid mt-1" style={{ gridTemplateColumns: 'minmax(0, 11fr) minmax(0, 9fr)' }}>
+        <div className="hx-cell !py-1 !pr-2">
           <span className="hx-label">Weight, {units}</span>
           <Stepper
-            className="w-full"
+            className="w-full mt-1"
             label={`Weight, set ${index + 1} of ${name}`}
             value={toDisplayLoad(set.w, units)}
             onChange={(v) => onChange({ ...set, w: toKgLoad(v, units) })}
@@ -403,10 +368,10 @@ function SetRow({ index, set, units, step, name, onChange, onRemove }: SetRowPro
             dp={1}
           />
         </div>
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="hx-cell !py-1 !pl-2">
           <span className="hx-label">Reps</span>
           <Stepper
-            className="w-full"
+            className="w-full mt-1"
             label={`Reps, set ${index + 1} of ${name}`}
             value={set.r}
             onChange={(v) => onChange({ ...set, r: Math.max(0, Math.round(v)) })}
@@ -418,23 +383,15 @@ function SetRow({ index, set, units, step, name, onChange, onRemove }: SetRowPro
       </div>
 
       {/*
-        Two rows of five rather than one scrolling row, for the reason the
-        finish sheet gives: nine 44 px chips cannot fit across 390 px, and the
-        ones that fall off the end are 9.5 and 10 — the efforts a hard set is
+        Two rows of five, the word "RPE" taking the first slot, rather than one
+        scrolling row: nine 44 px tags cannot fit across 390 px, and the ones
+        that would fall off the end are 9.5 and 10, the efforts a hard set is
         most likely to be. The grid puts every choice on screen.
       */}
-      <div role="group" aria-label={`RPE, set ${index + 1} of ${name}`} className="grid grid-cols-5 gap-1.5">
+      <div role="group" aria-label={`RPE, set ${index + 1} of ${name}`} className="mt-2 grid grid-cols-5 gap-1.5 items-center">
+        <span className="hx-label">RPE</span>
         {RPE_CHOICES.map((v) => (
-          <Chip
-            key={v}
-            size="sm"
-            color="yellow"
-            active={rpe === v}
-            pressed={rpe === v}
-            onClick={() => pickRpe(v)}
-            aria-label={`RPE ${v}`}
-            className="w-full px-0"
-          >
+          <Chip key={v} size="sm" active={rpe === v} pressed={rpe === v} onClick={() => pickRpe(v)} aria-label={`RPE ${v}`} className="w-full px-0">
             {fmt(v, Number.isInteger(v) ? 0 : 1)}
           </Chip>
         ))}

@@ -1,29 +1,22 @@
 /**
- * Shared chrome for the Train tab's cards, in the bento (DESIGN.md "Bento
- * rules"). A twin of the Trends screen's `TrendCard` rather than an import of
- * it, so the two tabs can evolve their chrome independently (ownership §2a).
+ * The Train tab's small page furniture (DESIGN.md "Layout grammar"). No
+ * surfaces: a section is bounded by its running head above and space or the
+ * next ink rule below, never by a border.
  *
- * Two shapes, one component, and both span the grid:
- *  - **section** (default) — a display heading on the grid ground (`h2`), then
- *    the `.hx-card` surface. Use it when the heading introduces a group.
- *  - **tile** — one span-2 `.hx-card` with its heading inside (`h3`). Use it
- *    when the card is a single reading.
- *
- * Both end with the mandatory one-line "what this means" caption at the foot
- * of the card. When a card has nothing to draw it passes `empty` (an
- * `<EmptyState>`) and the card surface is skipped, so the dashed empty card is
- * never nested inside another surface.
- *
- * The surface is `overflow-hidden` for the same reason it is on Trends: the
- * charts' visually-hidden table twins are absolutely positioned and a <table>
- * never shrinks below its content width, so without it a wide hidden table
- * would push the document past the 390 px frame.
- *
- * `Stat` is the small label / number / unit block the gauges and the sheets
- * use — 22 px display numerals, secondary to a tile's 28 px. Null renders "—"
- * — never a placeholder number — and any tone is always accompanied by a word,
- * because no state on this tab may be carried by colour alone. `Note` is the
- * muted evidence footnote (`LOAD_NOTES`, `PROGRESSION_NOTES`).
+ *  - `TrainCard` — a section: the running head (`SectionHeader`; `rule` draws
+ *    the ink rule, off by default so each view spends its three rules on
+ *    purpose), the content 16 px beneath, and an optional "What this means"
+ *    line set as a hedge. `empty` replaces the content with an `<EmptyState>`.
+ *  - `Stat` — a box-score cell: `.hx-label`, the figure in `.hx-fig-sm` (or
+ *    `.hx-fig` with `size="lg"`) with its unit in `.hx-unit`, and a band line
+ *    beneath that always carries a word (a tone square joins it when a tone is
+ *    passed, because no state on this tab is carried by colour alone). Place
+ *    cells straight inside `.hx-score-grid`; `StatGrid` does that and turns a
+ *    trailing odd cell into a full-width row so the grid never ends on a lone
+ *    cell beside an empty one.
+ *  - `Note` — an evidence footnote (`LOAD_NOTES`, `PROGRESSION_NOTES`,
+ *    `VOLUME_ADVISORY_NOTE`) in `.hx-cap`: 13 px Literata at the second ink
+ *    density, never muted.
  */
 import type { ReactNode } from 'react';
 import { SectionHeader, bandText, type Tone } from '../../ui';
@@ -34,51 +27,30 @@ export interface TrainCardProps {
   action?: ReactNode;
   /** One line under the content explaining how to read it. */
   meaning?: ReactNode;
-  /** Replaces the card surface entirely (an <EmptyState>). */
+  /** Replaces the content entirely (an <EmptyState>). */
   empty?: ReactNode;
-  /** Put the heading inside the tile (h3) instead of on the ground (h2). */
-  tile?: boolean;
-  /** Extra classes on the card surface. */
+  /** Draw the full-bleed ink rule above the running head. Default false. */
+  rule?: boolean;
+  /** Heading level. Default h2. */
+  as?: 'h2' | 'h3';
+  /** Extra classes on the section (the screen owns the space above it). */
   className?: string;
   children?: ReactNode;
 }
 
-export function TrainCard({ title, caption, action, meaning, empty, tile = false, className = '', children }: TrainCardProps) {
-  const foot = meaning ? (
-    <p className="text-[13px] leading-[18px] text-hx-text2 border-t border-hx-border/70 pt-3">
-      <span className="text-hx-muted">What this means: </span>
-      {meaning}
-    </p>
-  ) : null;
-
-  const surface = `hx-card p-4 flex flex-col gap-4 overflow-hidden ${className}`;
-
-  if (tile) {
-    return (
-      <section aria-label={title} className="hx-span-2 flex flex-col gap-3">
-        {empty ? (
-          <>
-            <SectionHeader as="h3" title={title} caption={caption} action={action} />
-            {empty}
-          </>
-        ) : (
-          <div className={surface}>
-            <SectionHeader as="h3" title={title} caption={caption} action={action} />
-            {children}
-            {foot}
-          </div>
-        )}
-      </section>
-    );
-  }
-
+export function TrainCard({ title, caption, action, meaning, empty, rule = false, as = 'h2', className = '', children }: TrainCardProps) {
   return (
-    <section aria-label={title} className="hx-span-2 flex flex-col gap-3">
-      <SectionHeader title={title} caption={caption} action={action} />
+    <section aria-label={title} className={`flex flex-col ${className}`}>
+      <SectionHeader as={as} rule={rule} title={title} caption={caption} action={action} />
       {empty ?? (
-        <div className={surface}>
+        <div className="mt-4 flex flex-col">
           {children}
-          {foot}
+          {meaning && (
+            <p className="hx-hedge mt-3">
+              <span>What this means: </span>
+              {meaning}
+            </p>
+          )}
         </div>
       )}
     </section>
@@ -92,25 +64,65 @@ export interface StatProps {
   /** Small line under the number; always a word, never only a colour. */
   sub?: ReactNode;
   tone?: Tone;
+  /** `sm` sets the figure in .hx-fig-sm (28 px), `lg` in .hx-fig (40 px). */
+  size?: 'sm' | 'lg';
   className?: string;
 }
 
-export function Stat({ label, value, unit, sub, tone, className = '' }: StatProps) {
+export function Stat({ label, value, unit, sub, tone, size = 'sm', className = '' }: StatProps) {
   return (
-    <div className={`min-w-0 ${className}`}>
-      <p className="hx-label">{label}</p>
-      <p className="hx-display mt-1 text-[22px] leading-7 font-semibold text-hx-text">
+    <div className={`hx-cell ${className}`}>
+      <span className="hx-label">{label}</span>
+      <span className={`${size === 'lg' ? 'hx-fig' : 'hx-fig-sm'} text-hx-text mt-1`}>
         {value}
-        {unit && <span className="text-[13px] font-normal text-hx-text2 ml-1">{unit}</span>}
-      </p>
-      {sub !== undefined && sub !== null && (
-        <p className={`mt-0.5 text-[13px] leading-[18px] ${tone ? `font-medium ${bandText(tone)}` : 'text-hx-text2'}`}>{sub}</p>
+        {unit && <span className="hx-unit">{unit}</span>}
+      </span>
+      {sub !== undefined && sub !== null && sub !== '' && (
+        <span className={`mt-1 ${tone ? `hx-label ${bandText(tone)}` : 'hx-cap'}`}>
+          {tone && tone !== 'neutral' && <span className="hx-tone mr-1.5" aria-hidden />}
+          {sub}
+        </span>
       )}
     </div>
   );
 }
 
-/** A muted footnote — the evidence hedges (`LOAD_NOTES`, `VOLUME_ADVISORY_NOTE`). */
-export function Note({ children }: { children: ReactNode }) {
-  return <p className="text-[13px] leading-[18px] text-hx-muted">{children}</p>;
+/**
+ * A box score from a list of stats. Two-up cells with the column rule and the
+ * row hairlines `.hx-score-grid` draws; an odd last stat becomes a full-width
+ * `.hx-row` (label left, figure flush right) under its own hairline.
+ */
+export function StatGrid({ stats, size = 'sm', className = '' }: { stats: StatProps[]; size?: 'sm' | 'lg'; className?: string }) {
+  const even = stats.length % 2 === 0;
+  const cells = even ? stats : stats.slice(0, -1);
+  const tail = even ? null : stats[stats.length - 1];
+  return (
+    <div className={`hx-score-grid ${className}`}>
+      {cells.map((s) => (
+        <Stat key={s.label} size={size} {...s} />
+      ))}
+      {tail && (
+        <div className={`hx-row ${cells.length > 0 ? 'border-t border-hx-border' : ''}`}>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="hx-label">{tail.label}</span>
+            <span className={`${size === 'lg' ? 'hx-fig' : 'hx-fig-sm'} text-hx-text text-right shrink-0`}>
+              {tail.value}
+              {tail.unit && <span className="hx-unit">{tail.unit}</span>}
+            </span>
+          </div>
+          {tail.sub !== undefined && tail.sub !== null && tail.sub !== '' && (
+            <span className={`mt-1 ${tail.tone ? `hx-label ${bandText(tail.tone)}` : 'hx-cap'}`}>
+              {tail.tone && tail.tone !== 'neutral' && <span className="hx-tone mr-1.5" aria-hidden />}
+              {tail.sub}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** An evidence footnote in `.hx-cap` (13 px Literata, second ink density). */
+export function Note({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <p className={`hx-cap ${className}`}>{children}</p>;
 }

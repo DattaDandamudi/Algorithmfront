@@ -516,3 +516,38 @@ export function setsRepsText(sets: number, reps: [number, number] | undefined): 
   if (lo === null || hi === null) return `${n} sets`;
   return lo === hi ? `${n} × ${lo}` : `${n} × ${lo}–${hi}`;
 }
+
+// ---------------------------------------------------------------------------
+// Figures split for the page: the numeral in Archivo, the unit in .hx-unit
+// ---------------------------------------------------------------------------
+
+/** The two halves of "135 lb", so the unit can be set in `.hx-unit` after the numeral. */
+export function loadParts(kg: number | null | undefined, units: Units): { value: string; unit: Units } {
+  const v = toDisplayLoad(kg, units);
+  return { value: fmt(v, Number.isInteger(v) ? 0 : 1), unit: units };
+}
+
+/** The two halves of "12,480 lb" (session volume). */
+export function volumeParts(kg: number, units: Units): { value: string; unit: Units } {
+  const v = units === 'lb' ? kgToLb(kg) : kg;
+  return { value: fmt(Math.round(v), 0), unit: units };
+}
+
+/**
+ * Tone for the acute:chronic band word. Descriptive, like the word: the tone
+ * sits beside `acwrBandWord` and `LOAD_NOTES.acwrDescriptive`, never alone.
+ */
+export function acwrBandTone(band: AcwrBand | null | undefined): Tone {
+  switch (band) {
+    case 'low':
+      return 'blue';
+    case 'sweet':
+      return 'green';
+    case 'high':
+      return 'yellow';
+    case 'spike':
+      return 'red';
+    default:
+      return 'neutral';
+  }
+}

@@ -1,20 +1,17 @@
 /**
  * Train ▸ Analysis — estimated max, weekly volume, training load, PRs and the
- * three callouts, as one bento (DESIGN.md).
- *
- * Size encodes importance. The estimated-max chart is the hero: a span-2 tile,
- * with the two numbers you read off it ("trend now", "best estimate") as 1×1
- * complications beneath. The volume grid and the load curve need the full
- * width and are span-2; the load gauge contributes its own two 1×1 tiles for
- * acute load and the week-on-week change, which are the only load numbers this
- * release acts on. PRs and the three callouts close the grid as span-2 tiles.
+ * three callouts as one page (DESIGN.md "Train"): the range toggle as words on
+ * a hairline, then sections divided by running heads. The three ink rules
+ * are spent on the volume grid, the load figure and the records; the
+ * estimated-max figure opens the page under the toggle and the callouts
+ * follow the records with space alone.
  *
  * The range toggle only changes what is plotted: the volume grid is always the
  * last 12 weeks (that is what a landmark comparison means) and the load series
  * is always built over a long history before the window is sliced out, so the
  * EWMAs behind acute, chronic, fitness and fatigue are warmed up whatever the
  * user is looking at. Everything comes from `useAnalysisModel`, the second
- * memo, so flipping 30D → 1Y never rebuilds readiness or the stress stack.
+ * memo, so flipping 30D to 1Y never rebuilds readiness or the stress stack.
  */
 import { useState } from 'react';
 import type { WorkoutKind } from '../../data/types';
@@ -49,6 +46,7 @@ export default function AnalysisView({ model, onStart }: AnalysisViewProps) {
   if (model.workouts.length === 0) {
     return (
       <EmptyState
+        className="mt-6"
         title="Nothing to analyse yet"
         hint="Log a session or two and this fills with your estimated max per lift, weekly sets per muscle against your landmarks, the load curves behind the readiness verdict, and your PRs."
         action={{ label: 'Start a session', onClick: () => onStart('strength') }}
@@ -57,17 +55,11 @@ export default function AnalysisView({ model, onStart }: AnalysisViewProps) {
   }
 
   return (
-    <div className="hx-bento">
-      <SegmentedControl<ChartRange>
-        options={RANGES}
-        value={range}
-        onChange={setRange}
-        size="sm"
-        ariaLabel="Analysis range"
-        className="hx-span-2 self-start"
-      />
+    <div className="flex flex-col">
+      <SegmentedControl<ChartRange> options={RANGES} value={range} onChange={setRange} size="sm" ariaLabel="Analysis range" className="self-start mt-6" />
 
       <E1rmCard
+        className="mt-8"
         options={analysis.options}
         exerciseId={picked}
         onPick={setExerciseId}
@@ -78,19 +70,20 @@ export default function AnalysisView({ model, onStart }: AnalysisViewProps) {
       />
 
       <TrainCard
-        tile
         title="Weekly sets per muscle"
+        rule
         caption={`Last ${VOLUME_WEEKS} weeks`}
-        meaning="One set per primary muscle, half a set per secondary, warm-ups excluded — counted Monday to Sunday."
+        className="mt-10"
+        meaning="One set per primary muscle, half a set per secondary, warm-ups excluded, counted Monday to Sunday."
       >
         <MuscleVolumeGrid weeks={analysis.volumeWeeks} />
       </TrainCard>
 
-      <LoadCard points={analysis.load} load={model.training.load} range={range} />
+      <LoadCard className="mt-10" points={analysis.load} load={model.training.load} range={range} />
 
-      <PrList prs={analysis.prs} units={model.units} days={PR_LIST_DAYS} />
+      <PrList className="mt-10" prs={analysis.prs} units={model.units} days={PR_LIST_DAYS} />
 
-      <Callouts training={model.training} />
+      <Callouts className="mt-10" training={model.training} />
     </div>
   );
 }
