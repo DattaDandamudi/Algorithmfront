@@ -27,7 +27,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: 'bg-hx-lume text-hx-base rounded-ctl hover:bg-hx-text active:translate-y-px disabled:bg-hx-text2',
+  // Disabled, the ink key becomes an outline (no grey slab): the shape stays, the ink lifts.
+  primary: 'bg-hx-lume text-hx-base rounded-ctl hover:bg-hx-text active:translate-y-px disabled:bg-transparent disabled:text-hx-text2 disabled:shadow-[inset_0_0_0_1px_var(--hx-text-2)]',
   secondary: 'bg-transparent text-hx-text border border-hx-text2 rounded-ctl hover:border-hx-text active:translate-y-px',
   ghost: 'bg-transparent text-hx-text2 hover:text-hx-text underline decoration-1 underline-offset-[3px]',
   danger: 'bg-transparent text-hx-red border border-hx-red rounded-ctl hover:bg-hx-red/15 active:translate-y-px',
