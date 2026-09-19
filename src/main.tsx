@@ -13,11 +13,11 @@ if (isHealthRoute) {
   // Paint the dark ground before the lazy chunk mounts so a cold load never flashes the light page,
   // and tint mobile browser chrome to match (theme-color is set here, not in index.html, so the
   // light Algoritm app keeps its own).
-  document.documentElement.style.background = '#070A0F';
-  document.body.style.background = '#070A0F';
+  document.documentElement.style.background = '#100E0B';
+  document.body.style.background = '#100E0B';
   const meta = document.createElement('meta');
   meta.name = 'theme-color';
-  meta.content = '#070A0F';
+  meta.content = '#100E0B';
   document.head.appendChild(meta);
 }
 

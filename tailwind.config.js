@@ -4,34 +4,38 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // The health app (src/health): Figtree for interface and body, Bricolage
-        // Grotesque for display and numerals (see src/health/DESIGN.md). The
-        // Algoritm landing sets its own family on <body> in index.css.
-        sans: ['Figtree', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
-        display: ['Bricolage Grotesque', 'Figtree', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        // The health app (src/health): Archivo for display, numerals and every
+        // interface word (its width axis is set through the type classes in
+        // health.css), Literata for reading text (see src/health/DESIGN.md).
+        // The Algoritm landing sets its own family on <body> in index.css.
+        sans: ['Archivo', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        display: ['Archivo', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        serif: ['Literata', 'Georgia', 'Times New Roman', 'serif'],
       },
       borderRadius: {
-        tile: '20px',
-        ctl: '14px',
+        // Radius is a tap signal: 0 on anything read, 4 px on chips, keys,
+        // inputs and tags. Both resolve through the variables on .hx so the
+        // existing radius usages update without any screen edits.
+        tile: 'var(--hx-radius, 0px)',
+        ctl: 'var(--hx-radius-sm, 4px)',
       },
       colors: {
-        // Health app (src/health) dark design system — see SPEC §0.
         hx: {
-          // Health app dark design system — src/health/DESIGN.md. Names are
-          // pinned by tests; values are the cold, blue-biased instrument set.
-          base: '#070A0F',
-          card: '#111820',
-          card2: '#1A2433',
-          border: '#233042',
-          lume: '#E9F1FF',
-          green: '#3DDC97',
-          yellow: '#F5B451',
-          red: '#F0566B',
-          neutral: '#7D8BA0',
-          blue: '#5B9CFF',
-          text: '#E9F1FF',
-          text2: '#A7B4C6',
-          muted: '#8593A8',
+          // Health app palette, the black-stock edition (src/health/DESIGN.md).
+          // Names are pinned by tests; only the values moved.
+          base: '#100E0B',
+          card: '#181512',
+          card2: '#221E1A',
+          border: '#3D362F',
+          lume: '#F7F1E5',
+          green: '#7CC993',
+          yellow: '#E2B14F',
+          red: '#F2786F',
+          neutral: '#A39B8F',
+          blue: '#89B5EE',
+          text: '#EDE6D8',
+          text2: '#BDB4A4',
+          muted: '#958C7D',
         },
       },
     },

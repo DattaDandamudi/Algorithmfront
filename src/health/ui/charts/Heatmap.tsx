@@ -2,10 +2,10 @@
  * Heatmap — GitHub-style calendar for adherence (SPEC §3: protein-hit days,
  * calorie-hit days, logging streak).
  *
- * 7 rows (Mon → Sun) × N week columns with 2 px surface gaps, a single-hue
- * sequential ramp (opacity 0.18 / 0.45 / 0.72 / 1 of `color`) for levels
- * 0–3, and an outlined empty cell for `null` (nothing logged). Month labels
- * on top, M / W / F on the left. Every past cell is focusable and carries a
+ * 7 rows (Mon → Sun) × N week columns with 2 px gaps, cells filled by ink
+ * density (bone at 12 / 28 / 50 / 80 percent) for levels 0–3, never a colour
+ * ramp, and a hairline-outlined empty cell for `null` (nothing logged). Month
+ * labels on top, M / W / F on the left; the legend is written as words. Every past cell is focusable and carries a
  * <title>; arrow keys move between cells and the tooltip mirrors the title.
  * The hidden table lists every day, so nothing is gated behind hover.
  */
@@ -29,7 +29,7 @@ export interface HeatmapProps {
   days: HeatmapDay[];
   /** Number of week columns. Default 12. */
   weeks?: number;
-  /** Ramp hue. Default var(--hx-green). */
+  /** The ink. Default var(--hx-text); a tone token only where a band applies. */
   color?: string;
   /** Labels for levels 0–3, drawn under the grid with their swatches. */
   legend?: string[];
@@ -38,8 +38,8 @@ export interface HeatmapProps {
   end?: ISODate;
 }
 
-/** Opacity per level — single-hue sequential steps that stay legible on the dark card. */
-export const LEVEL_OPACITY: Record<HeatLevel, number> = { 0: 0.18, 1: 0.45, 2: 0.72, 3: 1 };
+/** Ink density per level: bone at 12 / 28 / 50 / 80 percent (DESIGN.md "Heat map"). */
+export const LEVEL_OPACITY: Record<HeatLevel, number> = { 0: 0.12, 1: 0.28, 2: 0.5, 3: 0.8 };
 
 const LEFT = 20; // weekday labels
 const TOP = 16; // month labels
@@ -50,7 +50,7 @@ const WEEKDAY_ROWS: Array<[number, string]> = [
   [4, 'F'],
 ];
 
-export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend, ariaLabel, end }: HeatmapProps) {
+export default function Heatmap({ days, weeks = 12, color = TOKEN.text, legend, ariaLabel, end }: HeatmapProps) {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>();
   const [active, setActive] = useState<string | null>(null);
   const cellRefs = useRef<Record<string, SVGRectElement | null>>({});
@@ -202,7 +202,7 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend,
                 y={level === null ? yy + 0.5 : yy}
                 width={level === null ? cell - 1 : cell}
                 height={level === null ? cell - 1 : cell}
-                rx={2}
+                rx={0}
                 fill={level === null ? 'none' : color}
                 fillOpacity={level === null ? 1 : LEVEL_OPACITY[level]}
                 stroke={isActive ? TOKEN.text2 : level === null ? TOKEN.border : 'none'}
@@ -236,14 +236,14 @@ export default function Heatmap({ days, weeks = 12, color = TOKEN.green, legend,
         />
       ) : null}
 
-      <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-hx-muted" aria-hidden>
+      <ul className="hx-agate mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-hx-muted" aria-hidden>
         <li className="flex items-center gap-1.5">
-          <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-hx-border" />
+          <span className="inline-block w-2 h-2 border border-hx-border" />
           <span>Not logged</span>
         </li>
         {([0, 1, 2, 3] as HeatLevel[]).map((lv) => (
           <li key={lv} className="flex items-center gap-1.5">
-            <span className="inline-block w-2.5 h-2.5 rounded-[2px]" style={{ background: color, opacity: LEVEL_OPACITY[lv] }} />
+            <span className="inline-block w-2 h-2" style={{ background: color, opacity: LEVEL_OPACITY[lv] }} />
             {legend?.[lv] ? <span>{legend[lv]}</span> : null}
           </li>
         ))}

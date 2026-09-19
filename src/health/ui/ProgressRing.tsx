@@ -1,10 +1,9 @@
 /**
- * ProgressRing — small (48–64 px) ring for step goals, hydration, etc.
- *
- * Same construction as Ring (a sunken well, an arc in the tone) but value/max
- * instead of a 0–100 band score, and no glow: phosphor is reserved for the
- * hero dial. Colour is a Tone name or any CSS colour string (only used inside
- * the SVG, per the no-inline-hex rule).
+ * ProgressRing — a 32 px dial kept for the places a ring is still wanted
+ * (hydration). A 1 px --hx-border track and a 2 px arc with butt caps in the
+ * tone; value/max instead of a 0–100 band score. Elsewhere use the progress
+ * rule (MacroBar, or a 2 px .hx-hair with an ink fill). Colour is a Tone name
+ * or any CSS colour string, used only inside the SVG.
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { clamp } from '../lib/format';
@@ -17,9 +16,9 @@ export interface ProgressRingProps {
   max: number;
   /** Tone name ('green' | 'blue' | …) or a CSS colour string. Default 'blue'. */
   color?: Tone | string;
-  /** Outer diameter in px. Default 56. */
+  /** Outer diameter in px. Default 32. */
   size?: number;
-  /** Stroke width in px. Default 6. */
+  /** Arc width in px. Default 2. The track is always 1 px. */
   stroke?: number;
   /** Accessible name, e.g. "Steps". */
   label?: string;
@@ -27,20 +26,19 @@ export interface ProgressRingProps {
   className?: string;
 }
 
-export default function ProgressRing({ value, max, color = 'blue', size = 56, stroke = 6, label = 'Progress', children, className = '' }: ProgressRingProps) {
+export default function ProgressRing({ value, max, color = 'blue', size = 32, stroke = 2, label = 'Progress', children, className = '' }: ProgressRingProps) {
   const has = value !== null && value !== undefined && Number.isFinite(value) && max > 0;
   const frac = has ? clamp(value / max, 0, 1) : 0;
-  const r = (size - stroke) / 2 - 1;
+  const c = size / 2;
+  const r = c - stroke / 2 - 1;
   const circ = 2 * Math.PI * r;
   const strokeColor = (TONES as string[]).includes(color) ? bandColor(color as Tone) : color;
   const aria = has ? `${label}: ${Math.round(value)} of ${Math.round(max)}, ${Math.round(frac * 100)} percent` : `${label}: no data yet`;
-  const c = size / 2;
 
   return (
     <div className={`relative inline-block ${className}`} style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={aria} className="block overflow-visible">
-        <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(0,0,0,0.5)" strokeWidth={stroke + 1.5} />
-        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--hx-card-2)" strokeWidth={stroke} />
+        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--hx-border)" strokeWidth={1} />
         {frac > 0 && (
           <circle
             cx={c}
@@ -48,8 +46,8 @@ export default function ProgressRing({ value, max, color = 'blue', size = 56, st
             r={r}
             fill="none"
             stroke={strokeColor}
-            strokeWidth={stroke - 2}
-            strokeLinecap="round"
+            strokeWidth={stroke}
+            strokeLinecap="butt"
             strokeDasharray={circ}
             strokeDashoffset={circ * (1 - frac)}
             transform={`rotate(-90 ${c} ${c})`}

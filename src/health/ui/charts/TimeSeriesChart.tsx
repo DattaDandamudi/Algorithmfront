@@ -2,12 +2,14 @@
  * TimeSeriesChart — the workhorse for Weight / TDEE / HRV / RHR / Sleep / Steps
  * on the Trends screen (SPEC §3).
  *
- * Marks follow the dataviz rules from the brief: 2 px round-joined line with
- * null gaps, ≥ 8 px dots with a 2 px surface ring, bands as ~12 % washes,
- * hairline solid grid one step off the card, never a dual axis, text never
- * in the series colour. Only the LAST value is direct-labelled (selective
- * labelling); everything else lives in the y-axis, the crosshair tooltip and
- * the visually-hidden table — so the tooltip enhances and never gates.
+ * Marks follow DESIGN.md "Data marks": a 1.5 px bone line with null gaps,
+ * scale readings as small hollow text2 circles, bands as a 9 percent ink
+ * wash, no gridlines and no y-axis line (the y ticks sit as agate at the
+ * left and one bottom hairline carries the dates), a dotted reference line,
+ * text never in the series colour. Only the LAST value is direct-labelled
+ * (selective labelling); everything else lives in the y ticks, the crosshair
+ * tooltip and the visually-hidden table, so the tooltip enhances and never
+ * gates.
  *
  * Interaction: a vertical crosshair snaps to the nearest x on pointer move /
  * touch (touch-action pan-y keeps the page scrollable), the SVG is focusable
@@ -36,7 +38,7 @@ import {
   type ChartRange,
   type Pt,
 } from './chartUtils';
-import { ChartTooltip, EmptyFrame, FONT, HiddenTable, SVG_CLASS, TOKEN, useMeasuredWidth, type TooltipRow } from './shared';
+import { ChartTooltip, EmptyFrame, FONT, HiddenTable, SVG_CLASS, TOKEN, WASH, useMeasuredWidth, type TooltipRow } from './shared';
 
 export interface TimeSeriesPoint {
   d: ISODate;
@@ -97,7 +99,7 @@ export default function TimeSeriesChart({
   band,
   targetBand,
   reference,
-  color = TOKEN.blue,
+  color = TOKEN.text,
   dotColor,
   unit,
   valueFormat,
@@ -180,11 +182,10 @@ export default function TimeSeriesChart({
   const y = scaleLinear(domain, [top + plotH, top]);
   const pitch = n > 1 ? plotW / (n - 1) : plotW;
   const dense = n > 1 && pitch < 6;
-  // Between 6 and 12 px per point an 8 px dot + 2 px ring (12 px footprint) overlaps its neighbour;
-  // draw 5 px dots with a 1 px ring instead so daily scale readings stay individually visible (review R6-16).
+  // Hollow readings: 5 px circles normally, 4 px when points sit closer than 12 px so daily
+  // scale readings stay individually visible (review R6-16).
   const smallDots = !dense && pitch < 12;
-  const dotR = smallDots ? 2.5 : 4;
-  const dotRing = smallDots ? 2 : 4;
+  const dotR = smallDots ? 2 : 2.5;
 
   const toPts = (vals: Array<number | null>): Pt[] => vals.map((v, i) => ({ x: xs[i], y: v === null ? null : y(v) }));
   const linePath = line ? buildPath(toPts(lineVals)) : '';
@@ -282,8 +283,8 @@ export default function TimeSeriesChart({
               width={plotW}
               y={clampY(targetBand.hi)}
               height={Math.max(0, clampY(targetBand.lo) - clampY(targetBand.hi))}
-              fill={TOKEN.neutral}
-              fillOpacity={0.12}
+              fill={TOKEN.text}
+              fillOpacity={WASH}
             />
             {targetBand.label ? (
               <text x={left + plotW - 2} y={clampY(targetBand.hi) + FONT.small + 1} textAnchor="end" fontSize={FONT.small} fill={TOKEN.muted}>
@@ -293,23 +294,21 @@ export default function TimeSeriesChart({
           </g>
         ) : null}
 
-        {/* hairline grid + y ticks */}
+        {/* y ticks as agate at the left: no gridlines, no axis line. One bottom hairline carries the dates. */}
         {ticks.map((t) => (
-          <g key={t}>
-            <line x1={left} x2={left + plotW} y1={px(y(t))} y2={px(y(t))} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
-            <text x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
-              {formatTick(t, tickDp)}
-            </text>
-          </g>
+          <text key={t} x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
+            {formatTick(t, tickDp)}
+          </text>
         ))}
+        <line x1={left} x2={left + plotW} y1={px(top + plotH)} y2={px(top + plotH)} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
 
-        {/* per-point band wash */}
-        {bandPath ? <path d={bandPath} fill={color} fillOpacity={0.12} /> : null}
+        {/* per-point band wash: 9 percent ink, no edge */}
+        {bandPath ? <path d={bandPath} fill={color} fillOpacity={WASH} /> : null}
 
-        {/* reference hairline */}
+        {/* reference: a dotted hairline */}
         {reference ? (
           <g>
-            <line x1={left} x2={left + plotW} y1={y(reference.value)} y2={y(reference.value)} stroke={TOKEN.neutral} strokeWidth={1} />
+            <line x1={left} x2={left + plotW} y1={y(reference.value)} y2={y(reference.value)} stroke={TOKEN.text2} strokeWidth={1} strokeDasharray="1 3" />
             {reference.label ? (
               <text x={left + plotW - 2} y={y(reference.value) - 3} textAnchor="end" fontSize={FONT.small} fill={TOKEN.muted}>
                 {reference.label}
@@ -319,18 +318,14 @@ export default function TimeSeriesChart({
         ) : null}
 
         {/* dots joined (connectDots / dense fallback) */}
-        {dotsPath ? <path d={dotsPath} fill="none" stroke={dotColor ?? color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" opacity={line ? 0.6 : 1} /> : null}
+        {dotsPath ? <path d={dotsPath} fill="none" stroke={dotColor ?? color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="butt" opacity={line ? 0.6 : 1} /> : null}
 
-        {/* smoothed line */}
-        {linePath ? <path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {/* smoothed line: 1.5 px */}
+        {linePath ? <path d={linePath} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="butt" /> : null}
 
-        {/* dots: 8 px fill + 2 px surface ring (paint-order keeps the ring outside) */}
+        {/* readings: hollow text2 circles filled with the stock so the trend does not show through */}
         {drawDots
-          ? values.map((v, i) =>
-              v === null ? null : (
-                <circle key={i} cx={px(xs[i])} cy={px(y(v))} r={dotR} fill={dotColor ?? color} stroke={TOKEN.card} strokeWidth={dotRing} style={{ paintOrder: 'stroke' }} />
-              ),
-            )
+          ? values.map((v, i) => (v === null ? null : <circle key={i} cx={px(xs[i])} cy={px(y(v))} r={dotR} fill={TOKEN.base} stroke={dotColor ?? TOKEN.text2} strokeWidth={1} />))
           : null}
 
         {/* annotations: small markers on the top edge */}
@@ -350,8 +345,8 @@ export default function TimeSeriesChart({
         {active !== null ? (
           <g pointerEvents="none">
             <line x1={px(xs[active])} x2={px(xs[active])} y1={top} y2={top + plotH} stroke={TOKEN.text2} strokeWidth={1} />
-            {values[active] !== null ? <circle cx={px(xs[active])} cy={px(y(values[active] as number))} r={7} fill="none" stroke={dotColor ?? color} strokeWidth={1.5} /> : null}
-            {lineVals[active] !== null ? <circle cx={px(xs[active])} cy={px(y(lineVals[active] as number))} r={3} fill={color} stroke={TOKEN.card} strokeWidth={2} style={{ paintOrder: 'stroke' }} /> : null}
+            {values[active] !== null ? <circle cx={px(xs[active])} cy={px(y(values[active] as number))} r={6} fill="none" stroke={dotColor ?? TOKEN.text2} strokeWidth={1} /> : null}
+            {lineVals[active] !== null ? <circle cx={px(xs[active])} cy={px(y(lineVals[active] as number))} r={2.5} fill={color} /> : null}
           </g>
         ) : null}
 

@@ -1,7 +1,7 @@
 # `src/health/ui/charts` — Trends charts
 
 Hand-rolled SVG charts for the Trends screen (SPEC §3). No chart library (no new deps), dark theme
-only, sized for a 358 px card but responsive (the container is measured with `ResizeObserver`).
+only, sized for the 350 px measure but responsive (the container is measured with `ResizeObserver`).
 
 ```ts
 import { TimeSeriesChart, BarSeries, Heatmap, fillDaily, aggregateByBucket, bucketForRange } from '../ui/charts';
@@ -9,16 +9,20 @@ import { TimeSeriesChart, BarSeries, Heatmap, fillDaily, aggregateByBucket, buck
 
 ## Mark rules every chart obeys
 
-* 2 px lines with round joins/caps; `null` values lift the pen (gaps, never interpolation).
-* Dots are 8 px with a 2 px ring in the card colour; bands are ~12 % washes; target bands a neutral wash.
-* Hairline **solid** grid in `var(--hx-border)` (one step off the card). Never dashed, never a dual y-axis.
-* Text is never coloured with the series colour: ticks/labels use `--hx-muted`, the direct label `--hx-text`.
+The graphics desk in `../../DESIGN.md` ("Data marks") is authoritative; in brief:
+
+* 1.5 px bone lines (`var(--hx-text)` is the default `color`) with butt caps; `null` values lift the pen (gaps, never interpolation).
+* Scale readings are small hollow text2 circles; bands and zones are a 9 percent ink wash (`WASH` in `shared.tsx`) with no edge.
+* No gridlines, no y-axis line, no legend as swatches. The y ticks sit as agate at the left, one bottom hairline in `var(--hx-border)` carries the dates, a reference or target is a dotted hairline.
+* Text is never coloured with the series colour: ticks in `--hx-muted`, the direct label in `--hx-text`; nothing below 12 px (`FONT`).
 * Selective labelling: only the **last** value (or last column) is direct-labelled.
+* Bars are square, on one baseline hairline; the heat map fills by ink density (`LEVEL_OPACITY` = 0.12 / 0.28 / 0.5 / 0.8 of bone), never a colour ramp.
 * Tooltips enhance, never gate: a crosshair snaps to the nearest x on pointer/touch, the SVG is
   focusable (`←`/`→`/`Home`/`End`/`Esc`), and a visually-hidden `<table>` (the "table view twin")
-  lists every number. Tooltip strings are React text nodes (never `innerHTML`); values lead, labels follow.
-* Hit targets ≥ 24 px: the whole plot (time series), the whole slot (bars), the cell pitch (heatmap).
-* Colours inside SVG are CSS variables only (`var(--hx-blue)` …) — pass tokens, not hex.
+  lists every number. The tooltip is a plate slip (`.hx-raised`, no radius, no arrow) in `.hx-agate`; strings are React text nodes (never `innerHTML`); values lead, labels follow.
+* The empty frame is an italic `.hx-body` sentence under a hairline, flush left, at the chart's height so the layout never jumps.
+* Hit targets at least 24 px: the whole plot (time series), the whole slot (bars), the cell pitch (heatmap).
+* Colours inside SVG are CSS variables only (`var(--hx-text)`, `var(--hx-blue)` …) — pass tokens, not hex. `DEFAULT_CHART_WIDTH` is the 350 px measure.
 
 ## `TimeSeriesChart`
 

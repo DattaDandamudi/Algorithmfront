@@ -1,9 +1,11 @@
 /**
  * Delta — "▲ 3 ms vs 30-day avg" (SPEC §0 baseline framing).
  *
- * Only the glyph + number take the semantic colour (green when the direction
- * is good, red when bad, neutral when unknown/zero); the caption stays muted.
- * The glyph is aria-hidden and a screen-reader string ("up 3 ms") is provided.
+ * A 10 px triangle in the tone (green when the direction is good, red when
+ * bad, neutral when unknown or zero), the figure in text2 with tabular
+ * numerals, the caption in muted. The glyph is aria-hidden and a screen-reader
+ * string ("up 3 ms") is provided. Markup order is pinned by tests: the glyph
+ * span, then a bare aria-hidden span holding " 3 ms".
  */
 import { fmt } from '../lib/format';
 import { bandText, deltaTone } from './bands';
@@ -23,15 +25,7 @@ export interface DeltaProps {
   className?: string;
 }
 
-export default function Delta({
-  value,
-  good,
-  dp = 0,
-  unit = '',
-  format,
-  caption = 'vs 30-day avg',
-  className = '',
-}: DeltaProps) {
+export default function Delta({ value, good, dp = 0, unit = '', format, caption = 'vs 30-day avg', className = '' }: DeltaProps) {
   const has = value !== null && value !== undefined && !Number.isNaN(value);
   const isZero = has && Math.abs(value) < 0.5 / 10 ** dp;
   const tone = deltaTone(good, has ? (isZero ? 0 : value) : null);
@@ -39,16 +33,14 @@ export default function Delta({
   const num = has ? (format ? format(abs) : fmt(abs, dp)) : '';
   const glyph = !has ? '—' : isZero ? '•' : value > 0 ? '▲' : '▼';
   const text = !has ? '' : `${isZero ? '0' : num}${unit ? ` ${unit}` : ''}`;
-  const sr = !has
-    ? 'no baseline yet'
-    : isZero
-      ? `no change${unit ? ` in ${unit}` : ''}`
-      : `${value > 0 ? 'up' : 'down'} ${num}${unit ? ` ${unit}` : ''}`;
+  const sr = !has ? 'no baseline yet' : isZero ? `no change${unit ? ` in ${unit}` : ''}` : `${value > 0 ? 'up' : 'down'} ${num}${unit ? ` ${unit}` : ''}`;
 
   return (
-    <span className={`inline-flex items-baseline gap-1 text-[13px] leading-4 ${className}`}>
-      <span className={`font-semibold ${bandText(tone)}`}>
-        <span aria-hidden>{glyph}</span>
+    <span className={`inline-flex items-baseline gap-1 text-[13px] leading-[18px] ${className}`}>
+      <span className="font-medium text-hx-text2">
+        <span aria-hidden className={`text-[10px] ${bandText(tone)}`}>
+          {glyph}
+        </span>
         {text && <span aria-hidden> {text}</span>}
         <span className="sr-only">{sr}</span>
       </span>

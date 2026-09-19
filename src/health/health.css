@@ -1,41 +1,49 @@
 /*
- * Pulse design tokens and material system — see DESIGN.md.
+ * Pulse design tokens and the black-stock kit. See DESIGN.md.
  *
- * Scoped under .hx so the light Algoritm UI is untouched. The thesis is an
- * instrument panel under glass: the accent is light (nothing decorative is
- * coloured; only semantic states carry hue), and depth is structural (three
- * elevations that each mean something). Tailwind token NAMES are unchanged
- * because tests pin them; the values moved to a cold, blue-biased set.
+ * Scoped under .hx so the light Algoritm UI is untouched. The object is a
+ * sports quarterly printed on black stock: hierarchy is typographic (size,
+ * width, weight and two kinds of rule), the four semantic inks appear only as a
+ * word, an arc, a tag rule or a tone square, and nothing that is only read has
+ * a ground, a border, a radius or a shadow. Tailwind token NAMES are unchanged
+ * because tests pin them; the values moved to the warm charcoal set.
+ *
+ * Cascade note: this file loads after Tailwind's utilities, so a kit rule wins
+ * over a utility at equal specificity. Anything a screen may legitimately
+ * override (the colour of a type class, the background of a tag, the size of a
+ * key, the direction of a row) is declared inside :where(), which has zero
+ * specificity, so text-hx-*, bg-hx-*, w-14 and flex-row keep working.
  */
 .hx {
-  /* surfaces */
-  --hx-base: #070a0f;
-  --hx-card: #111820;
-  --hx-card-2: #1a2433;
-  --hx-border: #233042;
-  /* the light accent — also the text colour */
-  --hx-lume: #e9f1ff;
-  --hx-text: #e9f1ff;
-  --hx-text-2: #a7b4c6;
-  /* 4.8:1 on slate, 5.4 on graphite, 6.1 on the ground — clears AA everywhere. */
-  --hx-muted: #8593a8;
-  /* semantic states: the only saturated colour on any screen */
-  --hx-green: #3ddc97;
-  --hx-yellow: #f5b451;
-  --hx-red: #f0566b;
-  --hx-neutral: #7d8ba0;
-  --hx-blue: #5b9cff;
-  /* material */
-  --hx-specular: rgba(233, 241, 255, 0.09);
-  --hx-specular-strong: rgba(233, 241, 255, 0.16);
-  --hx-shade: rgba(0, 0, 0, 0.55);
-  --hx-radius: 20px;
-  --hx-radius-sm: 14px;
+  /* stock, sheet, plate, hairline */
+  --hx-base: #100e0b;
+  --hx-card: #181512;
+  --hx-card-2: #221e1a;
+  --hx-border: #3d362f;
+  /* ink at three densities, and the brightest ink (focus ring, active underline, grabber) */
+  --hx-text: #ede6d8;
+  --hx-text-2: #bdb4a4;
+  --hx-muted: #958c7d;
+  --hx-lume: #f7f1e5;
+  /* the four semantic inks and no-signal */
+  --hx-green: #7cc993;
+  --hx-yellow: #e2b14f;
+  --hx-red: #f2786f;
+  --hx-neutral: #a39b8f;
+  --hx-blue: #89b5ee;
+  /* radius is a tap signal: 0 on anything read, 4 px on chips, keys, inputs and tags */
+  --hx-radius: 0px;
+  --hx-radius-sm: 4px;
+  /* the page margin; .hx-rule bleeds past it to the edge */
+  --hx-gutter: 20px;
+  --hx-sans: Archivo, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --hx-serif: Literata, Georgia, 'Times New Roman', serif;
 
   color-scheme: dark;
   background: var(--hx-base);
   color: var(--hx-text);
-  font-family: Figtree, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--hx-sans);
+  /* Literata's default figures are proportional; this keeps every column of numbers tabular. */
   font-variant-numeric: tabular-nums lining-nums;
   -webkit-tap-highlight-color: transparent;
   min-height: 100dvh;
@@ -45,139 +53,496 @@
   font-variant-numeric: inherit;
 }
 
-/* Display face for numerals and headings. Optical sizing picks the display cut
-   at 60 px and the text cut at 13 px from the same family. */
-.hx-display {
-  font-family: 'Bricolage Grotesque', Figtree, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-optical-sizing: auto;
-  letter-spacing: -0.01em;
-}
-
+/* A bone wash, not a coloured highlight. */
 .hx ::selection {
-  background: rgba(91, 156, 255, 0.35);
+  background: rgba(237, 230, 216, 0.28);
   color: var(--hx-text);
 }
 
-/* Labels: 13 px, sentence case, no tracking. The class name is pinned by tests;
-   the uppercase eyebrow it used to be is gone. */
+/* ------------------------------------------------------------------ fields */
+/* Every text input is an underline field: transparent, a 1 px text2 rule
+   below, 44 px, no radius, no inner shadow. 16 px stops Mobile Safari zooming
+   the page on focus. Radios, checkboxes, ranges and file pickers keep their own
+   shape. Zero specificity inside :where(), and declared before the type ladder,
+   so a type class such as .hx-fig-sm on a stepper field still sets its size. */
+.hx :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'], [type='submit'], [type='button']), textarea, select) {
+  font-size: 16px;
+  min-height: 44px;
+  background: transparent;
+  color: var(--hx-text);
+  border: 0;
+  border-bottom: 1px solid var(--hx-text-2);
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+}
+/* Inside a ruled control the control carries the rule, not the field. */
+.hx .hx-well :where(input, textarea, select) {
+  border-bottom-color: transparent;
+}
+.hx input::placeholder,
+.hx textarea::placeholder {
+  color: var(--hx-muted);
+  font-family: var(--hx-serif);
+  font-style: italic;
+}
+/* Remove number-input spinners; the steppers are the kit's own. */
+.hx input[type='number']::-webkit-outer-spin-button,
+.hx input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.hx input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Visible focus on every control, including ink keys: 2 px lume, offset 2. */
+.hx input:focus-visible,
+.hx textarea:focus-visible,
+.hx select:focus-visible,
+.hx button:focus-visible,
+.hx a:focus-visible,
+.hx [role='button']:focus-visible,
+.hx summary:focus-visible,
+.hx [tabindex]:focus-visible {
+  outline: 2px solid var(--hx-lume);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------- type */
+/* The ladder. Use the class; never hand-set px. Width comes from font-stretch
+   (Archivo's 62 to 125 axis), which Tailwind has no utility for. Big figures are
+   made tall by width, not weight; tracking tightens by size because Archivo
+   has no optical axis. Colours sit in :where() further down so text-hx-* wins. */
+.hx-agate {
+  font-family: var(--hx-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-style: normal;
+  letter-spacing: 0;
+}
+/* Labels and running heads: 13/18, sentence case, no tracking. The class name
+   is pinned by tests; the all-caps eyebrow it once was is gone. */
 .hx-label {
+  font-family: var(--hx-sans);
   font-size: 13px;
   line-height: 18px;
-  font-weight: 500;
-  color: var(--hx-text-2);
+  font-weight: 600;
+  font-stretch: 100%;
+  font-style: normal;
   letter-spacing: 0;
   text-transform: none;
 }
-
-/* ---------------------------------------------------------------- material */
-
-/* A reading. Graphite with a milled bezel: a 1 px specular on the top edge, a
-   faint sheen where the glass catches light, and an ambient shadow below. */
-/* No `position` here: a utility class like `absolute` or `fixed` on the same
-   element has equal specificity and would lose to a rule loaded later. Set
-   position where it is needed (InsightCard, Ring do). */
-.hx-card {
-  background:
-    radial-gradient(120% 70% at 50% -30%, rgba(233, 241, 255, 0.055), transparent 60%),
-    var(--hx-card);
-  border: 1px solid var(--hx-border);
-  border-radius: var(--hx-radius);
-  box-shadow:
-    inset 0 1px 0 var(--hx-specular),
-    0 1px 0 rgba(0, 0, 0, 0.45),
-    0 14px 30px -18px var(--hx-shade);
+.hx-ui {
+  font-family: var(--hx-sans);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-style: normal;
+  letter-spacing: 0;
+}
+.hx-cap {
+  font-family: var(--hx-serif);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  font-stretch: normal;
+  font-style: normal;
+  letter-spacing: 0;
+}
+.hx-hedge {
+  font-family: var(--hx-serif);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  font-stretch: normal;
+  font-style: italic;
+  letter-spacing: 0;
+}
+.hx-body {
+  font-family: var(--hx-serif);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+  font-stretch: normal;
+  letter-spacing: 0;
+}
+.hx-deck {
+  font-family: var(--hx-serif);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 400;
+  font-stretch: normal;
+  letter-spacing: 0;
+}
+.hx-head {
+  font-family: var(--hx-sans);
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-style: normal;
+  letter-spacing: 0;
+}
+.hx-masthead {
+  font-family: var(--hx-sans);
+  font-size: 32px;
+  line-height: 32px;
+  font-weight: 800;
+  font-stretch: 125%;
+  font-style: normal;
+  letter-spacing: 0;
+}
+.hx-fig-sm {
+  font-family: var(--hx-sans);
+  font-size: 28px;
+  line-height: 30px;
+  font-weight: 700;
+  font-stretch: 75%;
+  font-style: normal;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0;
+}
+.hx-fig {
+  font-family: var(--hx-sans);
+  font-size: 40px;
+  line-height: 40px;
+  font-weight: 700;
+  font-stretch: 70%;
+  font-style: normal;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.01em;
+}
+/* The readiness number, once, on Today. Clamped by the viewport so three digits
+   or "Calibrating" wrap the right column under it rather than past the margin. */
+.hx-score {
+  font-family: var(--hx-sans);
+  font-size: min(160px, 41vw);
+  line-height: 0.85;
+  font-weight: 800;
+  font-stretch: 62%;
+  font-style: normal;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.03em;
+}
+.hx-cover {
+  font-family: var(--hx-sans);
+  font-size: 64px;
+  line-height: 56px;
+  font-weight: 800;
+  font-stretch: 125%;
+  font-style: normal;
+  letter-spacing: 0;
+}
+/* The unit after a figure: italic serif, baseline-aligned, 4 px off the numeral.
+   Set it inside the figure element so 0.4em follows the figure's size. */
+.hx-unit {
+  font-family: var(--hx-serif);
+  font-size: max(15px, 0.4em);
+  font-weight: 400;
+  font-stretch: normal;
+  font-style: italic;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+/* The legacy numeral class: .hx-fig-sm without the size. */
+.hx-display {
+  font-family: var(--hx-sans);
+  font-weight: 700;
+  font-stretch: 75%;
+  font-style: normal;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0;
+}
+/* Default ink densities, overridable by any text-hx-* utility. */
+:where(.hx-agate, .hx-label, .hx-cap, .hx-hedge, .hx-unit) {
+  color: var(--hx-text-2);
+}
+:where(.hx-body) {
+  color: var(--hx-text);
 }
 
-/* Something you act on. Slate glass: blurred, brighter edge, deeper shadow. */
-.hx-raised {
-  background: rgba(26, 36, 51, 0.82);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-  backdrop-filter: blur(14px) saturate(120%);
-  border: 1px solid rgba(233, 241, 255, 0.12);
-  border-radius: var(--hx-radius);
-  box-shadow:
-    inset 0 1px 0 var(--hx-specular-strong),
-    0 22px 44px -22px rgba(0, 0, 0, 0.75);
+/* ---------------------------------------------------------------- dividers */
+/* Ink rule: a section boundary, full bleed. Only SectionHeader draws it, and
+   at most three sit on one screenful. */
+.hx-rule {
+  height: 1px;
+  border: 0;
+  background: var(--hx-text);
+  margin-left: calc(-1 * var(--hx-gutter));
+  margin-right: calc(-1 * var(--hx-gutter));
+}
+/* Hairline: a leader from figure to caption, a table row, a disclosure edge. */
+.hx-hair {
+  height: 1px;
+  border: 0;
+  background: var(--hx-border);
+}
+/* Double hairline: under ledger totals only. */
+.hx-hair-2 {
+  height: 4px;
+  background: transparent;
+  border-top: 1px solid var(--hx-border);
+  border-bottom: 1px solid var(--hx-border);
 }
 
-/* A gauge track. Sunken below the surface. */
-.hx-well {
-  background: rgba(7, 10, 15, 0.6);
-  border-radius: 999px;
-  box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.62),
-    inset 0 -1px 0 var(--hx-specular);
+/* ------------------------------------------------------------------ blocks */
+/* Box score: two-up cells split by a 1 px column rule at the gutter, rows
+   divided by hairlines, never closed into a box. Odd cells sit flush with the
+   left margin, even cells flush with the right, so figures line up with the
+   rest of the page. A .hx-row inside spans both columns. */
+.hx-score-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.hx-score-grid > .hx-cell {
+  padding: 16px;
+}
+.hx-score-grid > .hx-cell:nth-child(odd) {
+  padding-left: 0;
+  border-right: 1px solid var(--hx-border);
+}
+.hx-score-grid > .hx-cell:nth-child(even) {
+  padding-right: 0;
+}
+.hx-score-grid > .hx-cell:nth-child(n + 3) {
+  border-top: 1px solid var(--hx-border);
+}
+.hx-score-grid > .hx-row {
+  grid-column: 1 / -1;
+}
+.hx-cell {
+  width: 100%;
+  min-width: 0;
+  padding: 16px 0;
+  text-align: left;
+  color: inherit;
+}
+:where(.hx-cell) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
-/* Phosphor. The dial arc and nothing else on a screen. */
-.hx-lume-glow {
-  filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 14px color-mix(in srgb, currentColor 45%, transparent));
+/* Ledger: rows of 56 px whose hairlines are drawn outside the tap target (the
+   row grows by the 1 px it borrows). Label left, figure flush right, an
+   optional 2 px progress rule and a caption beneath. */
+.hx-ledger {
+  display: flex;
+  flex-direction: column;
 }
-.hx-lume-text {
-  text-shadow: 0 0 22px rgba(233, 241, 255, 0.35);
+.hx-row {
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 12px 0;
+  text-align: left;
+  color: inherit;
+}
+:where(.hx-row) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hx-ledger > .hx-row + .hx-row {
+  border-top: 1px solid var(--hx-border);
+  min-height: 57px;
 }
 
-/* Pressed surfaces settle a pixel. */
-.hx-press {
+/* Figure: a chart with its lead figure above and an italic caption below. */
+.hx-figure {
+  padding: 16px 0;
+}
+.hx-figure > figcaption {
+  font-family: var(--hx-serif);
+  font-size: 13px;
+  line-height: 18px;
+  font-style: italic;
+  color: var(--hx-text-2);
+  margin-top: 8px;
+}
+
+/* Note: indented 16 px behind a 2 px rule in the tone (set the tone with a
+   border-hx-* utility, or let it take currentColor); the tone word comes first. */
+.hx-note {
+  padding-left: 16px;
+  border-left-width: 2px;
+  border-left-style: solid;
+}
+:where(.hx-note) {
+  border-left-color: currentColor;
+}
+
+/* Tag: 44 px, a 1 px rule in the tone (text2 when neutral), 4 px radius, a
+   label inside. Radius here means "you can press this". */
+.hx-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--hx-radius-sm);
+  white-space: nowrap;
+  user-select: none;
+}
+:where(.hx-tag) {
+  border-color: var(--hx-text-2);
+  background: transparent;
+}
+
+/* Field: the underline field as a class, for wrappers that are not inputs. */
+.hx-field {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid var(--hx-text-2);
+  border-radius: 0;
+  color: var(--hx-text);
+}
+:where(.hx-field) {
+  background: transparent;
+}
+
+/* Key: a rule-outlined square key that settles a pixel when pressed. */
+.hx-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--hx-text-2);
+  border-radius: var(--hx-radius-sm);
+  color: var(--hx-text);
   transition:
     transform 120ms ease,
-    border-color 160ms ease;
+    border-color 120ms ease;
+}
+:where(.hx-key) {
+  width: 44px;
+  height: 44px;
+  background: transparent;
+}
+.hx-key:active {
+  transform: translateY(1px);
+  border-color: var(--hx-text);
+}
+.hx-key:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Tone square: the 8 px carrier beside a state word, in currentColor. */
+.hx-tone {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  background: currentColor;
+  vertical-align: middle;
+}
+
+/* --------------------------------------------------------- legacy material */
+/* Old names, new meanings (DESIGN.md "The CSS kit"), so the tree stays
+   coherent while screens are rebuilt. */
+
+/* A figure block: transparent, no border, no radius, 16 px vertical padding. */
+.hx-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+/* A plate: the ground of a sheet, a toast, a chart tooltip. A 1 px text2 rule
+   on the leading edge, 4 px radius, no blur, no shadow. */
+.hx-raised {
+  background: var(--hx-card-2);
+  border: 0;
+  border-top: 1px solid var(--hx-text-2);
+  border-radius: var(--hx-radius-sm);
+  box-shadow: none;
+}
+
+/* A ruled control: transparent with a 1 px text2 outline and 4 px radius. */
+.hx-well {
+  background: transparent;
+  border: 1px solid var(--hx-text-2);
+  border-radius: var(--hx-radius-sm);
+  box-shadow: none;
+}
+
+/* Phosphor is gone; the names stay so old class lists still parse. */
+.hx-lume-glow,
+.hx-lume-text {
+  filter: none;
+  text-shadow: none;
+}
+
+/* A pressed block inks its leader; keys settle through .hx-key or a
+   translate utility. */
+.hx-press {
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
 }
 .hx-press:active {
-  transform: translateY(1px);
+  border-color: var(--hx-text);
 }
 
-/* ------------------------------------------------------------------- bento */
+/* The bento is one column with no gutters; the spans are no-ops kept for the names. */
 .hx-bento {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
-.hx-span-2 {
-  grid-column: span 2 / span 2;
-}
+.hx-span-2,
 .hx-row-2 {
-  grid-row: span 2 / span 2;
+  grid-column: auto;
+  grid-row: auto;
 }
 
-/* ------------------------------------------------------------------- misc */
-.hx-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--hx-border) transparent;
-}
-.hx-scroll::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-.hx-scroll::-webkit-scrollbar-thumb {
-  background: var(--hx-border);
-  border-radius: 4px;
-}
-
-.hx-no-scrollbar {
-  scrollbar-width: none;
-}
-.hx-no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-/* Safe-area aware bottom tab bar. Denser glass than a raised card: content
-   scrolls under it all day, so it must read as a surface, not a tint. */
+/* ------------------------------------------------------------- running foot */
+/* Stock at 96 percent, a hairline above, no glass, no radius. */
 .hx-tabbar {
+  background: rgba(16, 14, 11, 0.96);
+  border-top: 1px solid var(--hx-border);
   padding-bottom: max(8px, env(safe-area-inset-bottom));
-  background: rgba(17, 24, 32, 0.94);
 }
 
-/* The one orchestrated moment: the dial sweeps in and its glow blooms. */
+/* ------------------------------------------------------------------ motion */
+/* One moment, on Today mount: the score prints. The numeral fades in over
+   320 ms, the arc draws over 600 ms, the ink rule draws left to right over
+   480 ms from 200 ms. Nothing else animates on load. */
 @keyframes hx-ring-in {
   from {
     stroke-dashoffset: var(--hx-ring-circ);
   }
 }
 .hx-ring-arc {
-  animation: hx-ring-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: hx-ring-in 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-@keyframes hx-bloom {
+@keyframes hx-rule-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.hx-rule-in {
+  transform-origin: left center;
+  animation: hx-rule-in 480ms 200ms ease-out both;
+}
+@keyframes hx-print {
   from {
     opacity: 0;
   }
@@ -185,12 +550,11 @@
     opacity: 1;
   }
 }
-.hx-bloom {
-  animation: hx-bloom 700ms 300ms ease-out both;
+.hx-print {
+  animation: hx-print 320ms ease-out both;
 }
-
-/* Screen mount (used on <main> and toasts only — never on cards). */
-@keyframes hx-fade-up {
+/* A toast answering an action keeps a 6 px rise. */
+@keyframes hx-slip {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -200,10 +564,9 @@
     transform: translateY(0);
   }
 }
-.hx-fade-up {
-  animation: hx-fade-up 320ms ease-out both;
+.hx-slip {
+  animation: hx-slip 160ms ease-out both;
 }
-
 @keyframes hx-pulse {
   0%,
   100% {
@@ -217,55 +580,41 @@
   animation: hx-pulse 1.4s ease-in-out infinite;
 }
 
-/* Remove number-input spinners; we use our own steppers. */
-.hx input[type='number']::-webkit-outer-spin-button,
-.hx input[type='number']::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+/* -------------------------------------------------------------------- misc */
+.hx-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hx-border) transparent;
 }
-.hx input[type='number'] {
-  -moz-appearance: textfield;
-  appearance: textfield;
+.hx-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
 }
-
-/* Inputs are wells: sunken into the surface. */
-.hx input,
-.hx textarea,
-.hx select {
-  /* ≥ 16 px stops Mobile Safari auto-zooming the page on focus (review R6-7). */
-  font-size: 16px;
-  background: rgba(7, 10, 15, 0.55);
-  color: var(--hx-text);
-  border: 1px solid var(--hx-border);
-  border-radius: var(--hx-radius-sm);
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.5),
-    inset 0 -1px 0 var(--hx-specular);
-  outline: none;
+.hx-scroll::-webkit-scrollbar-thumb {
+  background: var(--hx-border);
 }
-.hx input:focus-visible,
-.hx textarea:focus-visible,
-.hx select:focus-visible,
-.hx button:focus-visible,
-.hx [role='button']:focus-visible,
-.hx summary:focus-visible,
-.hx [tabindex]:focus-visible {
-  outline: 2px solid var(--hx-lume);
-  outline-offset: 2px;
+.hx-no-scrollbar {
+  scrollbar-width: none;
 }
-.hx input::placeholder,
-.hx textarea::placeholder {
-  color: var(--hx-muted);
+.hx-no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .hx-ring-arc,
-  .hx-bloom,
-  .hx-fade-up,
+  .hx-rule-in,
+  .hx-print,
+  .hx-slip,
   .hx-pulse {
     animation: none;
   }
-  .hx-press {
+  .hx-press,
+  .hx-key {
     transition: none;
+  }
+  .hx-key:active {
+    transform: none;
+  }
+  .hx * {
+    scroll-behavior: auto;
   }
 }

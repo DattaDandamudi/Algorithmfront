@@ -1,14 +1,14 @@
 /**
  * EmptyState — an invitation to act (SPEC §1 empty states: "Log your first
- * meal to see protein remaining."). A dashed bezel, no fill, so it reads as a
- * space waiting for a reading rather than a reading that failed. Optional
- * single action.
+ * meal to see protein remaining."). An italic .hx-body paragraph under a
+ * hairline, the title in bone and the hint in text2, with a ghost verb. No
+ * dashed box, no icon; `icon` is accepted for callers and not drawn.
  */
 import type { ReactNode } from 'react';
-import { Inbox } from 'lucide-react';
 import Button from './Button';
 
 export interface EmptyStateProps {
+  /** Accepted for callers; decorative icons are not drawn. */
   icon?: ReactNode;
   title: string;
   hint: string;
@@ -16,16 +16,17 @@ export interface EmptyStateProps {
   className?: string;
 }
 
-export default function EmptyState({ icon, title, hint, action, className = '' }: EmptyStateProps) {
+export default function EmptyState(props: EmptyStateProps) {
+  const { title, hint, action, className = '' } = props;
+  const stop = /[.!?…]$/.test(title.trim()) ? '' : '.';
   return (
-    <div className={`rounded-tile border border-dashed border-hx-border px-5 py-6 flex flex-col items-start text-left gap-2 ${className}`}>
-      <div className="text-hx-muted [&>svg]:w-6 [&>svg]:h-6" aria-hidden>
-        {icon ?? <Inbox />}
-      </div>
-      <p className="hx-display text-[17px] leading-6 font-semibold text-hx-text">{title}</p>
-      <p className="text-[15px] leading-[22px] text-hx-text2 max-w-[300px]">{hint}</p>
+    <div className={`border-t border-hx-border pt-3 flex flex-col items-start text-left gap-2 ${className}`}>
+      <p className="hx-body italic text-hx-text2 max-w-[320px]">
+        <span className="text-hx-text">{title}</span>
+        {stop} {hint}
+      </p>
       {action && (
-        <Button variant="secondary" size="sm" className="mt-1" onClick={action.onClick}>
+        <Button variant="ghost" size="sm" onClick={action.onClick}>
           {action.label}
         </Button>
       )}

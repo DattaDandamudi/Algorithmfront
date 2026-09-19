@@ -2,12 +2,12 @@
  * BarSeries — simple column chart for weekly / monthly aggregates and the
  * tobacco 7-day counts (SPEC §3, §6.6).
  *
- * Mark rules (dataviz/marks-and-anatomy.md): columns ≤ 24 px thick, 4 px
- * rounded data-end and a square baseline, a 2 px surface gap between
- * neighbours, hairline solid grid, target as a neutral hairline. Only the
+ * Marks (DESIGN.md "Data marks"): square bone columns no thicker than 24 px
+ * on one baseline hairline, a 2 px gap between neighbours, no gridlines (the
+ * y ticks sit as agate at the left), the target a dotted hairline. Only the
  * last column carries a direct label; each column's value is in the tooltip
- * (pointer: the whole slot is the hit target, ≥ 24 px; keyboard: ←/→) and in
- * the visually-hidden table.
+ * (pointer: the whole slot is the hit target, at least 24 px; keyboard: ←/→)
+ * and in the visually-hidden table.
  */
 import { useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { fmt } from '../../lib/format';
@@ -54,7 +54,7 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
  * Column path with a 4 px radius at the data end and a square baseline. The
  * radius shrinks for very short or narrow bars so the curve never inverts.
  */
-export function barPath(x: number, yValue: number, yBase: number, w: number, r = 4): string {
+export function barPath(x: number, yValue: number, yBase: number, w: number, r = 0): string {
   const h = Math.abs(yBase - yValue);
   const rr = Math.min(r, h, w / 2);
   const p = (v: number) => Math.round(v * 100) / 100;
@@ -69,7 +69,7 @@ export function barPath(x: number, yValue: number, yBase: number, w: number, r =
 
 export default function BarSeries({
   data,
-  color = TOKEN.blue,
+  color = TOKEN.text,
   target,
   targetLabel = 'Target',
   height = 160,
@@ -173,13 +173,11 @@ export default function BarSeries({
         onFocus={() => setActive((a) => (a === null ? n - 1 : a))}
         onBlur={() => setActive(null)}
       >
+        {/* y ticks as agate at the left: no gridlines */}
         {ticks.map((t) => (
-          <g key={t}>
-            <line x1={left} x2={left + plotW} y1={px(y(t))} y2={px(y(t))} stroke={TOKEN.border} strokeWidth={1} shapeRendering="crispEdges" />
-            <text x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
-              {formatTick(t, tickDp)}
-            </text>
-          </g>
+          <text key={t} x={left - 6} y={px(y(t))} textAnchor="end" dominantBaseline="middle" fontSize={FONT.tick} fill={TOKEN.muted}>
+            {formatTick(t, tickDp)}
+          </text>
         ))}
 
         {values.map((v, i) => {
@@ -193,7 +191,7 @@ export default function BarSeries({
 
         {isNum(target) ? (
           <g>
-            <line x1={left} x2={left + plotW} y1={y(target)} y2={y(target)} stroke={TOKEN.neutral} strokeWidth={1} />
+            <line x1={left} x2={left + plotW} y1={y(target)} y2={y(target)} stroke={TOKEN.text2} strokeWidth={1} strokeDasharray="1 3" />
             <text x={left + plotW - 2} y={y(target) - 3} textAnchor="end" fontSize={FONT.small} fill={TOKEN.muted}>
               {targetLabel}
             </text>

@@ -1,36 +1,36 @@
 /**
- * Sparkline — pure SVG mini line (tiles, weight trend, HRV 7-day).
+ * Sparkline — pure SVG mini line (box-score cells, HRV 7-day).
  *
- * Chart mark rules (brief): 2 px line, round joins/caps, gaps for nulls,
- * band as a ~12 % wash, baseline as a solid hairline, last point as an 8 px
- * dot with a 2 px surface-colour ring. Decorative: aria-hidden with a <title>
- * — the tile's number carries the value for screen readers.
+ * Marks (DESIGN.md "Data marks"): a 1 px text2 line with butt caps, nulls as
+ * gaps, the SWC band a 9 percent bone wash with no edge, the baseline a dotted
+ * hairline, the last point a 3 px bone dot. Decorative: aria-hidden with a
+ * <title>; the cell's figure carries the value for screen readers.
  */
 export interface SparklineProps {
   values: Array<number | null | undefined>;
   width?: number;
   height?: number;
-  /** CSS colour for the line; default var(--hx-blue). */
+  /** CSS colour for the line; default var(--hx-text-2). */
   color?: string;
   /** Shaded lo–hi wash (e.g. HRV SWC band). */
   band?: [number, number] | null;
-  /** Horizontal hairline (e.g. 30-day average). */
+  /** Horizontal dotted hairline (e.g. 30-day average). */
   baseline?: number | null;
-  /** 8 px dot on the last non-null point. */
+  /** 3 px bone dot on the last non-null point. */
   highlightLast?: boolean;
   /** SVG <title> text. */
   title?: string;
   className?: string;
 }
 
-const PAD = 5; // room for the 4 px dot radius + its 2 px ring
+const PAD = 2;
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
 export default function Sparkline({
   values,
   width = 96,
   height = 28,
-  color = 'var(--hx-blue)',
+  color = 'var(--hx-text-2)',
   band = null,
   baseline = null,
   highlightLast = false,
@@ -51,7 +51,7 @@ export default function Sparkline({
   const x = (i: number) => (n <= 1 ? width / 2 : PAD + (i * (width - 2 * PAD)) / (n - 1));
   const y = (v: number) => PAD + (1 - (v - lo) / (hi - lo)) * (height - 2 * PAD);
 
-  // Consecutive non-null runs become separate sub-paths → visible gaps.
+  // Consecutive non-null runs become separate sub-paths, so nulls read as gaps.
   const runs: string[] = [];
   let cur: string[] = [];
   values.forEach((v, i) => {
@@ -75,14 +75,7 @@ export default function Sparkline({
   }
 
   return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      aria-hidden
-      focusable="false"
-      className={`block overflow-visible ${className}`}
-    >
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden focusable="false" className={`block overflow-visible ${className}`}>
       <title>{title}</title>
       {band && (
         <rect
@@ -90,17 +83,15 @@ export default function Sparkline({
           width={width}
           y={r1(y(Math.max(band[0], band[1])))}
           height={Math.max(1, r1(Math.abs(y(band[0]) - y(band[1]))))}
-          fill={color}
-          opacity={0.12}
+          fill="var(--hx-text)"
+          opacity={0.09}
         />
       )}
       {baseline !== null && baseline !== undefined && Number.isFinite(baseline) && (
-        <line x1={0} x2={width} y1={r1(y(baseline))} y2={r1(y(baseline))} stroke="var(--hx-neutral)" strokeWidth={1} opacity={0.6} />
+        <line x1={0} x2={width} y1={r1(y(baseline))} y2={r1(y(baseline))} stroke="var(--hx-border)" strokeWidth={1} strokeDasharray="1 3" />
       )}
-      {d && <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
-      {highlightLast && lastIdx >= 0 && (
-        <circle cx={r1(x(lastIdx))} cy={r1(y(values[lastIdx] as number))} r={4} fill={color} stroke="var(--hx-card)" strokeWidth={2} />
-      )}
+      {d && <path d={d} fill="none" stroke={color} strokeWidth={1} strokeLinejoin="miter" strokeLinecap="butt" />}
+      {highlightLast && lastIdx >= 0 && <circle cx={r1(x(lastIdx))} cy={r1(y(values[lastIdx] as number))} r={1.5} fill="var(--hx-text)" />}
     </svg>
   );
 }

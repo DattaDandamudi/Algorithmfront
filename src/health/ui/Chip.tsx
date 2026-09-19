@@ -1,12 +1,13 @@
 /**
- * Chip — pill button (training verdict, coach quick prompts, filters).
+ * Chip — a tag (training verdict, coach quick prompts, filters, toggles).
  *
- * Idle chips are sunken wells; an active chip lifts into a tone wash with a
- * bezel in that tone. Both sizes are 44 px tall (touch-target floor); `sm` only
- * tightens the text and padding. `active` is purely visual; pass `pressed` on
- * real toggles so aria-pressed is only announced where it is true (review
- * R6-11: an action chip must not read as "pressed"). Colour is a semantic Tone.
- * The wash class strings are pinned by hero.test.tsx (`bg-hx-red/15`).
+ * 44 px, a 1 px rule in the tone (text2 when neutral), 4 px radius, .hx-label
+ * inside, transparent. Idle chips carry the tone only as their rule; `active`
+ * keeps the exact tone wash classes the hero tests pin (`bg-hx-red/15
+ * text-hx-red border-hx-red/40`) and adds a tone square, so colour is never
+ * the only carrier. Both sizes are 44 px tall; `sm` only tightens the padding.
+ * `active` is purely visual; pass `pressed` on real toggles so aria-pressed is
+ * announced only where it is true (review R6-11).
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import type { Tone } from './bands';
@@ -29,19 +30,24 @@ const ACTIVE: Record<Tone, string> = {
   blue: 'bg-hx-blue/15 text-hx-blue border-hx-blue/40',
 };
 
-const IDLE = 'hx-well text-hx-text2 border-hx-border hover:text-hx-text hover:border-hx-neutral';
+const IDLE: Record<Tone, string> = {
+  neutral: 'text-hx-text2 border-hx-text2 hover:text-hx-text hover:border-hx-text',
+  green: 'text-hx-text2 border-hx-green hover:text-hx-text',
+  yellow: 'text-hx-text2 border-hx-yellow hover:text-hx-text',
+  red: 'text-hx-text2 border-hx-red hover:text-hx-text',
+  blue: 'text-hx-text2 border-hx-blue hover:text-hx-text',
+};
 
 export default function Chip({ children, active, pressed, color = 'neutral', icon, size = 'md', className = '', type = 'button', ...rest }: ChipProps) {
-  const h = size === 'sm' ? 'h-11 px-3 text-[13px] gap-1.5' : 'h-11 px-4 text-[15px] gap-2';
+  const pad = size === 'sm' ? 'px-3' : 'px-4';
   return (
     <button
       type={type}
       aria-pressed={pressed === undefined ? undefined : pressed}
-      className={`hx-press inline-flex items-center justify-center rounded-full border font-medium whitespace-nowrap select-none disabled:opacity-50 disabled:cursor-not-allowed ${h} ${
-        active ? `${ACTIVE[color]} shadow-[inset_0_1px_0_rgba(233,241,255,0.12)]` : IDLE
-      } ${className}`}
+      className={`hx-tag hx-label hx-press disabled:opacity-50 disabled:cursor-not-allowed ${pad} ${active ? ACTIVE[color] : IDLE[color]} ${className}`}
       {...rest}
     >
+      {active && <span className="hx-tone" aria-hidden />}
       {icon && <span className="inline-flex shrink-0 [&>svg]:w-4 [&>svg]:h-4">{icon}</span>}
       {/* No truncation: a chip sizes to its label; a scroll row or flex-wrap parent handles overflow. */}
       <span>{children}</span>

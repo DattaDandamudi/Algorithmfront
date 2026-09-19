@@ -1,12 +1,15 @@
 /**
- * MacroBar — thin remaining-macro bar (SPEC §1 #4): protein → carbs (day-type
- * range as a lighter zone) → fat (60 g floor tick) → fiber.
+ * MacroBar — a ledger row with a progress rule (SPEC §1 #4): protein → carbs
+ * (day-type range as a wash) → fat (60 g floor tick) → fiber.
  *
- * The trough is a sunken well; the fill is the tone. Bar 8 px, rounded data
- * end, numbers in text tokens (never coloured by the series); over-target shows
- * the overflow in red and flips the right-hand label to "x g over". Scale =
- * max(target, range hi, floor, value up to 125 % of target) so a normal day
- * fills the bar and a blow-out is still legible.
+ * Label left in .hx-body; the eaten figure flush right in .hx-fig-sm with its
+ * target as the unit ("83 of 176 g"). Beneath: a 2 px --hx-border track with
+ * an ink fill (the tone when a band applies, bone when neutral), the state in
+ * .hx-agate at the rule's end ("93 g left", "in range", "12 g over"), a floor
+ * tick as a hairline with its agate label. Over target shows the overflow in
+ * red and says so in words. Scale = max(target, range hi, floor, value up to
+ * 125 percent of target) so a normal day fills the rule and a blow-out is
+ * still legible. `role="meter"` kept.
  */
 import { fmt } from '../lib/format';
 import { bandBg, type Tone } from './bands';
@@ -17,11 +20,12 @@ export interface MacroBarProps {
   target: number;
   /** Lighter zone lo–hi, e.g. carbs range for the day type. When set, `target` should be the top of the range: "left" counts to the top, "over" starts above it, and values inside the zone read "in range". */
   range?: [number, number] | null;
-  /** Text shown after the slash instead of the numeric target, e.g. "70–100". */
+  /** Text shown as the target instead of the number, e.g. "70–100". */
   targetLabel?: string;
   /** Vertical tick + "x g floor" label (fat floor). */
   floor?: number | null;
   unit?: string;
+  /** The fill's tone when a band applies; 'neutral' fills in bone. */
   color: Tone;
   /** Show "x g left" / "x g over" at the right. Default true. */
   remainingLabel?: boolean;
@@ -39,44 +43,49 @@ export default function MacroBar({ label, value, target, range = null, targetLab
   const inRange = rangeLo !== null && v >= rangeLo && !over;
   const remaining = target - v;
   const right = !remainingLabel ? null : over ? `${fmt(v - target)} ${unit} over` : inRange ? 'in range' : `${fmt(remaining)} ${unit} left`;
+  const hasFloor = floor !== null && floor !== undefined;
+  const fill = color === 'neutral' ? 'bg-hx-text' : bandBg(color);
 
   return (
-    <div className={`flex flex-col gap-2 ${floor !== null && floor !== undefined ? 'pb-4' : ''} ${className}`}>
+    <div className={`flex flex-col gap-1.5 ${hasFloor ? 'pb-4' : ''} ${className}`}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="hx-label">{label}</span>
-        <span className="text-[13px] leading-[18px] text-hx-text2">
-          <span className="hx-display text-[15px] text-hx-text font-semibold">{fmt(v)}</span> / {targetLabel ?? fmt(target)} {unit}
-          {right && <span className={`ml-2 ${over ? 'text-hx-red font-medium' : inRange ? 'text-hx-green' : 'text-hx-muted'}`}>{right}</span>}
+        <span className="hx-body">{label}</span>
+        <span className="hx-fig-sm text-hx-text text-right shrink-0">
+          {fmt(v)}
+          <span className="hx-unit">
+            of {targetLabel ?? fmt(target)} {unit}
+          </span>
         </span>
       </div>
-      <div
-        role="meter"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={target}
-        aria-valuenow={Math.min(v, target)}
-        aria-valuetext={`${fmt(v)} of ${fmt(target)} ${unit}${right ? `, ${right}` : ''}`}
-        className="hx-well relative h-2 overflow-visible"
-      >
-        {range && (
-          <span
-            className={`absolute inset-y-0 rounded-full opacity-25 ${bandBg(color)}`}
-            style={{ left: pct(Math.min(range[0], range[1]), scale), width: pct(rangeHi - Math.min(range[0], range[1]), scale) }}
-            aria-hidden
-          />
-        )}
-        <span className={`absolute inset-y-0 left-0 ${over ? 'rounded-l-full' : 'rounded-full'} ${bandBg(color)}`} style={{ width: pct(Math.min(v, target), scale) }} aria-hidden />
-        {over && (
-          <span className="absolute inset-y-0 rounded-r-full bg-hx-red" style={{ left: pct(target, scale), width: pct(Math.min(v, scale) - target, scale) }} aria-hidden />
-        )}
-        {floor !== null && floor !== undefined && (
-          <span className="absolute -top-1 bottom-0 flex flex-col items-center" style={{ left: pct(floor, scale) }} aria-hidden>
-            <span className="w-0.5 h-4 rounded-full bg-hx-text2" />
-            <span className="mt-0.5 text-[11px] leading-3 text-hx-muted whitespace-nowrap -translate-x-1/2 absolute top-4 left-1/2">
-              {fmt(floor)} {unit} floor
+      <div className="flex items-center gap-2">
+        <div
+          role="meter"
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={target}
+          aria-valuenow={Math.min(v, target)}
+          aria-valuetext={`${fmt(v)} of ${fmt(target)} ${unit}${right ? `, ${right}` : ''}`}
+          className="relative flex-1 h-0.5 bg-hx-border overflow-visible"
+        >
+          {range && (
+            <span
+              className="absolute -inset-y-1 bg-hx-text/10"
+              style={{ left: pct(Math.min(range[0], range[1]), scale), width: pct(rangeHi - Math.min(range[0], range[1]), scale) }}
+              aria-hidden
+            />
+          )}
+          <span className={`absolute inset-y-0 left-0 ${fill}`} style={{ width: pct(Math.min(v, target), scale) }} aria-hidden />
+          {over && <span className="absolute inset-y-0 bg-hx-red" style={{ left: pct(target, scale), width: pct(Math.min(v, scale) - target, scale) }} aria-hidden />}
+          {hasFloor && (
+            <span className="absolute -top-1 flex flex-col items-center" style={{ left: pct(floor, scale) }} aria-hidden>
+              <span className="w-px h-2.5 bg-hx-text2" />
+              <span className="hx-agate whitespace-nowrap absolute top-3 left-1/2 -translate-x-1/2">
+                {fmt(floor)} {unit} floor
+              </span>
             </span>
-          </span>
-        )}
+          )}
+        </div>
+        {right && <span className={`hx-agate shrink-0 ${over ? 'text-hx-red' : inRange ? 'text-hx-green' : ''}`}>{right}</span>}
       </div>
     </div>
   );

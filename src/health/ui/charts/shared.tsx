@@ -1,22 +1,27 @@
 /**
- * Bits shared by the three chart components: container measurement, the HTML
- * tooltip, the visually-hidden "table view twin" and the empty frame.
+ * Bits shared by the three chart components: container measurement, the
+ * tooltip slip, the visually-hidden "table view twin" and the empty frame.
  *
- * Tooltip rules (dataviz/interaction.md): values lead and labels follow, each
- * row is keyed by a short stroke of the series colour (never a filled box),
- * every string is rendered as a React text node — never innerHTML — and the
- * tooltip only enhances: the last value is direct-labelled and the hidden
- * table always carries every number, so nothing is gated behind hover.
+ * The graphics desk (DESIGN.md "Data marks"): hairlines, direct labels in
+ * agate, no legend, no gridlines, no y-axis line, no fills except a 9 percent
+ * ink wash where a band applies. The tooltip is a plate slip (.hx-raised) with
+ * .hx-agate values and no arrow; each row is keyed by a short stroke or an
+ * 8 px square in the series colour; every string is a React text node, never
+ * innerHTML. The tooltip only enhances: the last value is direct-labelled and
+ * the hidden table always carries every number, so nothing is gated behind
+ * hover.
  */
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
-/** Card content width inside the 390 px frame (358 px card − 2 × 16 px padding). */
-export const DEFAULT_CHART_WIDTH = 326;
+/** The measure inside the 390 px page: 390 minus two 20 px margins. */
+export const DEFAULT_CHART_WIDTH = 350;
 
-export const FONT = { tick: 12, label: 12, small: 11 } as const;
+/** Agate is the floor: nothing on a chart is set below 12 px. */
+export const FONT = { tick: 12, label: 12, small: 12 } as const;
 
 /** Design tokens as CSS variables — the only colour form allowed inside SVG. */
 export const TOKEN = {
+  base: 'var(--hx-base)',
   card: 'var(--hx-card)',
   border: 'var(--hx-border)',
   muted: 'var(--hx-muted)',
@@ -25,12 +30,17 @@ export const TOKEN = {
   neutral: 'var(--hx-neutral)',
   blue: 'var(--hx-blue)',
   green: 'var(--hx-green)',
+  yellow: 'var(--hx-yellow)',
+  red: 'var(--hx-red)',
 } as const;
+
+/** The ink wash used for bands and zones. */
+export const WASH = 0.09;
 
 /**
  * Measure the rendered width of a container (ResizeObserver, falling back to
  * window resize) so SVGs can lay out in real pixels — text stays crisp and
- * the chart fits a 358 px card and a wider tablet frame alike.
+ * the chart fits the 350 px measure and a wider tablet frame alike.
  */
 export function useMeasuredWidth<T extends HTMLElement>(fallback = DEFAULT_CHART_WIDTH): [RefObject<T>, number] {
   const ref = useRef<T>(null);
@@ -55,13 +65,13 @@ export function useMeasuredWidth<T extends HTMLElement>(fallback = DEFAULT_CHART
 }
 
 export interface TooltipRow {
-  /** The number (or text) — rendered strong, first. */
+  /** The number (or text) — rendered first, in bone. */
   value: string;
   /** Series / category name — secondary, after the value. */
   label: string;
-  /** Series colour for the key stroke; omit for a neutral row. */
+  /** Series colour for the key; omit for a neutral row. */
   color?: string;
-  /** Key glyph: a short line, a dot, or a small square (bars / bands). */
+  /** Key glyph: a short line, a dot, or a small square (bars / bands). Dots and squares are both 8 px squares here. */
   kind?: 'line' | 'dot' | 'rect' | 'none';
   /** Opacity of the key glyph (heatmap levels). */
   opacity?: number;
@@ -80,28 +90,23 @@ interface TooltipProps {
 function Key({ row }: { row: TooltipRow }) {
   const kind = row.kind ?? 'line';
   if (kind === 'none') return <span className="inline-block w-3" aria-hidden />;
-  const style = { background: row.color ?? TOKEN.neutral, opacity: row.opacity ?? 1 };
-  if (kind === 'dot') return <span className="inline-block w-2 h-2 rounded-full shrink-0" style={style} aria-hidden />;
-  if (kind === 'rect') return <span className="inline-block w-2.5 h-2.5 rounded-[2px] shrink-0" style={style} aria-hidden />;
-  return <span className="inline-block w-3 h-0.5 rounded-full shrink-0" style={style} aria-hidden />;
+  const style = { background: row.color ?? TOKEN.text2, opacity: row.opacity ?? 1 };
+  if (kind === 'line') return <span className="inline-block w-3 h-px shrink-0" style={style} aria-hidden />;
+  return <span className="inline-block w-2 h-2 shrink-0" style={style} aria-hidden />;
 }
 
-/** Absolutely positioned readout; the parent must be `position: relative`. */
+/** Absolutely positioned plate slip; the parent must be `position: relative`. */
 export function ChartTooltip({ x, width, title, rows, top = 4 }: TooltipProps) {
   const flip = x > width / 2;
   const style = flip ? { right: Math.max(0, width - x + 10), top } : { left: Math.max(0, x + 10), top };
   return (
-    <div
-      role="status"
-      className="hx-raised pointer-events-none absolute z-10 max-w-[170px] !rounded-ctl px-2.5 py-1.5 text-[12px] leading-4"
-      style={style}
-    >
+    <div role="status" className="hx-raised hx-agate pointer-events-none absolute z-10 max-w-[170px] !rounded-none px-2.5 py-1.5" style={style}>
       {title ? <div className="text-hx-muted mb-1 whitespace-nowrap">{title}</div> : null}
       <ul className="space-y-0.5">
         {rows.map((row, i) => (
           <li key={i} className="flex items-center gap-2 whitespace-nowrap">
             <Key row={row} />
-            <span className="font-semibold text-hx-text">{row.value}</span>
+            <span className="text-hx-text">{row.value}</span>
             {row.label ? <span className="text-hx-text2 truncate">{row.label}</span> : null}
           </li>
         ))}
@@ -116,42 +121,45 @@ export function HiddenTable({ caption, head, rows }: { caption: string; head: st
   // absolutely-positioned sr-only table can widen the document and cause horizontal scroll.
   return (
     <div className="sr-only">
-    <table>
-      <caption>{caption}</caption>
-      <thead>
-        <tr>
-          {head.map((h, i) => (
-            <th key={i} scope="col">
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i}>
-            {r.map((c, j) => (j === 0 ? <th key={j} scope="row">{c}</th> : <td key={j}>{c}</td>))}
+      <table>
+        <caption>{caption}</caption>
+        <thead>
+          <tr>
+            {head.map((h, i) => (
+              <th key={i} scope="col">
+                {h}
+              </th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((c, j) =>
+                j === 0 ? (
+                  <th key={j} scope="row">
+                    {c}
+                  </th>
+                ) : (
+                  <td key={j}>{c}</td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-/** Empty / insufficient-data state drawn inside the chart's frame so the layout never jumps. */
+/** Empty / insufficient-data state: an italic sentence inside the chart's frame, so the layout never jumps. */
 export function EmptyFrame({ height, text, ariaLabel }: { height: number; text: string; ariaLabel: string }) {
   return (
-    <div
-      role="img"
-      aria-label={`${ariaLabel}: ${text}`}
-      className="hx-well flex items-center justify-center !rounded-ctl px-4 text-center text-[13px] leading-5 text-hx-text2"
-      style={{ height }}
-    >
+    <div role="img" aria-label={`${ariaLabel}: ${text}`} className="hx-body italic text-hx-text2 flex items-center border-t border-hx-border" style={{ height }}>
       {text}
     </div>
   );
 }
 
 /** Shared focus ring + touch behaviour for the focusable SVG. */
-export const SVG_CLASS = 'block rounded-ctl outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-hx-lume';
+export const SVG_CLASS = 'block outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hx-lume';
