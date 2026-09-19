@@ -167,8 +167,8 @@ on chips, keys, inputs and tags; 12 px on a sheet's top corners. A rounded corne
 means "you can press this" and a square one means "read this".
 
 **Sticky headers go.** Mastheads scroll away with the page. Only Trends keeps its
-masthead row sticky, because the range toggle is a live control; it sits on the stock
-at 96% with a hairline beneath. The running foot (tab bar) is the only fixed element.
+masthead row sticky, because the range toggle is a live control; it sits on the flat
+stock with a hairline beneath (no tint, no blur). The running foot (tab bar) is the only fixed element.
 
 **Alignment:** flush left everywhere. Datelines and the figure column of a ledger are
 flush right, which makes the right margin a second axis for numbers. Nothing is
@@ -186,7 +186,7 @@ Old material names keep existing so the tree stays coherent, but they mean new t
 | `.hx-bento` | one column, `gap: 0`; `.hx-span-2` and `.hx-row-2` are no-ops kept for the names |
 | `.hx-lume-glow`, `.hx-lume-text` | empty rules kept for the class names |
 | `.hx-press` | a pressed block inks its leader; keys settle 1 px |
-| `.hx-tabbar` | the running foot: stock at 96%, 1 px hairline rule above, no glass, no radius |
+| `.hx-tabbar` | the running foot: flat stock, 1 px hairline rule above, no glass, no tint, no radius |
 
 New classes: `.hx-rule`, `.hx-hair`, `.hx-hair-2` (double hairline for totals),
 `.hx-score-grid`, `.hx-cell`, `.hx-ledger`, `.hx-row`, `.hx-figure`, `.hx-note` (a
@@ -350,7 +350,7 @@ and this section disagree, this section wins on colour because the palette is fi
 - **InsightCard** — a brief: the tone word hanging in a 72 px left column in `.hx-label` with a tone square, the body `.hx-body`, "Ask the coach" a ghost verb, a hairline beneath; the whole brief the button.
 - **Delta** — 10 px triangle in the tone plus a tnum figure in text2 plus the caption in muted; same API.
 - **Sparkline / MacroBar / EmptyState / Stepper** — per the marks above; EmptyState is an italic `.hx-body` paragraph under a hairline with a ghost verb, no dashed box; Stepper is two 44 px keys around a `.hx-fig-sm` figure (lg: 56 px keys, `.hx-fig`).
-- **Tab bar** (HealthApp) — the running foot: stock at 96%, hairline above, six 48 px items, icons 20 px at 1.5 stroke, `.hx-agate` words, active bone with a 20 × 2 px lume underline under the icon, inactive muted; `aria-current` kept.
+- **Tab bar** (HealthApp) — the running foot: flat stock, hairline above, six 48 px items, icons 20 px at 1.5 stroke, `.hx-agate` words, active bone with a 20 × 2 px lume underline under the icon, inactive muted; `aria-current` kept.
 
 ## Copy voice
 

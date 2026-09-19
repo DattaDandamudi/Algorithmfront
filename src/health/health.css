@@ -513,7 +513,8 @@
 /* ------------------------------------------------------------- running foot */
 /* Stock at 96 percent, a hairline above, no glass, no radius. */
 .hx-tabbar {
-  background: rgba(16, 14, 11, 0.96);
+  /* Flat stock, not a tint: without blur, 4% of the page showing through reads as ghosting. */
+  background: var(--hx-base);
   border-top: 1px solid var(--hx-border);
   padding-bottom: max(8px, env(safe-area-inset-bottom));
 }

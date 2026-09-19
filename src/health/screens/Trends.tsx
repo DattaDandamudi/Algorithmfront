@@ -60,7 +60,7 @@ export default function Trends() {
     <div className="flex flex-col">
       {/* The one sticky header: stock at 96 percent, no blur, a hairline beneath. The control's own
           hairline overlaps it by a pixel so the words sit on one line, not two. */}
-      <header className="sticky top-0 z-20 bg-hx-base/[0.96] px-5 pt-5">
+      <header className="sticky top-0 z-20 bg-hx-base px-5 pt-5">
         <div className="flex items-end justify-between gap-4">
           <h1 className="hx-masthead text-hx-text pb-3">Trends</h1>
           <SegmentedControl<ChartRange> options={RANGES} value={range} onChange={setRange} size="sm" ariaLabel="Date range" className="-mb-px" />
