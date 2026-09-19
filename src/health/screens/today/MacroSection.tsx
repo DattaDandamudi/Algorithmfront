@@ -1,28 +1,30 @@
 /**
- * Macro remaining bars — SPEC §1 #4, as a span-2 tile: protein first, then
- * carbs with the day-type range (150–175 g lift / 70–100 g rest, §6.5), then
- * fat with the 60 g floor marker (Whittaker & Wu 2021), then fiber to 30 g.
- * Values are the engine's `nutrition.totals` / `nutrition.targets`, so the
- * bars agree with the tiles and the coach. With no meals logged the tile is the
- * §1 empty state: "Log your first meal to see protein remaining."
+ * Macros remaining — SPEC §1 #4, the rest of the Food ledger: carbs with the
+ * day-type range (150–175 g lift / 70–100 g rest, §6.5), fat with the 60 g
+ * floor marker (Whittaker & Wu 2021), then fiber to 30 g. Protein is not
+ * repeated here: the "Protein remaining" row above already carries its
+ * progress rule and pacing. Values are the engine's `nutrition.totals` /
+ * `nutrition.targets`, so the rules agree with the rows and the coach. With no
+ * meals logged the section is the §1 empty state: "Log your first meal to see
+ * protein remaining."
  *
- * Bar tone follows STATE, never a fixed series hue (§0 "one semantic colour
+ * Rule tone follows STATE, never a fixed series hue (§0 "one semantic colour
  * per state", review R1-13):
  *  - protein: green while on pace (per-meal need ≤ the 0.55 g/kg ceiling, or
- *    the target is hit — the engine's `onPace` rule), else neutral;
+ *    the target is hit — the engine's `onPace` rule), else neutral (kept as a
+ *    pure rule for the tests and for callers);
  *  - carbs: blue (informational — a range, not a pass/fail);
  *  - fat: yellow below the 60 g floor, red when it is late and still below
  *    (no meal slots left or past FAT_LATE_HHMM), green once the floor is met;
  *  - fiber: neutral until the 30 g target is hit, then green.
  */
-import { UtensilsCrossed } from 'lucide-react';
 import type { CoachContext } from '../../data/types';
 import { PROTEIN_PER_MEAL_GKG } from '../../engine';
 import { hhmmToMinutes } from '../../lib/dates';
 import { lbToKg, round } from '../../lib/format';
 import { EmptyState, MacroBar, SectionHeader, type Tone } from '../../ui';
 
-/** After this time a fat shortfall is unlikely to be closed — the floor bar turns red. */
+/** After this time a fat shortfall is unlikely to be closed — the floor rule turns red. */
 export const FAT_LATE_HHMM = '20:00';
 
 export interface MacroSectionProps {
@@ -65,26 +67,33 @@ export default function MacroSection({ ctx, bodyWeightLb, emptyText, onLogMeal }
 
   if (nothingLogged) {
     return (
-      <section className="hx-span-2" aria-label="Macros remaining">
-        <EmptyState icon={<UtensilsCrossed />} title="No meals yet" hint={emptyText ?? 'Log your first meal to see protein remaining.'} action={{ label: 'Log a meal', onClick: onLogMeal }} />
+      <section className="mt-6" aria-label="Macros remaining">
+        <EmptyState title="No meals yet" hint={emptyText ?? 'Log your first meal to see protein remaining.'} action={{ label: 'Log a meal', onClick: onLogMeal }} />
       </section>
     );
   }
 
   return (
-    <section className="hx-card hx-span-2 p-4 flex flex-col gap-4" aria-label="Macros remaining">
+    <section className="mt-6" aria-label="Macros remaining">
       <SectionHeader as="h3" title="Macros remaining" caption={`Targets for a ${dayWord}`} />
-      <MacroBar label="Protein" value={totals.p} target={targets.p} color={tone.protein} />
-      <MacroBar
-        label={`Carbs, ${dayWord}`}
-        value={totals.c}
-        target={targets.carbsRange[1]}
-        targetLabel={`${targets.carbsRange[0]}–${targets.carbsRange[1]}`}
-        range={targets.carbsRange}
-        color={tone.carbs}
-      />
-      <MacroBar label="Fat" value={totals.f} target={targets.f} floor={targets.fatFloor} color={tone.fat} />
-      <MacroBar label="Fiber" value={totals.fi} target={targets.fi} color={tone.fiber} />
+      <div className="hx-ledger mt-2">
+        <div className="hx-row">
+          <MacroBar
+            label={`Carbs, ${dayWord}`}
+            value={totals.c}
+            target={targets.carbsRange[1]}
+            targetLabel={`${targets.carbsRange[0]}–${targets.carbsRange[1]}`}
+            range={targets.carbsRange}
+            color={tone.carbs}
+          />
+        </div>
+        <div className="hx-row">
+          <MacroBar label="Fat" value={totals.f} target={targets.f} floor={targets.fatFloor} color={tone.fat} />
+        </div>
+        <div className="hx-row">
+          <MacroBar label="Fiber" value={totals.fi} target={targets.fi} color={tone.fiber} />
+        </div>
+      </div>
     </section>
   );
 }

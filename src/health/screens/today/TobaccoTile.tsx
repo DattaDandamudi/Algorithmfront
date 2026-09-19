@@ -1,20 +1,19 @@
 /**
- * Tobacco tile — SPEC §1 #7 / §6.6, as a span-2 tile: today's count, the
- * smoke-free streak, a 7-day mini column strip and two quick actions.
+ * Tobacco — SPEC §1 #7 / §6.6: today's count as a ledger row (the button
+ * into Log's tobacco section), the smoke-free streak in words, a 7-day strip
+ * of hairline cells filled by ink density, and two quick actions.
  *
  * Integration notes: a smoke-free day needs an explicit `tob: 0` (the streak
  * engine skips days without a value), and the demo data leaves today's `tob`
- * undefined — so when nothing is logged the tile says "Not logged" and offers
+ * undefined — so when nothing is logged the row says "not logged" and offers
  * "Smoke-free today" (`adjustTobacco(d, 0)` writes the 0). "+1" is the §2
- * two-tap quick-log. Tapping the count opens the Log screen's tobacco section.
+ * two-tap quick-log.
  */
-import { Cigarette, Plus } from 'lucide-react';
 import type { TobaccoStats } from '../../engine';
 import { formatDateShort, weekdayOf, weekdayShort } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { Button, SectionHeader } from '../../ui';
-
-const BAR_MAX_PX = 32;
+import { LEVEL_OPACITY } from '../../ui/charts';
 
 export interface TobaccoTileProps {
   stats: TobaccoStats;
@@ -25,23 +24,36 @@ export interface TobaccoTileProps {
   onOpenLog: () => void;
 }
 
-function MiniBars({ trend }: { trend: TobaccoStats['trend7'] }) {
+/** Bone at the heat-map densities: the fill of a cell is the count against the week's high. */
+function density(count: number, max: number): number {
+  const f = count / max;
+  const level = f >= 0.85 ? 3 : f >= 0.5 ? 2 : f >= 0.25 ? 1 : 0;
+  return LEVEL_OPACITY[level];
+}
+
+/** Seven hairline cells filled by ink density; a 2 px tick marks a logged smoke-free day; blank is not logged. */
+function WeekStrip({ trend }: { trend: TobaccoStats['trend7'] }) {
   const max = Math.max(1, ...trend.map((p) => p.count ?? 0));
   const summary = trend.map((p) => `${formatDateShort(p.d)}: ${p.count === null ? 'not logged' : p.count}`).join(', ');
   return (
-    <div className="flex items-end gap-1.5 h-12" role="img" aria-label={`Tobacco, last 7 days: ${summary}`}>
-      {trend.map((p) => {
-        const h = p.count === null ? 4 : Math.max(4, Math.round((p.count / max) * BAR_MAX_PX));
-        const cls = p.count === null ? 'border border-dashed border-hx-border bg-transparent' : p.count === 0 ? 'bg-hx-green' : 'bg-hx-yellow';
-        return (
-          <div key={p.d} className="flex flex-col items-center gap-1 w-6">
-            <span className={`w-3 rounded-t-[3px] ${cls}`} style={{ height: h }} aria-hidden />
-            <span className="text-[10px] leading-3 text-hx-muted" aria-hidden>
+    <div className="mt-4" role="img" aria-label={`Tobacco, last 7 days: ${summary}`}>
+      <div className="flex gap-1">
+        {trend.map((p) => (
+          <div key={p.d} className="flex-1 min-w-0 flex flex-col gap-1" title={`${formatDateShort(p.d)}: ${p.count === null ? 'not logged' : p.count}`}>
+            <div className="relative h-5 border-b border-hx-border">
+              {p.count === null ? null : p.count === 0 ? (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 bg-hx-text" aria-hidden />
+              ) : (
+                <span className="absolute inset-0" style={{ background: `rgba(237, 230, 216, ${density(p.count, max)})` }} aria-hidden />
+              )}
+            </div>
+            <span className="hx-agate" aria-hidden>
               {weekdayShort(weekdayOf(p.d)).charAt(0)}
             </span>
           </div>
-        );
-      })}
+        ))}
+      </div>
+      <p className="hx-cap mt-1">Ink by count; a tick is a smoke-free day; blank is not logged.</p>
     </div>
   );
 }
@@ -49,32 +61,45 @@ function MiniBars({ trend }: { trend: TobaccoStats['trend7'] }) {
 export default function TobaccoTile({ stats, today, onPlusOne, onSmokeFree, onOpenLog }: TobaccoTileProps) {
   const logged = today !== null;
   const streak = stats.streakDays;
+  const streakLine = streak > 0 ? `${fmt(streak)}-day smoke-free streak` : 'No smoke-free streak yet';
 
   return (
-    <section className="hx-card hx-span-2 p-4 flex flex-col gap-3" aria-label="Tobacco">
-      <SectionHeader as="h3" title="Tobacco" caption={stats.avg7 !== null ? `7-day average ${fmt(stats.avg7, 1)} a day` : 'Log each day, smoke-free days need a 0'} />
-      <div className="flex items-start justify-between gap-3">
-        <button type="button" onClick={onOpenLog} className="text-left flex-1 min-w-0 rounded-ctl -m-1 p-1 min-h-[44px] hover:bg-hx-card2/60 transition-colors" aria-label="Open tobacco log">
-          <div className="flex items-baseline gap-1.5">
-            <span className={`hx-display text-[28px] leading-8 font-semibold ${logged ? 'text-hx-text' : 'text-hx-muted'}`}>{logged ? fmt(today) : '—'}</span>
-            <span className="text-[13px] font-medium text-hx-text2">{logged ? 'today' : 'not logged today'}</span>
-          </div>
-          <div className={`mt-0.5 text-[13px] leading-[18px] font-medium ${streak > 0 ? 'text-hx-green' : 'text-hx-text2'}`}>
-            {streak > 0 ? `${streak}-day smoke-free streak` : 'No smoke-free streak yet'}
-          </div>
+    <section className="mt-10" aria-label="Tobacco">
+      <SectionHeader as="h2" rule={false} title="Tobacco" caption={stats.avg7 !== null ? `7-day average ${fmt(stats.avg7, 1)} a day` : 'Smoke-free days need a 0'} />
+
+      <div className="hx-ledger mt-4">
+        <button type="button" onClick={onOpenLog} className="hx-row hx-press flex-row items-center justify-between gap-3 text-left" aria-label="Open tobacco log">
+          <span className="min-w-0 flex flex-col">
+            <span className="hx-body">Today</span>
+            <span className={`hx-cap ${streak > 0 ? 'text-hx-green' : ''}`}>
+              {streak > 0 && <span className="hx-tone mr-1.5" aria-hidden />}
+              {streakLine}
+            </span>
+          </span>
+          <span className={`hx-fig shrink-0 ${logged ? 'text-hx-text' : 'text-hx-muted'}`}>
+            {logged ? fmt(today) : '—'}
+            <span className="hx-unit">{logged ? 'today' : 'not logged'}</span>
+          </span>
         </button>
-        <MiniBars trend={stats.trend7} />
       </div>
-      <div className="flex items-center gap-2">
-        <Button variant="secondary" size="md" icon={<Plus aria-hidden />} onClick={onPlusOne} aria-label="Log one more">
+
+      <WeekStrip trend={stats.trend7} />
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button variant="secondary" size="md" onClick={onPlusOne} aria-label="Log one more">
           +1
         </Button>
         {!logged && (
-          <Button variant="secondary" size="md" icon={<Cigarette aria-hidden />} onClick={onSmokeFree} className="flex-1">
+          <Button variant="secondary" size="md" onClick={onSmokeFree}>
             Smoke-free today
           </Button>
         )}
-        {logged && today === 0 && <span className="text-[13px] text-hx-green font-medium px-1">Smoke-free so far today</span>}
+        {logged && today === 0 && (
+          <span className="hx-label text-hx-green">
+            <span className="hx-tone mr-1.5" aria-hidden />
+            Smoke-free so far today
+          </span>
+        )}
       </div>
     </section>
   );

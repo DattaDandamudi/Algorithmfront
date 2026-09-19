@@ -1,50 +1,45 @@
 /**
- * Readiness hero — SPEC §1 #1/#2, plus the v3 explanation (plan 2b).
+ * Readiness hero — SPEC §1 #1/#2, plus the v3 explanation (plan 2b), set as
+ * the page's lead (DESIGN.md "Today, in ASCII").
  *
- * The one hero on Today (DESIGN.md): a span-2 tile holding a real dial on the
- * left and its data window on the right, the way an instrument pairs a gauge
- * with a readout. The dial and its number mirror WHOOP's bands from the SCORE
- * ALONE (`bandOf`: green ≥ 67, yellow 34–66, red < 34) — the score is the data
- * and is never recoloured (review R1-1). The engine's forcing rule (recovery
- * < 34 % or the HRV 7-day mean below the lower SWC → "Light day", spec
- * "Thresholds that should change behavior") lives in `readiness.band` and is
- * carried only by the short verdict, the verdict line and the training chip;
- * when it downgrades the band a line under the row says why, so a green 72
- * with a red "Light day" is explained, not contradictory. That same block
- * carries the rule's own evidence line (the `hrvForcing` modifier's reason,
- * from `FORCING_EVIDENCE`): the 2 × SWC clause is a tunable heuristic with no
- * direct published support, and the one day a user most needs to be told that
- * is the day it took their training away.
+ * The score prints once, flush left, in `.hx-score`; a right column 24 px in
+ * carries the short verdict word in the band colour, the 44 px hairline dial
+ * beside "of 100", the confidence line, the source hedge and the training
+ * chip. A 56 px leader hairline under the numeral leads into the deck: the
+ * engine's full verdict, unedited, in Literata 20/26 in the band colour, then
+ * the explainer as a hedge. At three digits or "Calibrating" the column wraps
+ * under the numeral.
+ *
+ * The dial and its number mirror WHOOP's bands from the SCORE ALONE
+ * (`bandOf`: green ≥ 67, yellow 34–66, red < 34) — the score is the data and
+ * is never recoloured (review R1-1). The engine's forcing rule (recovery
+ * < 34 % or the HRV 7-day mean below the lower SWC gives "Light day") lives in
+ * `readiness.band` and is carried only by the verdict word, the deck and the
+ * chip; when it downgrades the band a note under the deck says why, so a
+ * green 72 with a red "Light day" is explained in the open, not contradictory.
+ * That note also carries the rule's own evidence line (the `hrvForcing`
+ * modifier's reason, from `FORCING_EVIDENCE`).
  *
  * The training chip is the §6.3 conversion (Progress / Train, hold loads /
  * Light day). It PRE-FILLS the Coach with "Should I train today?" without
- * sending (R1-8) — the user confirms before a paid request goes out. It is an
- * action, not a toggle: Chip's `active` is the kit's visual band wash only and
- * emits no aria-pressed (R6-11; `pressed` is reserved for real toggles).
+ * sending (R1-8). It is an action, not a toggle: Chip's `active` is the kit's
+ * band wash only and emits no aria-pressed (R6-11).
  *
  * ## The three v3 additions
- * 1. **Modifiers.** `readiness.modifiers` are the things that moved the verdict
- *    *after* the score was computed — the HRV forcing rule, an overreached
- *    training form, an ACWR spike, major overnight strain, a possible illness.
- *    They are listed in the open, each with the word for what it did
- *    ("Lowered the verdict" / "Worth knowing") beside its tone, because a
- *    verdict that disagrees with its own number is otherwise unreadable.
- * 2. **"Why this score".** A native `<details>` — no JS, keyboard-operable,
- *    collapsed by default so the hero stays a hero — listing every contributor
- *    with its raw value, how far it sits from that user's own normal (the z, in
- *    words: "0.4 SD above your normal"), and the points it moved the score by,
- *    then the confidence band and the WHOOP blend. This is the thing no
- *    wearable app does, so it is written for a reader who has never seen a
- *    standard deviation: units on every number, a plain-English lead, and no
- *    symbol that is not explained beside it.
- * 3. **Calibrating.** Until the personal baseline is established the score has
- *    nothing trustworthy to stand on, so the dial shows the WORD "Calibrating"
- *    where the number goes rather than a figure the user would take literally.
- *    The inputs are still listed underneath — they are what the score will be
- *    built from, and watching them fill in is the honest version of progress.
+ * 1. **Modifiers.** Things that moved the verdict after the score was
+ *    computed, listed in the open as a note with the word for what each did
+ *    ("Lowered the verdict" / "Worth knowing") beside its tone.
+ * 2. **"Why this score".** A native `<details>` between hairlines: a 48 px
+ *    `.hx-ui` summary, and inside it the contributors as a ledger (label in
+ *    `.hx-body`, points in `.hx-fig-sm` flush right, the facts line beneath),
+ *    the confidence band and the WHOOP blend. Written for a reader who has
+ *    never seen a standard deviation.
+ * 3. **Calibrating.** Until the personal baseline is established the word
+ *    "Calibrating" sits where the number goes, in `.hx-fig` text2, rather than
+ *    a figure the user would take literally. The inputs are still listed.
  *
- * Presentational: every v3 field is optional and an older/hand-built
- * `Readiness` (no contributors, no confidence) renders exactly as before.
+ * Presentational: every v3 field is optional and an older `Readiness` (no
+ * contributors, no confidence) renders the hero alone.
  */
 import { ChevronDown, Dumbbell, Feather, Footprints } from 'lucide-react';
 import type { Band, Readiness, ReadinessContributor, ReadinessModifier } from '../../data/types';
@@ -71,7 +66,7 @@ export const SHORT_VERDICT: Record<Band, string> = {
  * `forced` is only set when the score's own band is not red, and WHOOP
  * recovery < 34 always is — so a forced downgrade is always the HRV rule.
  */
-export const FORCED_REASON = 'HRV 7-day mean below your normal range → light day';
+export const FORCED_REASON = 'HRV 7-day mean below your normal range forces a light day.';
 
 /** Copy that the tests and the Playwright a11y probe pin. */
 export const CALIBRATING_WORD = 'Calibrating';
@@ -81,6 +76,8 @@ export const MODIFIERS_TITLE = 'What changed the verdict';
 export const WHY_SUMMARY = 'Why this score';
 export const WHY_LEAD =
   'Each input is compared with your own normal, then weighted and added up. “SD” is how far from your normal it sits — about 1 SD is a normal off day. “Points” is what it moved the score by.';
+/** The one line of explainer under the deck. */
+export const EXPLAINER = 'The morning answer to how much strain your body can take today.';
 /**
  * A full WHOOP week ramps the blend to 1, so the wearable's own score IS the
  * number and every own input contributes 0 points. Said plainly, otherwise a
@@ -130,7 +127,7 @@ export function contributorZText(z: number | null | undefined): string {
  * The line under a contributor's name: what it read, how far that is from
  * normal, and what it did. An imported score (WHOOP) has a value but no z —
  * it is not standardised against anything — so it simply skips that clause
- * rather than claiming there was no reading.
+ * rather than claiming there was no reading. The middle dots are pinned.
  */
 export function contributorFacts(c: ReadinessContributor, effectText: string): string {
   const parts: string[] = [];
@@ -149,87 +146,110 @@ export interface ReadinessHeroProps {
   onAskCoach: (prompt: string, send?: boolean) => void;
 }
 
-/** An inset panel inside the hero: a note or a disclosure sits a step below the tile surface. */
-const INSET = 'w-full text-left rounded-ctl border border-hx-border/70 bg-hx-base/40';
-
 export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroProps) {
   const { score, band, verdict, training, source, detail, forced } = readiness;
   const calibrating = readiness.calibrating === true;
   const has = score !== null && !calibrating;
-  // Dial + number: the score's WHOOP band. Verdict + chip: the (possibly forced) engine band.
+  // Dial: the score's WHOOP band. Verdict word, deck and chip: the (possibly forced) engine band.
   const scoreBand = calibrating ? 'neutral' : bandOf(score);
+  // Calibrating still has a verdict — it just has no number, so the word stays.
+  const verdictBand: Band = has || calibrating ? band : 'neutral';
   const chipLabel = training === '—' ? 'No verdict yet' : training;
   const ChipIcon = band === 'green' ? Dumbbell : band === 'red' ? Feather : Footprints;
 
   const contributors = readiness.contributors ?? [];
   const confidence = readiness.confidence;
   const blend = readiness.blendWeight;
-  // The forcing rule already has its own block under the row; listing it twice
-  // reads as two separate findings. Its *evidence* is not dropped with it —
-  // `forcingHedge` moves the modifier's reason into that block, so the clause
-  // that turned a green score into a light day always says what it rests on.
+  // The forcing rule already has its own note; listing it twice reads as two
+  // separate findings. Its *evidence* is not dropped with it — `forcingHedge`
+  // moves the modifier's reason into that note.
   const modifiers = (readiness.modifiers ?? []).filter((m) => !(forced && m.key === 'hrvForcing'));
   const forcingHedge = forced ? (readiness.modifiers ?? []).find((m) => m.key === 'hrvForcing')?.reason ?? null : null;
+  const rangeWord = calibrating ? 'Provisional' : 'Confidence';
 
   return (
-    <section className="hx-card hx-span-2 p-5 flex flex-col gap-4 text-left" aria-labelledby="hx-readiness-title">
-      <div className="flex items-center gap-4">
-        <Ring value={calibrating ? null : score} band={scoreBand} size={150} stroke={12} label="Readiness" className="shrink-0">
-          {calibrating ? (
-            <span className="hx-display text-[18px] leading-6 font-semibold text-hx-text2">{CALIBRATING_WORD}</span>
-          ) : (
-            <span className={`hx-display hx-lume-text text-[48px] leading-none font-semibold ${has ? 'text-hx-text' : 'text-hx-muted'}`}>{has ? fmt(score) : '—'}</span>
-          )}
-          {/* The one word under the number, as on a gauge. Calibrating still has a
-              verdict — it just has no number, so the word stays and the colour does not. */}
-          <span className={`mt-1 text-[13px] leading-4 font-semibold ${has ? bandText(band) : 'text-hx-text2'}`}>{SHORT_VERDICT[has || calibrating ? band : 'neutral']}</span>
-          <span id="hx-readiness-title" className="text-[11px] leading-3 text-hx-muted mt-0.5">
-            Readiness
-          </span>
-        </Ring>
+    <section className="pt-7 flex flex-col text-left" aria-labelledby="hx-readiness-title">
+      <h2 id="hx-readiness-title" className="sr-only">
+        Readiness
+      </h2>
 
-        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-          <p className={`hx-display text-[20px] leading-6 font-semibold text-balance ${has ? bandText(band) : 'text-hx-text2'}`}>{verdict}</p>
-          <p className="text-[13px] leading-[18px] text-hx-muted">From {SOURCE_CAPTION[source]}</p>
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-5">
+        {/* The score, once, flush left. Three digits or a word push the column under it. */}
+        <div className={has ? 'shrink-0' : 'basis-full'}>
+          {calibrating ? (
+            <span className="hx-fig text-hx-text2">{CALIBRATING_WORD}</span>
+          ) : has ? (
+            <span className="hx-score hx-print block text-hx-text">{fmt(score)}</span>
+          ) : (
+            <span className="hx-fig text-hx-muted">—</span>
+          )}
+        </div>
+
+        <div className="grow basis-40 min-w-0 flex flex-col items-start gap-1.5">
+          <span className={`hx-head ${bandText(verdictBand)}`}>{SHORT_VERDICT[verdictBand]}</span>
+          <div className="flex items-center gap-2">
+            <Ring value={calibrating ? null : score} band={scoreBand} label="Readiness" />
+            <span className="hx-agate">{has ? 'of 100' : 'no number yet'}</span>
+          </div>
+          {confidence && <span className="hx-label">{`${rangeWord} ${fmt(confidence.lo)}–${fmt(confidence.hi)}`}</span>}
+          <span className="hx-hedge">{`From ${SOURCE_CAPTION[source]}`}</span>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Chip
+              active
+              color={band}
+              icon={<ChipIcon aria-hidden />}
+              onClick={() => onAskCoach(COACH_CHIPS[0], false)}
+              aria-label={`Training verdict: ${chipLabel}. Ask the coach "Should I train today?"`}
+            >
+              {chipLabel}
+            </Chip>
+            <span className="hx-agate">Tap to ask the coach</span>
+          </div>
         </div>
       </div>
 
-      <p className="text-[13px] leading-[18px] text-hx-muted -mt-1">The morning answer to how much strain your body can take today.</p>
-
-      <div className="flex flex-col items-start gap-1.5">
-        <Chip active color={band} icon={<ChipIcon aria-hidden />} onClick={() => onAskCoach(COACH_CHIPS[0], false)} aria-label={`Training verdict: ${chipLabel}. Ask the coach "Should I train today?"`}>
-          {chipLabel}
-        </Chip>
-        <span className="text-[12px] leading-4 text-hx-muted">Tap to ask the coach</span>
-      </div>
+      {/* The leader: a 56 px hairline under the numeral, then the deck. */}
+      <div className="hx-hair w-14 mt-6" aria-hidden />
+      <p className={`hx-deck text-[20px] leading-[26px] mt-4 ${bandText(verdictBand)}`}>{verdict}</p>
+      <p className="hx-hedge mt-2">{EXPLAINER}</p>
 
       {calibrating && (
-        <p className="text-[13px] leading-[18px] text-hx-text2" role="note">
+        <p className="hx-cap mt-3" role="note">
           {CALIBRATING_NOTE}
         </p>
       )}
+
       {forced && (
-        <div className={`${INSET} px-3.5 py-3`} role="note">
-          <p className="text-[13px] leading-[18px] font-medium text-hx-text2">{FORCED_REASON}</p>
-          <p className="mt-0.5 text-[12px] leading-4 text-hx-muted">{detail}</p>
-          {forcingHedge && <p className="mt-1 text-[12px] leading-4 text-hx-muted">{forcingHedge}</p>}
+        <div className="hx-note border-hx-red mt-4" role="note">
+          <p className="hx-body">
+            <span className="hx-label text-hx-red">
+              <span className="hx-tone mr-1.5" aria-hidden />
+              Forced
+            </span>{' '}
+            <span>{FORCED_REASON}</span>
+          </p>
+          <p className="hx-cap mt-1">{detail}</p>
+          {forcingHedge && <p className="hx-hedge mt-1">{forcingHedge}</p>}
         </div>
       )}
 
       {modifiers.length > 0 && (
-        <div className={`${INSET} px-3.5 py-3`} role="note">
+        <div className="hx-note border-hx-text2 mt-4" role="note">
           <p className="hx-label">{MODIFIERS_TITLE}</p>
-          <ul className="mt-1.5 flex flex-col gap-2">
+          <ul className="mt-2 flex flex-col gap-2">
             {modifiers.map((m) => {
               const eff = MODIFIER_EFFECT[m.effect] ?? MODIFIER_EFFECT.note;
               return (
                 <li key={m.key}>
-                  <p className="text-[13px] leading-[18px]">
-                    <span className={`font-semibold ${bandText(eff.tone)}`}>{eff.text}</span>
-                    <span className="text-hx-muted"> · </span>
-                    <span className="font-medium text-hx-text">{m.label}</span>
+                  <p className="hx-body">
+                    <span className={`hx-label ${bandText(eff.tone)}`}>
+                      <span className="hx-tone mr-1.5" aria-hidden />
+                      {eff.text}
+                    </span>
+                    <span className="text-hx-text2"> · </span>
+                    <span>{m.label}</span>
                   </p>
-                  <p className="text-[12px] leading-4 text-hx-muted">{m.reason}</p>
+                  <p className="hx-hedge">{m.reason}</p>
                 </li>
               );
             })}
@@ -237,47 +257,53 @@ export default function ReadinessHero({ readiness, onAskCoach }: ReadinessHeroPr
         </div>
       )}
 
+      {/* The disclosure sits between hairlines; the bottom one leads into the ledger rows beneath. */}
+      <div className="hx-hair mt-6" aria-hidden />
       {contributors.length > 0 && (
-        <details className={`${INSET} overflow-hidden group`}>
-          <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer min-h-11 px-3.5 py-3 flex items-center justify-between gap-2 text-[15px] leading-5 font-semibold text-hx-text">
-            {WHY_SUMMARY}
-            <ChevronDown className="w-4 h-4 shrink-0 text-hx-muted transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden />
-          </summary>
-          <div className="px-3.5 pb-3.5 flex flex-col gap-2.5">
-            <p className="text-[12px] leading-4 text-hx-muted">{WHY_LEAD}</p>
-            <ul className="flex flex-col">
-              {contributors.map((c) => {
-                const eff = CONTRIBUTOR_EFFECT[c.effect] ?? CONTRIBUTOR_EFFECT.flat;
-                return (
-                  <li key={c.key} className="py-2 border-b border-hx-border/70 last:border-b-0">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="min-w-0 text-[13px] leading-[18px] font-medium text-hx-text">{c.label}</span>
-                      <span className={`hx-display shrink-0 text-[13px] leading-[18px] font-semibold ${bandText(eff.tone)}`}>{fmtSigned(c.points, 1)} pts</span>
-                    </div>
-                    <p className="mt-0.5 text-[12px] leading-4 text-hx-muted">{contributorFacts(c, eff.text)}</p>
-                  </li>
-                );
-              })}
-            </ul>
-            {confidence && (
-              <p className="text-[12px] leading-4 text-hx-text2">
-                <span className="font-medium text-hx-text">
-                  {calibrating ? 'Provisional' : 'Confidence'} {fmt(confidence.lo)}–{fmt(confidence.hi)}
-                </span>{' '}
-                , built from {fmt(confidence.nInputs)} of {fmt(contributors.length)} inputs. The band widens when an input is missing, because an unknown could have gone either way
-                {calibrating ? ', and it will settle as your baseline fills in' : ''}.
-              </p>
-            )}
-            {isNum(blend) && blend > 0 && (
-              <p className="text-[12px] leading-4 text-hx-text2">
-                {blend >= 1
-                  ? WHOOP_ONLY_NOTE
-                  : // Rounded once and subtracted, so the two halves always read as 100%.
-                    `Blend: ${Math.round(blend * 100)}% WHOOP recovery, ${100 - Math.round(blend * 100)}% your own signals — an import ramps in over a week so the number never steps.`}
-              </p>
-            )}
-          </div>
-        </details>
+        <>
+          <details className="group">
+            <summary className="hx-ui text-hx-text list-none cursor-pointer min-h-12 flex items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+              {WHY_SUMMARY}
+              <ChevronDown className="w-4 h-4 shrink-0 text-hx-text2 transition-transform group-open:rotate-180 motion-reduce:transition-none" strokeWidth={1.5} aria-hidden />
+            </summary>
+            <div className="pb-4 flex flex-col gap-4">
+              <p className="hx-hedge">{WHY_LEAD}</p>
+              <ul className="hx-ledger">
+                {contributors.map((c) => {
+                  const eff = CONTRIBUTOR_EFFECT[c.effect] ?? CONTRIBUTOR_EFFECT.flat;
+                  return (
+                    <li key={c.key} className="hx-row">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="hx-body min-w-0">{c.label}</span>
+                        <span className="hx-fig-sm text-hx-text shrink-0">
+                          {`${fmtSigned(c.points, 1)} `}
+                          <span className="hx-unit">pts</span>
+                        </span>
+                      </div>
+                      <p className="hx-cap">{contributorFacts(c, eff.text)}</p>
+                    </li>
+                  );
+                })}
+              </ul>
+              {confidence && (
+                <p className="hx-cap">
+                  {`The ${calibrating ? 'provisional range' : 'confidence band'} ${fmt(confidence.lo)}–${fmt(confidence.hi)} is built from ${fmt(confidence.nInputs)} of ${fmt(contributors.length)} inputs. It widens when an input is missing, because an unknown could have gone either way${
+                    calibrating ? ', and it will settle as your baseline fills in' : ''
+                  }.`}
+                </p>
+              )}
+              {isNum(blend) && blend > 0 && (
+                <p className="hx-cap">
+                  {blend >= 1
+                    ? WHOOP_ONLY_NOTE
+                    : // Rounded once and subtracted, so the two halves always read as 100%.
+                      `Blend: ${Math.round(blend * 100)}% WHOOP recovery, ${100 - Math.round(blend * 100)}% your own signals — an import ramps in over a week so the number never steps.`}
+                </p>
+              )}
+            </div>
+          </details>
+          <div className="hx-hair" aria-hidden />
+        </>
       )}
     </section>
   );

@@ -62,7 +62,7 @@ export function escalationKey(m: BloodMarker): string {
   return `${m.key}@${m.value}${m.unit ? ` ${m.unit}` : ''}`;
 }
 
-/** "Lead (blood)" → "Lead": the parenthetical is Settings detail, not banner copy. */
+/** "Lead (blood)" becomes "Lead": the parenthetical is Settings detail, not banner copy. */
 function shortLabel(m: BloodMarker): string {
   const s = m.label.replace(/\s*\(.*?\)\s*/g, ' ').trim();
   return s || m.label;

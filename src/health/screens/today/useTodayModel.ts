@@ -25,9 +25,9 @@ import {
   bedtimeCountdown,
   buildCoachContext,
   buildInsights,
-  computeEwmaTrend,
   computeKalmanTrend,
   emptyStates,
+  kalmanAt,
   kalmanRate,
   habitualWakeWindow,
   lateEatingCheck,
@@ -36,7 +36,6 @@ import {
   suggestedPrompts,
   tobaccoOf,
   tobaccoStats,
-  trendAt,
   type BedtimeCountdown,
   type EmptyStates,
   type LateEatingCheck,
@@ -67,14 +66,18 @@ export interface NutritionBaseline {
 }
 /** Weight trend card window (§1 #6 — "last 30 days"). */
 export const WEIGHT_CARD_DAYS = 30;
-/** Weigh-ins needed in the window before the trend card draws (task: "< 2 weigh-ins" → empty state). */
+/** Weigh-ins needed in the window before the trend figure draws (task: under 2 weigh-ins gives the empty state). */
 export const MIN_WEIGH_INS_FOR_CHART = 2;
+/** z for the 90% band around the Kalman level. */
+const Z90 = 1.645;
 
 export interface WeightSeries {
-  /** Daily scale weights (lb), null gaps — the faint dots. */
+  /** Daily scale weights (lb), null gaps — the hollow readings. */
   dots: Array<{ d: ISODate; value: number | null }>;
-  /** EWMA trend carried forward over the same dates (lb). */
+  /** The Kalman-smoothed level over the same dates (lb) — the drawn trend. */
   line: Array<{ d: ISODate; value: number | null }>;
+  /** The 90% band around that level (lb); absent on callers that only have a line. */
+  band?: Array<{ d: ISODate; lo: number | null; hi: number | null }>;
   /** Scale weigh-ins inside the window. */
   weighIns: number;
 }
@@ -123,7 +126,7 @@ export interface TodayModel {
 export function useTodayModel(): TodayModel & {
   actions: ReturnType<typeof useHealth>['actions'];
   storage: ReturnType<typeof useHealth>['state']['storage'];
-  /** Header banners (escalation → storage/backup → retest, max 2) — screens/today/banners.ts. */
+  /** Header banners (escalation, then storage/backup, then retest; max 2) — screens/today/banners.ts. */
   banners: TodayBanner[];
 } {
   const { state, actions } = useHealth();
@@ -145,29 +148,28 @@ export function useTodayModel(): TodayModel & {
   const model = useMemo<TodayModel>(() => {
     const ctx = buildCoachContext({ records, settings, today, now, workouts });
     const profile = settings.profile;
-    const alpha = settings.targets.ewmaAlpha;
     const todayRecord = ctx.todayRecord;
 
     const hrv7 = metricSeries(records, 'hrv', today, HRV_SPARK_DAYS).map((p) => p.v);
 
-    const trendMap = computeEwmaTrend(records, alpha, today);
+    // The drawn trend is the smoothed Kalman level with its 90% band — the same
+    // filter, with the same options, that the context's `kalmanLevel` and rate
+    // come from, so the figure, the lead and the interval can never disagree.
+    const kalman = smoothKalman(computeKalmanTrend(records, today, { cycle: { enabled: profile.tracksCycle === true } }));
     const dotsRaw = metricSeries(records, 'w', today, WEIGHT_CARD_DAYS);
     const weight: WeightSeries = {
       dots: dotsRaw.map((p) => ({ d: p.d, value: p.v })),
-      line: dotsRaw.map((p) => ({ d: p.d, value: trendAt(trendMap, p.d) ?? null })),
+      line: dotsRaw.map((p) => ({ d: p.d, value: kalmanAt(kalman, p.d)?.level ?? null })),
+      band: dotsRaw.map((p) => {
+        const k = kalmanAt(kalman, p.d);
+        return k ? { d: p.d, lo: k.level - Z90 * k.levelSd, hi: k.level + Z90 * k.levelSd } : { d: p.d, lo: null, hi: null };
+      }),
       weighIns: dotsRaw.filter((p) => p.v !== null).length,
     };
 
-    // Only when the context has no rate to show: the same filter, the same
-    // options, so the sentence and the (absent) interval can never disagree.
-    const rateReason =
-      ctx.weight.rateAvailable === false
-        ? kalmanRate(
-            smoothKalman(computeKalmanTrend(records, today, { cycle: { enabled: profile.tracksCycle === true } })),
-            today,
-            profile.weightLb,
-          ).reason
-        : null;
+    // Only when the context has no rate to show: the engine's own sentence for
+    // why, from the filter above.
+    const rateReason = ctx.weight.rateAvailable === false ? kalmanRate(kalman, today, profile.weightLb).reason : null;
 
     return {
       today,
