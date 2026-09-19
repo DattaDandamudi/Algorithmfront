@@ -3,33 +3,35 @@
  * in Log (SPEC §2 "logging must take seconds"; plan 2g).
  *
  * DAILY. Four 1–7 items (sleep quality, fatigue, stress, muscle soreness), each
- * as a seven-step scale with a WORDED ANCHOR AT BOTH ENDS and a word for the
- * chosen step — a bare "5" means nothing, "Fairly tired" does. Every step is a
+ * a row of the page (DESIGN.md "Log"): a running head with the item's name and
+ * its two worded anchors as the dateline ("1 very restful to 7 very
+ * restless"), then seven 44 px cells on a hairline divided by hairline ticks,
+ * the chosen cell bone with a 2 px ink underline, and the word for the chosen
+ * step beneath — a bare "5" means nothing, "Fairly tired" does. Every step is a
  * native radio (so arrow keys, `aria-checked` and grouping come free) inside a
- * 44 px label, and the scale is a SEGMENTED WELL: the track is sunken and the
- * chosen step is raised out of it (DESIGN.md), so selection is carried by
- * elevation plus the spoken word, never by hue alone.
+ * 44 px label (`h-11`, `.hx-label` numerals: both names are pinned), so
+ * selection is carried by the underline plus the spoken word, never by hue.
+ * "Lower is better on all four" is the section's dateline.
  *
  * Nothing is preselected: an untouched item stays "not answered yet" and is
  * simply not written, so the store never records a 4 the user did not choose.
  * Save is ONE `saveCheckIn` write for every answered item.
  *
- * "Skip today" is a first-class button beside Save, not a hidden escape. It
- * writes nothing — a skipped day is an absent day, which is exactly what the
- * engine's `missingToday` expects — and it can be undone in place.
+ * "Skip today" is a first-class outline key beside Save, not a hidden escape.
+ * It writes nothing — a skipped day is an absent day, which is exactly what
+ * the engine's `missingToday` expects — and it can be undone in place.
  *
  * WEEKLY / MONTHLY. The SRSS (eight items, Sundays) and the PSS-4 (four items,
- * once a month) are separate cards below the daily one, off unless Settings
- * turns them on and hidden again as soon as the week/month has an answer. They
- * reuse the daily idiom exactly — the same `Question` row, the same radios in
- * 44 px labels, the same "nothing preselected" rule — and they save through the
- * same `onSave` (`saveCheckIn`) write, each with its own Skip. What they store
- * is TOTALS, not items (see ./instruments): a subscale is all-or-nothing, so a
- * half-answered instrument writes nothing at all rather than a sum no other
- * week could be compared with.
+ * once a month) follow the daily block under their own running heads, off
+ * unless Settings turns them on and hidden again as soon as the week/month
+ * has an answer. They reuse the daily idiom exactly — the same `Question`
+ * row, the same radios in 44 px labels, the same "nothing preselected" rule —
+ * and they save through the same `onSave` (`saveCheckIn`) write, each with its
+ * own Skip. What they store is TOTALS, not items (see ./instruments): a
+ * subscale is all-or-nothing, so a half-answered instrument writes nothing at
+ * all rather than a sum no other week could be compared with.
  */
 import { useId, useState } from 'react';
-import { CheckCircle2, Pencil } from 'lucide-react';
 import type { CheckInItem, CheckInSettings, DailyRecord, ISODate } from '../../data/types';
 import { Button, SectionHeader } from '../../ui';
 import { CHECK_IN_META, HOOPER_MAX, checkInWord, hooperTotal, orderedCheckInItems } from '../stress/format';
@@ -81,12 +83,15 @@ export const PSS_TITLE = 'Monthly perceived stress';
 export const PSS_SAVE_LABEL = 'Save monthly scale';
 export const PSS_SKIP_LABEL = 'Skip this month';
 
+/** The section dateline: the one fact every scale here shares. */
+export const DAILY_DATELINE = 'Lower is better on all four';
+
 /** Only the totals are stored, so re-answering starts from a blank scale. */
 export const REANSWER_NOTE = 'Only the totals are kept, not the individual answers — answering again replaces them.';
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-/** "Very restful" → "very restful": the anchors read as a sentence fragment beside their number. */
+/** "Very restful" becomes "very restful": the anchors read as a sentence beside their numbers. */
 const lower = (s: string): string => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 
 type Answers = Partial<Record<CheckInItem, number>>;
@@ -130,7 +135,7 @@ export interface CheckInSectionProps {
   onSave: (values: CheckInWrite) => void;
   /** Fired when the user skips the DAILY check-in (writes nothing). */
   onSkip?: () => void;
-  /** Deep link into Settings → Check-in. */
+  /** Deep link into Settings, Check-in. */
   onOpenSettings?: () => void;
 }
 
@@ -138,33 +143,29 @@ export default function CheckInSection(props: CheckInSectionProps) {
   const { date, record, settings, records, onSave } = props;
   const known = records ?? (record ? [record] : []);
 
-  // A saved instrument keeps its card for the rest of the day so the answer can
-  // be read back (and redone); from tomorrow the gate below hides it.
+  // A saved instrument keeps its block for the rest of the day so the answer
+  // can be read back (and redone); from tomorrow the gate below hides it.
   const srssSavedToday = isNum(record?.srssR) || isNum(record?.srssS);
   const pssSavedToday = isNum(record?.pss4);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-10">
       <DailyCheckIn {...props} />
-      {(srssDue(date, settings, known) || (settings.weeklySrss && srssSavedToday)) && (
-        <WeeklySrssCard date={date} record={record} onSave={onSave} />
-      )}
-      {(pssDue(date, settings, known) || (settings.monthlyPss && pssSavedToday)) && (
-        <MonthlyPssCard date={date} record={record} onSave={onSave} />
-      )}
+      {(srssDue(date, settings, known) || (settings.weeklySrss && srssSavedToday)) && <WeeklySrss date={date} record={record} onSave={onSave} />}
+      {(pssDue(date, settings, known) || (settings.monthlyPss && pssSavedToday)) && <MonthlyPss date={date} record={record} onSave={onSave} />}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// The shared question row — one item, one radiogroup, anchors at both ends
+// The shared question row — one item, one radiogroup, anchors in the dateline
 // ---------------------------------------------------------------------------
 
 interface QuestionProps {
   label: string;
   /** The scale's own descriptive words for the item, when it has them. */
   hint?: string;
-  /** Read-out beside the label: the word for the pick, or UNANSWERED. */
+  /** Read-out under the scale: the word for the pick, or UNANSWERED. */
   answer: string;
   /** Accessible name of the radiogroup. */
   aria: string;
@@ -183,53 +184,51 @@ function Question({ label, hint, answer, aria, name, steps, wordAt, value, low, 
   const first = steps[0];
   const last = steps[steps.length - 1];
   return (
-    <div className="min-w-0 flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-2 min-w-0">
-        <span className="hx-label">{label}</span>
-        <span className={`text-[13px] leading-[18px] shrink-0 ${value === undefined ? 'text-hx-muted' : 'font-medium text-hx-text'}`}>{answer}</span>
+    <div className="min-w-0 flex flex-col">
+      {/* The running head, hand-set so a long PSS item can wrap instead of overflowing the measure;
+          the dateline keeps a 160 px basis so it drops under a long title rather than into a sliver beside it. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h3 className="hx-label shrink-0 max-w-full">{label}</h3>
+        <p className="hx-hedge min-w-0 grow basis-40 text-right">
+          {first} {lower(low)} to {last} {lower(high)}
+        </p>
       </div>
-      {hint && <p className="text-[13px] leading-[18px] text-hx-muted -mt-1">{hint}</p>}
-      {/* A segmented well: the track is sunken, the chosen step is raised out of
-          it (DESIGN.md "Material system"). Every step stays a 44 px label. */}
-      <div className="hx-well flex p-1 rounded-full" role="radiogroup" aria-label={aria}>
-        {steps.map((n) => {
+      {hint && <p className="hx-cap mt-1">{hint}</p>}
+      {/* Seven cells on a hairline, divided by ticks; the chosen one is bone with a 2 px ink underline. Every cell stays a 44 px label. */}
+      <div className="mt-3 flex border-b border-hx-border" role="radiogroup" aria-label={aria}>
+        {steps.map((n, i) => {
           const selected = value === n;
           return (
             <label key={n} className="relative flex-1 min-w-0 h-11 cursor-pointer">
               <input type="radio" name={name} value={n} checked={selected} onChange={() => onPick(n)} aria-label={`${n} — ${wordAt(n)}`} className="peer sr-only" />
               <span
-                className={`hx-display absolute inset-0 rounded-full flex items-center justify-center text-[15px] font-semibold transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-hx-lume ${
-                  selected ? 'hx-raised !rounded-full text-hx-text' : 'text-hx-text2 hover:text-hx-text'
+                className={`hx-label absolute inset-0 flex items-center justify-center peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-hx-lume ${
+                  selected ? 'text-hx-text' : 'hover:text-hx-text'
                 }`}
               >
                 {n}
+                {selected && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-hx-text" aria-hidden />}
               </span>
+              {i > 0 && <span className="absolute left-0 inset-y-3 w-px bg-hx-border" aria-hidden />}
             </label>
           );
         })}
       </div>
-      <div className="flex items-start justify-between gap-3 text-[13px] leading-[18px] text-hx-muted">
-        <span className="min-w-0">
-          {first}, {lower(low)}
-        </span>
-        <span className="min-w-0 text-right">
-          {last}, {lower(high)}
-        </span>
-      </div>
+      <p className={`hx-cap mt-2 ${value === undefined ? '' : 'text-hx-text'}`}>{answer}</p>
     </div>
   );
 }
 
-/** The "skipped, nothing written" state every card shares. */
-function SkippedCard({ title, caption, onUndo }: { title: string; caption: string; onUndo: () => void }) {
+/** The "skipped, nothing written" state the two instruments share. */
+function Skipped({ title, caption, onUndo }: { title: string; caption: string; onUndo: () => void }) {
   return (
-    <div className="hx-card p-4 flex flex-col gap-3">
-      <SectionHeader title={title} caption={caption} />
-      <p className="text-[15px] leading-[22px] text-hx-text2">Nothing was written — skipping simply leaves it unanswered.</p>
-      <Button variant="secondary" size="md" className="self-start" onClick={onUndo}>
+    <section className="flex flex-col" aria-label={title}>
+      <SectionHeader as="h3" title={title} caption={caption} />
+      <p className="hx-body text-hx-text2 mt-3">Nothing was written — skipping simply leaves it unanswered.</p>
+      <Button variant="ghost" size="sm" className="self-start mt-1" onClick={onUndo}>
         Answer it anyway
       </Button>
-    </div>
+    </section>
   );
 }
 
@@ -269,111 +268,108 @@ function DailyCheckIn({ date, record, settings, onSave, onSkip, onOpenSettings }
     onSkip?.();
   };
 
-  const caption =
-    savedCount > 0 && !draft.editing
-      ? `Saved for ${items.length === savedCount ? 'all four items' : `${savedCount} of ${items.length} items`}`
-      : '1 = best, 7 = worst on every item — about twenty seconds.';
-
   // --- nothing to ask -------------------------------------------------------
   if (items.length === 0) {
     return (
-      <div className="hx-card p-4 flex flex-col gap-3">
-        <SectionHeader title="Daily check-in" caption="No questions selected." />
-        <p className="text-[15px] leading-[22px] text-hx-text2">Pick which of the four items to ask under Settings → Check-in.</p>
+      <section className="flex flex-col" aria-label="Daily check-in">
+        <SectionHeader title="Daily check-in" caption="No questions selected" />
+        <p className="hx-body text-hx-text2 mt-4">Pick which of the four items to ask under Settings, Check-in.</p>
         {onOpenSettings && (
-          <Button variant="secondary" size="md" onClick={onOpenSettings} className="self-start">
+          <Button variant="secondary" size="md" onClick={onOpenSettings} className="self-start mt-3">
             Open Settings
           </Button>
         )}
-      </div>
+      </section>
     );
   }
 
   // --- skipped for today ----------------------------------------------------
   if (draft.skipped && savedCount === 0) {
     return (
-      <div className="hx-card p-4 flex flex-col gap-3">
-        <SectionHeader title="Daily check-in" caption="Skipped today — nothing was saved." />
-        <p className="text-[15px] leading-[22px] text-hx-text2">A skipped day is simply an absent day: it does not count against you and nothing was written.</p>
-        <Button variant="secondary" size="md" className="self-start" onClick={() => patch({ skipped: false })}>
+      <section className="flex flex-col" aria-label="Daily check-in">
+        <SectionHeader title="Daily check-in" caption={DAILY_DATELINE} />
+        <p className="hx-body text-hx-text2 mt-4">Skipped today — nothing was saved. A skipped day is simply an absent day: it does not count against you.</p>
+        <Button variant="ghost" size="sm" className="self-start mt-1" onClick={() => patch({ skipped: false })}>
           Check in anyway
         </Button>
-      </div>
+      </section>
     );
   }
 
   // --- already saved, not editing ------------------------------------------
   if (savedCount > 0 && !draft.editing) {
     return (
-      <div className="hx-card p-4 flex flex-col gap-3">
+      <section className="flex flex-col" aria-label="Daily check-in">
         <SectionHeader
           title="Daily check-in"
-          caption={caption}
+          caption={DAILY_DATELINE}
           action={
-            <Button variant="ghost" size="sm" icon={<Pencil aria-hidden />} onClick={() => patch({ editing: true })}>
+            <Button variant="ghost" size="sm" onClick={() => patch({ editing: true })}>
               Edit
             </Button>
           }
         />
-        <p className="flex items-center gap-2 text-[15px] leading-[22px] font-semibold text-hx-green">
-          <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
+        <p className="hx-ui text-hx-green mt-4">
+          <span className="hx-tone mr-1.5" aria-hidden />
           {total === null ? 'Checked in' : `Checked in, Hooper ${total} of ${HOOPER_MAX}`}
         </p>
-        <ul className="flex flex-col gap-1">
+        <ul className="mt-2">
           {items.map((k) => (
-            <li key={k} className="flex items-baseline justify-between gap-3 text-[13px] leading-[18px]">
-              <span className="text-hx-text2 min-w-0 truncate">{CHECK_IN_META[k].label}</span>
-              <span className="text-hx-text shrink-0">
-                {answers[k] === undefined ? UNANSWERED : `${checkInWord(k, answers[k])}, ${answers[k]}/7`}
-              </span>
+            <li key={k} className="flex items-baseline justify-between gap-3 py-2 border-t border-hx-border first:border-t-0">
+              <span className="hx-body min-w-0 truncate">{CHECK_IN_META[k].label}</span>
+              <span className="hx-label text-hx-text shrink-0">{answers[k] === undefined ? UNANSWERED : `${checkInWord(k, answers[k])}, ${answers[k]}/7`}</span>
             </li>
           ))}
         </ul>
-        <p className="text-[13px] leading-[18px] text-hx-muted">Lower is better on all four — the total is the Hooper index.</p>
-      </div>
+        <p className="hx-hedge mt-3">
+          {`Saved for ${items.length === savedCount ? 'all four items' : `${savedCount} of ${items.length} items`}. The total is the Hooper index.`}
+        </p>
+      </section>
     );
   }
 
   // --- the form -------------------------------------------------------------
   return (
-    <div className="hx-raised p-4 flex flex-col gap-4">
-      <SectionHeader title="Daily check-in" caption={caption} />
+    <section className="flex flex-col" aria-label="Daily check-in">
+      <SectionHeader title="Daily check-in" caption={DAILY_DATELINE} />
 
-      {items.map((key) => {
-        const meta = CHECK_IN_META[key];
-        const value = answers[key];
-        return (
-          <Question
-            key={key}
-            label={meta.label}
-            answer={value === undefined ? UNANSWERED : `${checkInWord(key, value)}, ${value}/7`}
-            aria={meta.aria}
-            name={`${groupId}-${key}`}
-            steps={STEPS}
-            wordAt={(n) => meta.words[n - 1]}
-            value={value}
-            low={meta.low}
-            high={meta.high}
-            onPick={(n) => setAnswer(key, n)}
-          />
-        );
-      })}
+      <div className="mt-4 flex flex-col gap-6">
+        {items.map((key) => {
+          const meta = CHECK_IN_META[key];
+          const value = answers[key];
+          return (
+            <Question
+              key={key}
+              label={meta.label}
+              answer={value === undefined ? UNANSWERED : `${checkInWord(key, value)}, ${value}/7`}
+              aria={meta.aria}
+              name={`${groupId}-${key}`}
+              steps={STEPS}
+              wordAt={(n) => meta.words[n - 1]}
+              value={value}
+              low={meta.low}
+              high={meta.high}
+              onPick={(n) => setAnswer(key, n)}
+            />
+          );
+        })}
+      </div>
 
-      <p className="text-[13px] leading-[18px] text-hx-text2" role="status">
+      <p className="hx-cap mt-4" role="status">
         {total === null
           ? `${answeredKeys.length} of ${items.length} answered — the Hooper total needs all ${items.length}.`
           : `Hooper total ${total} of ${HOOPER_MAX}, lower is better.`}
       </p>
 
-      <div className="flex flex-col gap-2">
-        <Button size="lg" fullWidth onClick={save} disabled={answeredKeys.length === 0}>
-          {SAVE_LABEL}
-        </Button>
-        <Button variant="secondary" size="md" fullWidth onClick={skip}>
+      <div className="mt-4 flex items-center gap-3">
+        <Button variant="secondary" size="lg" onClick={skip}>
           {SKIP_LABEL}
         </Button>
+        <Button size="lg" className="flex-1" onClick={save} disabled={answeredKeys.length === 0}>
+          {SAVE_LABEL}
+        </Button>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -391,13 +387,13 @@ interface InstrumentDraft<A> {
 
 const freshInstrument = <A,>(period: string, answers: A): InstrumentDraft<A> => ({ period, answers, editing: false, skipped: false });
 
-interface InstrumentCardProps {
+interface InstrumentProps {
   date: ISODate;
   record: DailyRecord | undefined;
   onSave: (values: CheckInWrite) => void;
 }
 
-function WeeklySrssCard({ date, record, onSave }: InstrumentCardProps) {
+function WeeklySrss({ date, record, onSave }: InstrumentProps) {
   const groupId = useId();
   const period = srssWeekStart(date);
   const [stored, setStored] = useState<InstrumentDraft<SrssAnswers>>(() => freshInstrument(period, {}));
@@ -421,64 +417,54 @@ function WeeklySrssCard({ date, record, onSave }: InstrumentCardProps) {
   };
 
   if (draft.skipped && !savedToday) {
-    return (
-      <SkippedCard
-        title={SRSS_TITLE}
-        caption="Skipped this week — nothing was saved."
-        onUndo={() => patch({ skipped: false })}
-      />
-    );
+    return <Skipped title={SRSS_TITLE} caption="Skipped this week — nothing was saved." onUndo={() => patch({ skipped: false })} />;
   }
 
   // --- answered today -------------------------------------------------------
   if (savedToday && !draft.editing) {
     return (
-      <div className="hx-card p-4 flex flex-col gap-3">
+      <section className="flex flex-col" aria-label={SRSS_TITLE}>
         <SectionHeader
           title={SRSS_TITLE}
-          caption="Saved for this week."
+          caption="Saved for this week"
           as="h3"
           action={
-            <Button variant="ghost" size="sm" icon={<Pencil aria-hidden />} onClick={() => patch({ editing: true, answers: {} })}>
+            <Button variant="ghost" size="sm" onClick={() => patch({ editing: true, answers: {} })}>
               Answer again
             </Button>
           }
         />
-        <p className="flex items-center gap-2 text-[15px] leading-[22px] font-semibold text-hx-green">
-          <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
+        <p className="hx-ui text-hx-green mt-4">
+          <span className="hx-tone mr-1.5" aria-hidden />
           {`Recovery ${savedR === null ? '—' : savedR}, stress ${savedS === null ? '—' : savedS}, out of ${SRSS_SUBSCALE_MAX} each`}
         </p>
-        <p className="text-[13px] leading-[18px] text-hx-muted">High recovery and low stress is the good corner. {REANSWER_NOTE}</p>
-      </div>
+        <p className="hx-hedge mt-2">High recovery and low stress is the good corner. {REANSWER_NOTE}</p>
+      </section>
     );
   }
 
   // --- the form -------------------------------------------------------------
   return (
-    <div className="hx-raised p-4 flex flex-col gap-4">
-      <SectionHeader
-        title={SRSS_TITLE}
-        as="h3"
-        caption="Eight items, 0 to 6, asked once a week — usually Sunday. About a minute."
-      />
-      {draft.editing && <p className="text-[13px] leading-[18px] text-hx-muted">{REANSWER_NOTE}</p>}
+    <section className="flex flex-col" aria-label={SRSS_TITLE}>
+      <SectionHeader title={SRSS_TITLE} as="h3" caption="Eight items, 0 to 6, asked once a week — usually Sunday. About a minute." />
+      {draft.editing && <p className="hx-hedge mt-2">{REANSWER_NOTE}</p>}
 
-      {(['recovery', 'stress'] as const).map((scale) => (
-        <SrssSubscale key={scale} scale={scale} groupId={groupId} answers={answers} onPick={setAnswer} />
-      ))}
+      <div className="mt-4 flex flex-col gap-8">
+        {(['recovery', 'stress'] as const).map((scale) => (
+          <SrssSubscale key={scale} scale={scale} groupId={groupId} answers={answers} onPick={setAnswer} />
+        ))}
+      </div>
 
-      <div className="flex flex-col gap-2">
-        <Button size="lg" fullWidth onClick={save} disabled={Object.keys(values).length === 0}>
-          {SRSS_SAVE_LABEL}
-        </Button>
-        <Button variant="secondary" size="md" fullWidth onClick={() => patch({ skipped: true, editing: false })}>
+      <div className="mt-6 flex items-center gap-3">
+        <Button variant="secondary" size="lg" onClick={() => patch({ skipped: true, editing: false })}>
           {SRSS_SKIP_LABEL}
         </Button>
+        <Button size="lg" className="flex-1" onClick={save} disabled={Object.keys(values).length === 0}>
+          {SRSS_SAVE_LABEL}
+        </Button>
       </div>
-      <p className="text-[13px] leading-[18px] text-hx-muted">
-        Each subscale is stored as its total out of {SRSS_SUBSCALE_MAX}, so a subscale is only saved once all four of its items are answered.
-      </p>
-    </div>
+      <p className="hx-hedge mt-3">Each subscale is stored as its total out of {SRSS_SUBSCALE_MAX}, so a subscale is only saved once all four of its items are answered.</p>
+    </section>
   );
 }
 
@@ -497,8 +483,8 @@ function SrssSubscale({
   const total = srssSubtotal(answers, scale);
   const answered = items.filter((i) => answers[i.key] !== undefined).length;
   return (
-    <div className="flex flex-col gap-4 min-w-0">
-      <p className="hx-label text-hx-text2">{SRSS_SCALE_LABEL[scale]}</p>
+    <div className="flex flex-col gap-6 min-w-0">
+      <p className="hx-ui text-hx-text">{SRSS_SCALE_LABEL[scale]}</p>
       {items.map((item) => {
         const value = answers[item.key];
         return (
@@ -518,7 +504,7 @@ function SrssSubscale({
           />
         );
       })}
-      <p className="text-[13px] leading-[18px] text-hx-text2" role="status">
+      <p className="hx-cap" role="status">
         {srssSubtotalLine(scale, total, answered)}
       </p>
     </div>
@@ -529,7 +515,7 @@ function SrssSubscale({
 // Monthly — PSS-4 (items 2 and 3 reverse-scored; see ./instruments)
 // ---------------------------------------------------------------------------
 
-function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
+function MonthlyPss({ date, record, onSave }: InstrumentProps) {
   const groupId = useId();
   const period = date.slice(0, 7);
   const [stored, setStored] = useState<InstrumentDraft<PssAnswers>>(() => freshInstrument(period, {}));
@@ -552,87 +538,77 @@ function MonthlyPssCard({ date, record, onSave }: InstrumentCardProps) {
   };
 
   if (draft.skipped && saved === null) {
-    return (
-      <SkippedCard
-        title={PSS_TITLE}
-        caption="Skipped this month — nothing was saved."
-        onUndo={() => patch({ skipped: false })}
-      />
-    );
+    return <Skipped title={PSS_TITLE} caption="Skipped this month — nothing was saved." onUndo={() => patch({ skipped: false })} />;
   }
 
   // --- answered this month --------------------------------------------------
   if (saved !== null && !draft.editing) {
     return (
-      <div className="hx-card p-4 flex flex-col gap-3">
+      <section className="flex flex-col" aria-label={PSS_TITLE}>
         <SectionHeader
           title={PSS_TITLE}
-          caption="Saved for this month."
+          caption="Saved for this month"
           as="h3"
           action={
-            <Button variant="ghost" size="sm" icon={<Pencil aria-hidden />} onClick={() => patch({ editing: true, answers: {} })}>
+            <Button variant="ghost" size="sm" onClick={() => patch({ editing: true, answers: {} })}>
               Answer again
             </Button>
           }
         />
-        <p className="flex items-center gap-2 text-[15px] leading-[22px] font-semibold text-hx-green">
-          <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
+        <p className="hx-ui text-hx-green mt-4">
+          <span className="hx-tone mr-1.5" aria-hidden />
           {`PSS-4 ${saved} of ${PSS_MAX}`}
         </p>
-        <p className="text-[13px] leading-[18px] text-hx-muted">
+        <p className="hx-hedge mt-2">
           That is {pss4Reading(saved)} — a description of the month, not a diagnosis. {REANSWER_NOTE}
         </p>
-      </div>
+      </section>
     );
   }
 
   // --- the form -------------------------------------------------------------
   return (
-    <div className="hx-raised p-4 flex flex-col gap-4">
-      <SectionHeader
-        title={PSS_TITLE}
-        as="h3"
-        caption="Four items asked once a month — they ask about the last month, which is why they are never asked daily."
-      />
-      <p className="text-[15px] leading-[22px] text-hx-text2">{PSS_STEM}</p>
-      {draft.editing && <p className="text-[13px] leading-[18px] text-hx-muted">{REANSWER_NOTE}</p>}
+    <section className="flex flex-col" aria-label={PSS_TITLE}>
+      <SectionHeader title={PSS_TITLE} as="h3" caption="Four items asked once a month — they ask about the last month, which is why they are never asked daily." />
+      <p className="hx-body text-hx-text mt-4">{PSS_STEM}</p>
+      {draft.editing && <p className="hx-hedge mt-2">{REANSWER_NOTE}</p>}
 
-      {PSS_ITEMS.map((item) => {
-        const value = answers[item.key];
-        return (
-          <Question
-            key={item.key}
-            label={item.label}
-            // The read-out names the RAW pick even on the two reverse-scored
-            // items: the flip belongs to the total, never to what is shown.
-            answer={value === undefined ? UNANSWERED : `${pssWord(value)}, ${value}/${PSS_MAX_STEP}`}
-            aria={item.aria}
-            name={`${groupId}-${item.key}`}
-            steps={PSS_STEPS}
-            wordAt={(n) => pssWord(n)}
-            value={value}
-            low={PSS_LOW}
-            high={PSS_HIGH}
-            onPick={(n) => setAnswer(item.key, n)}
-          />
-        );
-      })}
+      <div className="mt-4 flex flex-col gap-6">
+        {PSS_ITEMS.map((item) => {
+          const value = answers[item.key];
+          return (
+            <Question
+              key={item.key}
+              label={item.label}
+              // The read-out names the RAW pick even on the two reverse-scored
+              // items: the flip belongs to the total, never to what is shown.
+              answer={value === undefined ? UNANSWERED : `${pssWord(value)}, ${value}/${PSS_MAX_STEP}`}
+              aria={item.aria}
+              name={`${groupId}-${item.key}`}
+              steps={PSS_STEPS}
+              wordAt={(n) => pssWord(n)}
+              value={value}
+              low={PSS_LOW}
+              high={PSS_HIGH}
+              onPick={(n) => setAnswer(item.key, n)}
+            />
+          );
+        })}
+      </div>
 
-      <p className="text-[13px] leading-[18px] text-hx-text2" role="status">
+      <p className="hx-cap mt-4" role="status">
         {pss4Line(total, answered)}
       </p>
 
-      <div className="flex flex-col gap-2">
-        <Button size="lg" fullWidth onClick={save} disabled={Object.keys(values).length === 0}>
-          {PSS_SAVE_LABEL}
-        </Button>
-        <Button variant="secondary" size="md" fullWidth onClick={() => patch({ skipped: true, editing: false })}>
+      <div className="mt-4 flex items-center gap-3">
+        <Button variant="secondary" size="lg" onClick={() => patch({ skipped: true, editing: false })}>
           {PSS_SKIP_LABEL}
         </Button>
+        <Button size="lg" className="flex-1" onClick={save} disabled={Object.keys(values).length === 0}>
+          {PSS_SAVE_LABEL}
+        </Button>
       </div>
-      <p className="text-[13px] leading-[18px] text-hx-muted">
-        Stored as one total out of {PSS_MAX}, so nothing is saved until all four are answered. It describes how the month felt — it is not a diagnosis.
-      </p>
-    </div>
+      <p className="hx-hedge mt-3">Stored as one total out of {PSS_MAX}, so nothing is saved until all four are answered. It describes how the month felt — it is not a diagnosis.</p>
+    </section>
   );
 }

@@ -1,5 +1,6 @@
 /**
- * EstimateSheet — the editable macro card (SPEC §2 / §9).
+ * EstimateSheet — the editable macro card (SPEC §2 / §9), a plate with a
+ * running head inside (DESIGN.md "Sheet").
  *
  * One component serves every path so "edit" always looks like "log":
  *   - AI bar result: N items, clarify question, source note, re-estimate busy state
@@ -8,10 +9,13 @@
  *   - Photo: N items with a mandatory grams confirm (`requireGramsConfirm`)
  *   - Meal edit: one item pre-filled from the stored meal, plus Delete
  *
- * §9 rules: confidence chip High ≥0.8 green / Med 0.5–0.79 yellow / Low <0.5
- * neutral (`confidenceBand`); low confidence shows each macro as value ±25 %
- * next to its editable field plus quick portion-confirm chips; `assumptions`
- * is a tappable subtitle that expands; every value is editable before save.
+ * §9 rules: the confidence band (High ≥0.8 green / Med 0.5–0.79 yellow / Low
+ * <0.5 neutral, `confidenceBand`) is a word in its tone with a tone square,
+ * not a pill; low confidence shows each macro as value ±25 % under its
+ * editable field plus quick portion-confirm tags; `assumptions` is a tappable
+ * hedge that expands; every value is editable before save. Items divide by
+ * hairlines; the total sits under a double hairline; the clarify question is
+ * a note with the question word first; fields are underline fields.
  *
  * Draft state lives in `estimateDraft.ts` rows: grams re-scale from an
  * immutable base (never from a zeroed item), each row keeps its own original
@@ -23,11 +27,11 @@
  * another; the time picker is a native <input type="time">.
  */
 import { useEffect, useId, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, ChevronUp, Trash2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { FoodEstimateItem, HHMM } from '../../data/types';
 import { confidenceBand } from '../../ai/foodLocal';
 import { fmt, round } from '../../lib/format';
-import { Button, Chip, Sheet, Stepper } from '../../ui';
+import { Button, Chip, Sheet, Stepper, bandText } from '../../ui';
 import {
   GRAM_STEP,
   createDraft,
@@ -70,16 +74,9 @@ export interface EstimateSheetProps {
 /**
  * One-tap answers for the clarify question (§9: a single prompt with quick
  * answers). They cover the two things that move an estimate most — portion
- * size and home vs restaurant preparation; anything else goes in the box.
+ * size and home vs restaurant preparation; anything else goes in the field.
  */
 const QUICK_ANSWERS = ['about 150 g', 'about 250 g', 'about 400 g', 'home-cooked', 'restaurant'] as const;
-
-/** §9 confidence badge — a static pill, not a button (R6-11), same washes as Chip's active state. */
-const BADGE: Record<'green' | 'yellow' | 'neutral', string> = {
-  green: 'bg-hx-green/15 text-hx-green border-hx-green/40',
-  yellow: 'bg-hx-yellow/15 text-hx-yellow border-hx-yellow/40',
-  neutral: 'bg-hx-neutral/15 text-hx-text border-hx-neutral/40',
-};
 
 /** Quick portion-confirm multipliers relative to the original estimate (§2 small/medium/large vocabulary). */
 const PORTIONS: Array<{ label: string; k: number }> = [
@@ -121,27 +118,21 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
       onClose={onClose}
       title={title}
       footer={
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {blocker && rows.length > 0 && (
-            <p className="text-[13px] leading-[18px] text-hx-yellow" role="status">
+            <p className="hx-cap text-hx-yellow" role="status">
               {blocker}
             </p>
           )}
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-3">
+            <label className="flex items-baseline gap-2 shrink-0">
               {/* Edit mode also carries Delete — the visible label gives way so "Save changes" stays on one line at 390 px. */}
               <span className={mode === 'edit' ? 'sr-only' : 'hx-label'}>Time</span>
-              <input
-                type="time"
-                value={draftTime}
-                onChange={(e) => setDraftTime(normaliseTime(e.target.value, draftTime))}
-                className="hx-display h-11 px-2 font-semibold w-[136px]"
-                aria-label="Time eaten"
-              />
+              <input type="time" value={draftTime} onChange={(e) => setDraftTime(normaliseTime(e.target.value, draftTime))} className="hx-display w-[112px] px-0" aria-label="Time eaten" />
             </label>
             {mode === 'edit' && onDelete && (
-              <Button variant="danger" size="md" onClick={onDelete} aria-label="Delete this entry" icon={<Trash2 aria-hidden />}>
-                <span className="sr-only">Delete</span>
+              <Button variant="danger" size="md" onClick={onDelete} aria-label="Delete this entry">
+                Delete
               </Button>
             )}
             <Button className="flex-1" size="md" loading={busy} disabled={!canSave} onClick={() => onSave(draftItems(rows), draftTime)}>
@@ -151,20 +142,22 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
         </div>
       }
     >
-      <div className="space-y-3" aria-busy={busy || undefined}>
-        {note && <p className="text-[15px] leading-[22px] text-hx-yellow">{note}</p>}
+      <div className="flex flex-col gap-4" aria-busy={busy || undefined}>
+        {note && <p className="hx-hedge">{note}</p>}
 
         {clarify && onClarify && (
-          <div className="rounded-tile border border-hx-blue/40 bg-hx-blue/10 p-3.5">
-            <p className="text-[15px] leading-[22px] text-hx-text">{clarify}</p>
-            <div className="mt-2 flex gap-1.5 flex-wrap" role="group" aria-label="Quick answers">
+          <div className="hx-note border-hx-blue flex flex-col gap-3">
+            <p className="hx-body">
+              <span className="hx-label text-hx-blue">Question</span> <span>{clarify}</span>
+            </p>
+            <div className="flex gap-2 flex-wrap" role="group" aria-label="Quick answers">
               {QUICK_ANSWERS.map((a) => (
                 <Chip key={a} size="sm" color="blue" onClick={() => onClarify(a)} disabled={busy}>
                   {a}
                 </Chip>
               ))}
             </div>
-            <div className="mt-2 flex gap-2">
+            <div className="flex items-end gap-3">
               <input
                 type="text"
                 value={answer}
@@ -176,7 +169,7 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
                   }
                 }}
                 placeholder="e.g. about 300 g, home-cooked"
-                className="flex-1 h-11 px-3"
+                className="flex-1 min-w-0 px-0"
                 aria-label="Answer to the clarifying question"
                 disabled={busy}
               />
@@ -187,26 +180,35 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
           </div>
         )}
 
-        {rows.length === 0 && <p className="text-[15px] leading-[22px] text-hx-muted py-6">Nothing left to save.</p>}
+        {rows.length === 0 && <p className="hx-hedge py-6">Nothing left to save.</p>}
 
-        {rows.map((row) => (
-          <ItemEditor
-            key={row.id}
-            row={row}
-            showConfidence={mode === 'new' || row.item.confidence < 1}
-            forceRange={requireGramsConfirm}
-            onChange={update}
-            onRemove={mode === 'new' && rows.length > 1 ? () => remove(row.id) : undefined}
-            disabled={busy}
-          />
+        {rows.map((row, i) => (
+          <div key={row.id} className="flex flex-col gap-4">
+            {i > 0 && <div className="hx-hair" aria-hidden />}
+            <ItemEditor
+              row={row}
+              showConfidence={mode === 'new' || row.item.confidence < 1}
+              forceRange={requireGramsConfirm}
+              onChange={update}
+              onRemove={mode === 'new' && rows.length > 1 ? () => remove(row.id) : undefined}
+              disabled={busy}
+            />
+          </div>
         ))}
 
         {rows.length > 1 && (
-          <div className="flex flex-col gap-0.5 px-1 pt-1">
-            <span className="hx-label">Total</span>
-            <span className="hx-display text-[15px] leading-[22px] font-semibold text-hx-text">
-              {fmt(totals.kc)} kcal, {fmt(totals.p)} g protein, {fmt(totals.f)} g fat, {fmt(totals.c)} g carbs, {fmt(totals.fi, 1)} g fiber
-            </span>
+          <div>
+            <div className="hx-hair-2" aria-hidden />
+            <div className="pt-2 flex items-baseline justify-between gap-3">
+              <span className="hx-body">Total</span>
+              <span className="hx-fig-sm text-hx-text text-right whitespace-nowrap">
+                {fmt(totals.kc)}
+                <span className="hx-unit">kcal</span>
+              </span>
+            </div>
+            <p className="hx-cap mt-1">
+              {fmt(totals.p)} g protein, {fmt(totals.f)} g fat, {fmt(totals.c)} g carbs, {fmt(totals.fi, 1)} g fiber
+            </p>
           </div>
         )}
       </div>
@@ -221,7 +223,7 @@ export default function EstimateSheet({ open, title, items, time, clarify, note,
 interface ItemEditorProps {
   row: DraftRow;
   showConfidence: boolean;
-  /** Show the ± range and portion chips regardless of band (photo flow). */
+  /** Show the ± range and portion tags regardless of band (photo flow). */
   forceRange: boolean;
   onChange: (next: DraftRow) => void;
   onRemove?: () => void;
@@ -246,19 +248,20 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
   const hint = low ? 'Low confidence — values shown ±25 %; confirm the portion' : forceRange ? 'From a photo — the portion is a guess; confirm the grams' : null;
 
   return (
-    <div className="hx-card p-3.5 space-y-3">
-      <div className="flex items-start gap-2">
+    <div className="flex flex-col gap-3">
+      <div className="flex items-end gap-3">
         <input
           type="text"
           value={item.name}
           onChange={(e) => onChange(setRowName(row, e.target.value))}
-          className="flex-1 min-w-0 h-11 px-3 font-semibold"
+          className="flex-1 min-w-0 px-0 font-semibold"
           aria-label="Food name"
           disabled={disabled}
         />
         {showConfidence && (
-          <span className={`mt-1.5 shrink-0 inline-flex items-center h-8 px-3 rounded-full border text-[13px] font-medium ${BADGE[band.color]}`}>
+          <span className={`hx-label shrink-0 pb-3 ${bandText(band.color)}`}>
             <span className="sr-only">Confidence </span>
+            {band.color !== 'neutral' && <span className="hx-tone mr-1.5" aria-hidden />}
             {band.label}
           </span>
         )}
@@ -267,10 +270,10 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
             type="button"
             onClick={onRemove}
             aria-label={`Remove ${item.name || 'item'}`}
-            className="w-11 h-11 -mr-1.5 shrink-0 inline-flex items-center justify-center rounded-ctl text-hx-muted hover:text-hx-text hover:bg-hx-card2"
+            className="w-11 h-11 shrink-0 inline-flex items-center justify-center text-hx-text2 hover:text-hx-text"
             disabled={disabled}
           >
-            <X className="w-4 h-4" aria-hidden />
+            <X className="w-4 h-4" strokeWidth={1.5} aria-hidden />
           </button>
         )}
       </div>
@@ -280,16 +283,15 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="w-full flex items-start gap-1.5 text-left text-[15px] leading-[22px] text-hx-text2 min-h-[44px] py-2 -my-2"
+          className="hx-hedge w-full min-h-[44px] py-2 -my-2 text-left underline decoration-1 underline-offset-[3px] hover:text-hx-text"
         >
           <span className={expanded ? '' : 'line-clamp-1'}>{item.assumptions}</span>
-          {expanded ? <ChevronUp className="w-4 h-4 mt-0.5 shrink-0 text-hx-muted" aria-hidden /> : <ChevronDown className="w-4 h-4 mt-0.5 shrink-0 text-hx-muted" aria-hidden />}
         </button>
       )}
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Stepper value={item.grams} onChange={(g) => onChange(setRowGrams(row, g))} step={GRAM_STEP} min={GRAM_STEP} unit="g" label={`Grams of ${item.name || 'item'}`} disabled={disabled} />
-        {hint && <span className="text-[13px] leading-[18px] text-hx-text2">{hint}</span>}
+        {hint && <span className="hx-cap">{hint}</span>}
       </div>
 
       {showRange && row.estimatedGrams > 0 && (
@@ -305,7 +307,7 @@ function ItemEditor({ row, showConfidence, forceRange, onChange, onRemove, disab
         </div>
       )}
 
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="grid grid-cols-5 gap-x-3">
         {FIELDS.map((f) => (
           <NumField
             key={f.key}
@@ -357,7 +359,7 @@ function NumField({ label, ariaLabel, value, dp, range, onCommit, disabled }: Nu
 
   return (
     <label className="flex flex-col items-stretch gap-1 min-w-0">
-      <span className="hx-label block text-center truncate">{label}</span>
+      <span className="hx-label block truncate">{label}</span>
       <input
         type="text"
         inputMode="decimal"
@@ -373,12 +375,12 @@ function NumField({ label, ariaLabel, value, dp, range, onCommit, disabled }: Nu
             (e.target as HTMLInputElement).blur();
           }
         }}
-        className="hx-display h-11 w-full px-1 text-center font-semibold"
+        className="hx-display w-full px-0"
         aria-label={ariaLabel}
         aria-describedby={range !== undefined ? rangeId : undefined}
       />
       {range !== undefined && (
-        <span id={rangeId} className="hx-display text-[13px] leading-4 text-center text-hx-text2 truncate">
+        <span id={rangeId} className="hx-agate truncate">
           ±{fmt(range, dp)}
         </span>
       )}

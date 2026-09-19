@@ -1,5 +1,8 @@
 /**
- * BarcodeSheet — SPEC §2 "Barcode (secondary)".
+ * BarcodeSheet — SPEC §2 "Barcode (secondary)", a plate with a running head
+ * inside (DESIGN.md "Sheet"): an underline field for the digits with the
+ * "Look up" ink key beside it, the camera preview square-cornered, notices as
+ * notes with the tone word first.
  *
  * Manual entry (numeric code + Look up) works everywhere. On browsers with
  * the Shape Detection API (`'BarcodeDetector' in window`: Chrome/Edge/
@@ -12,7 +15,6 @@
  * and an in-flight lookup is aborted on close.
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Camera, Loader2, Search } from 'lucide-react';
 import type { FoodEstimate } from '../../data/types';
 import { lookupBarcode, normaliseBarcode } from '../../ai/barcode';
 import { Button, Sheet } from '../../ui';
@@ -23,7 +25,7 @@ export interface BarcodeSheetProps {
   onClose: () => void;
   /** A product was found — the caller opens the estimate sheet with it. */
   onResult: (est: FoodEstimate, code: string) => void;
-  /** Close and focus the text bar. */
+  /** Close and focus the text field. */
   onUseTextBar: () => void;
 }
 
@@ -63,7 +65,7 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
       const est = await lookupBarcode(digits, ac.signal);
       if (ac.signal.aborted) return;
       if (!est) {
-        setMsg({ kind: 'info', text: `No nutrition data for ${digits} on Open Food Facts — type the label values into the text bar instead.` });
+        setMsg({ kind: 'info', text: `No nutrition data for ${digits} on Open Food Facts — type the label values into the meal field instead.` });
       } else {
         setCode('');
         onResultRef.current(est, digits);
@@ -166,7 +168,7 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
       onClose={onClose}
       title="Scan a barcode"
       footer={
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <Button variant="secondary" className="flex-1" onClick={onClose}>
             Close
           </Button>
@@ -176,13 +178,13 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
         </div>
       }
     >
-      <div className="space-y-3">
-        <p className="text-[15px] leading-[22px] text-hx-text2">
+      <div className="flex flex-col gap-4">
+        <p className="hx-body text-hx-text2">
           Packaged food only — reads the label values from <span className="text-hx-text">Open Food Facts</span>, a public database. No account; only the barcode digits are sent, and only when
-          you look one up. Restaurant dishes go in the text bar.
+          you look one up. Restaurant dishes go in the meal field.
         </p>
 
-        <form onSubmit={submit} className="flex gap-2">
+        <form onSubmit={submit} className="flex items-end gap-3">
           <input
             type="text"
             inputMode="numeric"
@@ -194,41 +196,43 @@ export default function BarcodeSheet({ open, onClose, onResult, onUseTextBar }: 
             }}
             placeholder="Digits under the bars"
             aria-label="Barcode number"
-            className="hx-display flex-1 min-w-0 h-11 px-3 font-semibold"
+            className="hx-display flex-1 min-w-0 px-0"
             disabled={busy}
           />
-          <Button type="submit" size="md" loading={busy} disabled={!valid || busy} icon={<Search aria-hidden />}>
+          <Button type="submit" size="md" loading={busy} disabled={!valid || busy}>
             Look up
           </Button>
         </form>
 
         {scanning ? (
-          <div className="space-y-2">
-            <video ref={videoRef} className="w-full aspect-[4/3] rounded-tile bg-black object-cover" muted playsInline autoPlay aria-label="Camera preview — point it at the barcode" />
+          <div className="flex flex-col gap-3">
+            <video ref={videoRef} className="w-full aspect-[4/3] bg-black object-cover" muted playsInline autoPlay aria-label="Camera preview — point it at the barcode" />
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[15px] leading-[22px] text-hx-text2">Point the camera at the barcode — it locks on by itself.</p>
+              <p className="hx-body text-hx-text2">Point the camera at the barcode — it locks on by itself.</p>
               <Button variant="secondary" size="md" onClick={stopScan}>
                 Stop
               </Button>
             </div>
           </div>
         ) : supported ? (
-          <Button variant="secondary" size="lg" fullWidth icon={<Camera aria-hidden />} onClick={() => void startScan()} disabled={busy}>
+          <Button variant="secondary" size="lg" fullWidth onClick={() => void startScan()} disabled={busy}>
             Scan with camera
           </Button>
         ) : (
-          <p className="text-[13px] leading-[18px] text-hx-muted">Camera scanning needs a browser with barcode detection (Chrome, Edge, Safari 17+). Typing the number works everywhere.</p>
+          <p className="hx-hedge">Camera scanning needs a browser with barcode detection (Chrome, Edge, Safari 17+). Typing the number works everywhere.</p>
         )}
 
         {busy && (
-          <p role="status" className="flex items-center gap-2 text-[15px] leading-[22px] text-hx-text2">
-            <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> Looking up {normaliseBarcode(code)}…
+          <p role="status" className="hx-cap">
+            Looking up {normaliseBarcode(code)}…
           </p>
         )}
         {msg && (
-          <p role={msg.kind === 'error' ? 'alert' : 'status'} className={`text-[15px] leading-[22px] ${msg.kind === 'error' ? 'text-hx-red' : 'text-hx-yellow'}`}>
-            {msg.text}
-          </p>
+          <div role={msg.kind === 'error' ? 'alert' : 'status'} className={`hx-note ${msg.kind === 'error' ? 'border-hx-red' : 'border-hx-yellow'}`}>
+            <p className="hx-body">
+              <span className={`hx-label ${msg.kind === 'error' ? 'text-hx-red' : 'text-hx-yellow'}`}>{msg.kind === 'error' ? 'Problem' : 'Note'}</span> <span>{msg.text}</span>
+            </p>
+          </div>
         )}
       </div>
     </Sheet>

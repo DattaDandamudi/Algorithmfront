@@ -1,25 +1,30 @@
 /**
- * Log — SPEC §2 "logging must take seconds", laid out as the bento in
- * DESIGN.md. Log is the screen you ACT on, so its tiles are raised glass and
- * only the readings (the meals list, the running totals) are cards:
+ * Log — SPEC §2 "logging must take seconds", set as a page of the black-stock
+ * edition (DESIGN.md "Log"): one column, 20 px margins, three ink rules and
+ * then space.
  *
- *  ai bar      span-2, raised   the natural-language entry → EstimateSheet
- *  fast paths  span-2 (nested)  Repeat yesterday, Recents, Favorites, then
- *                               Barcode and Photo as a 1×1 pair
- *  meals       span-2, cards    today's entries by time + totals vs targets
- *  check-in    span-2           the Hooper items settings asks for; always
- *                               reachable here — `settings.checkIn.enabled`
- *                               only governs Today's prompt
- *  weight      span-2
- *  tobacco     span-2
- *  caffeine    span-2           its cutoff warning is a sentence, so it is wide
- *  bedtime, water   the 1×1 pair: one number and one control each
+ *  masthead             "Log" in .hx-masthead, the eating day as dateline,
+ *                       "93 g protein left, 882 kcal left" in .hx-cap
+ *  Log a meal           the AI estimate field — the tab's one tipped-in
+ *                       surface — with the Estimate ink key → EstimateSheet
+ *  fast paths           Repeat yesterday (a ledger row), Recents and
+ *                       Favorites (rows of food columns), Barcode and Photo
+ *                       (ledger rows with a verb)
+ *  ── Meals             the eating day's entries as a ledger, totals under a
+ *                       double hairline
+ *  ── Daily check-in    the Hooper items settings asks for; always reachable
+ *                       here — `settings.checkIn.enabled` only governs
+ *                       Today's prompt
+ *  ── Weight            the stepper, the ink key, the trend ledger
+ *  Water, Tobacco, Caffeine, Bedtime   each under a running head with 40 px
+ *                       of space above it
+ *  colophon             the medical line under a hairline
  *
  * This file owns state and every store write; the pieces under ./log are
  * presentational. Numbers come from the store through the engine context
  * (`buildCoachContext`), memoised per minute (`useNow()`) and per data change
  * — never rebuilt on a keystroke. Nothing is written until the user taps
- * Save / +1 / a food card (§2 "every AI estimate is editable before save").
+ * Save / + / a food column (§2 "every AI estimate is editable before save").
  *
  * Two "days" (R7-1):
  *  - `today`   the calendar date — weight, tobacco, water and caffeine live here.
@@ -30,10 +35,10 @@
  *    Today screen and the engine keep their calendar-day context unchanged.
  *
  * One EstimateSheet serves five flows so "edit" looks like "log":
- *  - 'ai'      text bar result (N items, clarify row, source note)
+ *  - 'ai'      text field result (N items, clarify row, source note)
  *  - 'portion' a favourite / recent with a grams stepper
  *  - 'barcode' a packaged food from Open Food Facts (ai/barcode.ts)
- *  - 'photo'   Claude's read of a photo (ai/foodImage.ts) with a mandatory grams confirm
+ *  - 'photo'   the AI's read of a photo (ai/foodImage.ts) with a mandatory grams confirm
  *  - 'edit'    an existing entry (plus Delete)
  * Barcode and Photo first open their own secondary sheet (code / camera);
  * the result closes it and opens the EstimateSheet (nested sheets are not
@@ -41,8 +46,9 @@
  * was opened for (`date`), so a save after midnight still lands there (R7-2).
  *
  * Deep links: `useNav().logSection` scrolls the matching section into view,
- * focuses its field ('meal' → the AI bar, 'weight' → the weight input) and
- * flashes a ring, then is consumed so the next visit starts at the top.
+ * focuses its field ('meal' → the AI field, 'weight' → the weight input) and
+ * draws the 2 px lume ring around the section for a moment, then is consumed
+ * so the next visit starts at the top.
  */
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AISettings, DailyRecord, FoodEstimate, FoodEstimateItem, FoodItem, HHMM, ISODate, Meal, MealSource } from '../data/types';
@@ -123,14 +129,14 @@ interface SheetState {
 
 const CLOSED: SheetState = { open: false, kind: 'ai', title: '', items: [], time: '12:00', date: '', clarify: null, note: null, src: 'manual' };
 
-/** Copy for a text-bar submit the parser could not turn into food. */
+/** Copy for a text-field submit the parser could not turn into food. */
 const NO_FOOD_QUESTION = 'Could not find a food in that — add a dish name and an amount, e.g. "250 g biryani".';
-/** Copy when Claude saw no food in the photo and asked nothing. */
+/** Copy when the AI saw no food in the photo and asked nothing. */
 const NO_FOOD_IN_PHOTO = 'No food recognised in that photo — try a closer shot of the plate, or type it.';
 /** Toast when an edit/delete finds its entry already gone (the store would silently no-op). */
 const ENTRY_GONE = 'That entry was already removed — nothing changed';
 
-/** How long a deep-linked section keeps its highlight ring. */
+/** How long a deep-linked section keeps its ring. */
 const FLASH_MS = 1600;
 /** Delay before focusing after a sheet closes (its focus-return runs first). */
 const FOCUS_AFTER_SHEET_MS = 80;
@@ -238,7 +244,7 @@ export default function Log() {
   const clientStatus = clientSlot.status;
   const clientError = clientSlot.error;
 
-  // After AI_LOAD_WAIT_MS of loading, stop blocking the buttons — the local parser answers meanwhile.
+  // After AI_LOAD_WAIT_MS of loading, stop blocking the keys — the local parser answers meanwhile.
   const [slowLoad, setSlowLoad] = useState(false);
   useEffect(() => {
     if (clientStatus !== 'loading') {
@@ -252,7 +258,7 @@ export default function Log() {
   /** Why a configured key still has no client right now — for the estimate note and toast. */
   const noClientReason = clientStatus === 'error' ? (clientError ?? CLIENT_LOAD_FALLBACK) : 'the AI module is still loading';
 
-  // --- AI bar + sheet ---------------------------------------------------------
+  // --- AI field + sheet -------------------------------------------------------
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -296,7 +302,7 @@ export default function Log() {
         if (!alive.current) return;
         if (est.items.length === 0) {
           const q = est.clarify ?? NO_FOOD_QUESTION;
-          // Inside a clarification round-trip keep the sheet and ask there; otherwise ask under the bar.
+          // Inside a clarification round-trip keep the sheet and ask there; otherwise ask under the field.
           setSheet((s) => (s.open ? { ...s, clarify: q } : s));
           if (!keepTime) setQuestion(q);
           return;
@@ -306,7 +312,7 @@ export default function Log() {
           kind: 'ai',
           title: est.items.length > 1 ? `Check ${est.items.length} items` : 'Check the estimate',
           items: est.items,
-          // The AI bar's time is the real clock; the day is the eating day (a clarification keeps both).
+          // The AI field's time is the real clock; the day is the eating day (a clarification keeps both).
           time: keepTime ?? clockNow(),
           date: keepTime && s.open ? s.date : mealDayNow(),
           clarify: est.clarify,
@@ -500,7 +506,7 @@ export default function Log() {
     toast(was ? `Removed ${item.name} from favorites` : `Starred ${item.name}`);
   };
 
-  // --- Meals list -------------------------------------------------------------
+  // --- Meals ledger -----------------------------------------------------------
   const editMeal = (m: Meal) =>
     setSheet({
       open: true,
@@ -508,22 +514,13 @@ export default function Log() {
       title: 'Edit entry',
       items: [mealToEstimateItem(m)],
       time: m.t,
-      // The list shows `mealDay`'s meals, so that is where this entry lives.
+      // The ledger shows `mealDay`'s meals, so that is where this entry lives.
       date: mealDay,
       clarify: null,
       note: null,
       src: m.src ?? 'manual',
       meal: m,
     });
-
-  const deleteMeal = (m: Meal) => {
-    if (!hasMeal(mealDay, m.id)) {
-      toast(ENTRY_GONE, 'warn');
-      return;
-    }
-    actions.removeMeal(mealDay, m.id);
-    toast(`Deleted ${m.n}`);
-  };
 
   // --- Weight / tobacco / bedtime / caffeine / water (calendar day) -----------
   const saveWeight = (lb: number) => {
@@ -559,7 +556,7 @@ export default function Log() {
     toast('Bedtime cleared');
   };
 
-  /** `picked` is the user's time from the card, or null for the wall clock at the tap (R1-15). */
+  /** `picked` is the user's time from the section, or null for the wall clock at the tap (R1-15). */
   const logCaffeine = (picked: HHMM | null) => {
     const t = picked ?? clockNow();
     actions.logCaffeine(today, t);
@@ -604,7 +601,7 @@ export default function Log() {
     if (!logSection) return;
     const section = logSection;
     consumeLogSection();
-    // 'meal' focuses the AI bar instead of scrolling to a card; everything
+    // 'meal' focuses the AI field instead of scrolling to a section; everything
     // else scrolls its section into view ('checkin' → CheckInSection, 2g).
     const targets: Record<Exclude<LogSection, 'meal'>, RefObject<HTMLElement>> = {
       weight: weightRef,
@@ -614,8 +611,7 @@ export default function Log() {
       water: waterRef,
       checkin: checkinRef,
     };
-    // The section elements exist after this commit; wait a frame so the
-    // shell's mount animation has started before measuring.
+    // The section elements exist after this commit; wait a frame before measuring.
     requestAnimationFrame(() => {
       if (section === 'meal') {
         focusBar();
@@ -624,7 +620,7 @@ export default function Log() {
         if (!el) return;
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         if (section === 'weight') {
-          // "open the weight field": the Stepper's text input is the first input in the card.
+          // "open the weight field": the Stepper's text input is the first input in the section.
           const input = el.querySelector<HTMLInputElement>('input');
           input?.focus({ preventScroll: true });
           input?.select();
@@ -642,98 +638,103 @@ export default function Log() {
     [],
   );
 
+  // A deep-linked section wears the 2 px lume focus ring for a moment: the
+  // same mark a keyboard user sees, drawn with an outline (no shadow), no radius.
   const flashCls = (...sections: LogSection[]) =>
-    `rounded-tile transition-shadow duration-300 ${flash && sections.includes(flash) ? 'ring-2 ring-hx-blue/70 ring-offset-4 ring-offset-hx-base' : ''}`;
+    `scroll-mt-6 outline outline-2 outline-offset-4 transition-[outline-color] duration-300 motion-reduce:transition-none ${
+      flash && sections.includes(flash) ? 'outline-hx-lume' : 'outline-transparent'
+    }`;
 
-  // --- Header numbers (protein-first, §1) — the eating day's remaining -------
+  // --- Masthead numbers (protein-first, §1) — the eating day's remaining ------
   const rem = mealCtx.nutrition.remaining;
   const proteinLeft = rem.p > 0 ? `${fmt(rem.p)} g protein left` : 'Protein target hit';
   const kcalLeft = rem.kc >= 0 ? `${fmt(rem.kc)} kcal left` : `${fmt(-rem.kc)} kcal over`;
 
   return (
-    <div className="flex flex-col">
-      <header className="sticky top-0 z-20 bg-hx-base/90 backdrop-blur px-4 pt-5 pb-3 flex flex-col gap-0.5">
-        <div className="flex items-baseline justify-between gap-3">
-          <h1 className="hx-display text-[22px] leading-7 font-semibold text-hx-text">Log</h1>
-          <span className="hx-display text-[13px] leading-[18px] text-hx-text2 shrink-0">{formatDateShort(mealDay)}</span>
+    <div className="px-5 pt-8 flex flex-col">
+      <header className="flex flex-col">
+        <div className="flex items-baseline justify-between gap-4">
+          <h1 className="hx-masthead text-hx-text shrink-0">Log</h1>
+          <p className="hx-hedge min-w-0 flex-1 text-right">{formatDateShort(mealDay)}</p>
         </div>
-        <p className="hx-display text-[13px] leading-[18px] text-hx-text2">
-          <span className="text-hx-text font-semibold">{proteinLeft}</span>, {kcalLeft}
+        <p className="hx-cap mt-2">
+          <span className="text-hx-text">{proteinLeft}</span>, {kcalLeft}
         </p>
         {mealDay !== today && (
-          <p className="text-[13px] leading-[18px] text-hx-yellow" role="status">
-            {eatingDayCaption(mealDay)}
-          </p>
+          <div className="hx-note border-hx-yellow mt-3" role="status">
+            <p className="hx-body">
+              <span className="hx-label text-hx-yellow">Note</span> <span>{eatingDayCaption(mealDay)}</span>
+            </p>
+          </div>
         )}
       </header>
 
-      {/* The screen is one bento: the things you act on are raised tiles, the
-          meals and their totals are readings (DESIGN.md "Bento rules"). */}
-      <div className="hx-bento px-4 pb-6">
+      <div className="mt-8">
         <AIBar inputRef={inputRef} value={text} onChange={onTextChange} busy={busy} aiStatus={aiStatus} aiError={clientError} question={question} onSubmit={(t) => void runEstimate(t)} />
-
-        <FastPaths
-          yesterdayMeals={yesterdayMeals}
-          recents={settings.recents.slice(0, 20)}
-          favorites={settings.favorites}
-          onRepeatYesterday={repeatYesterday}
-          onQuickAdd={quickAdd}
-          onPortion={openPortion}
-          onToggleFavorite={toggleFavorite}
-          onBarcode={() => setSecondary('barcode')}
-          onPhoto={() => setSecondary('photo')}
-        />
-
-        <MealsList meals={mealDayMeals} totals={mealCtx.nutrition.totals} targets={mealCtx.nutrition.targets} onEdit={editMeal} onDelete={deleteMeal} onLogFirst={() => focusBar()} />
-
-        {/* Deep-link target for `openLog('checkin')` — Today's stress strip taps straight here. */}
-        <section ref={checkinRef} className={`hx-span-2 scroll-mt-24 ${flashCls('checkin')}`} aria-label="Daily check-in">
-          <CheckInSection
-            date={today}
-            record={todayRecord}
-            // The weekly and monthly gates look back across the week and the
-            // month; without the history they would re-ask every morning.
-            records={records}
-            settings={settings.checkIn}
-            onSave={saveCheckIn}
-            onSkip={() => toast('Check-in skipped — nothing was saved')}
-            onOpenSettings={() => openSettings('checkin')}
-          />
-        </section>
-
-        <section ref={weightRef} className={`hx-span-2 scroll-mt-24 ${flashCls('weight')}`} aria-label="Weight">
-          <WeightCard ctx={ctx} records={records} today={today} todayRecord={todayRecord} profile={profile} onSave={saveWeight} />
-        </section>
-
-        <section ref={tobaccoRef} className={`hx-span-2 scroll-mt-24 ${flashCls('tobacco')}`} aria-label="Tobacco">
-          <TobaccoCard ctx={ctx} todayRecord={todayRecord} onAdjust={adjustTobacco} onSmokeFree={smokeFree} />
-        </section>
-
-        <section ref={caffeineRef} className={`hx-span-2 scroll-mt-24 ${flashCls('caffeine')}`} aria-label="Caffeine">
-          <CaffeineCard todayRecord={todayRecord} profile={profile} nowHHMM={ctx.nowHHMM} onCaffeine={logCaffeine} onRemoveCaffeine={removeCaffeine} />
-        </section>
-
-        {/* The 1×1 pair: one number and one control each, so neither is ever alone in a row. */}
-        <section ref={bedtimeRef} className={`scroll-mt-24 ${flashCls('bedtime')}`} aria-label="Bedtime">
-          <BedtimeCard
-            ctx={ctx}
-            now={now}
-            profile={profile}
-            targetDate={bedTarget}
-            targetRecord={bedTargetRecord}
-            todayRecord={todayRecord}
-            onGoingToBed={goingToBed}
-            onUndo={undoBedtime}
-          />
-        </section>
-
-        <section ref={waterRef} className={`scroll-mt-24 ${flashCls('water')}`} aria-label="Water">
-          <WaterTile ctx={ctx} onWater={setWater} />
-        </section>
       </div>
 
-      <footer className="px-4 pt-1 pb-2 text-left">
-        <p className="text-[12px] leading-4 text-hx-muted">Wellness information only, not medical advice.</p>
+      <FastPaths
+        yesterdayMeals={yesterdayMeals}
+        recents={settings.recents.slice(0, 20)}
+        favorites={settings.favorites}
+        onRepeatYesterday={repeatYesterday}
+        onQuickAdd={quickAdd}
+        onPortion={openPortion}
+        onToggleFavorite={toggleFavorite}
+        onBarcode={() => setSecondary('barcode')}
+        onPhoto={() => setSecondary('photo')}
+      />
+
+      <MealsList meals={mealDayMeals} totals={mealCtx.nutrition.totals} targets={mealCtx.nutrition.targets} onEdit={editMeal} onLogFirst={() => focusBar()} />
+
+      {/* Deep-link target for `openLog('checkin')` — Today's check-in row taps straight here. */}
+      <section ref={checkinRef} className={`mt-10 ${flashCls('checkin')}`} aria-label="Check-in">
+        <CheckInSection
+          date={today}
+          record={todayRecord}
+          // The weekly and monthly gates look back across the week and the
+          // month; without the history they would re-ask every morning.
+          records={records}
+          settings={settings.checkIn}
+          onSave={saveCheckIn}
+          onSkip={() => toast('Check-in skipped — nothing was saved')}
+          onOpenSettings={() => openSettings('checkin')}
+        />
+      </section>
+
+      <section ref={weightRef} className={`mt-10 ${flashCls('weight')}`} aria-label="Weight">
+        <WeightCard ctx={ctx} records={records} today={today} todayRecord={todayRecord} profile={profile} onSave={saveWeight} />
+      </section>
+
+      <section ref={waterRef} className={`mt-10 ${flashCls('water')}`} aria-label="Water">
+        <WaterTile ctx={ctx} onWater={setWater} />
+      </section>
+
+      <section ref={tobaccoRef} className={`mt-10 ${flashCls('tobacco')}`} aria-label="Tobacco">
+        <TobaccoCard ctx={ctx} todayRecord={todayRecord} onAdjust={adjustTobacco} onSmokeFree={smokeFree} />
+      </section>
+
+      <section ref={caffeineRef} className={`mt-10 ${flashCls('caffeine')}`} aria-label="Caffeine">
+        <CaffeineCard todayRecord={todayRecord} profile={profile} nowHHMM={ctx.nowHHMM} onCaffeine={logCaffeine} onRemoveCaffeine={removeCaffeine} />
+      </section>
+
+      <section ref={bedtimeRef} className={`mt-10 ${flashCls('bedtime')}`} aria-label="Bedtime">
+        <BedtimeCard
+          ctx={ctx}
+          now={now}
+          profile={profile}
+          targetDate={bedTarget}
+          targetRecord={bedTargetRecord}
+          todayRecord={todayRecord}
+          onGoingToBed={goingToBed}
+          onUndo={undoBedtime}
+        />
+      </section>
+
+      {/* The colophon: the medical line, verbatim, under a hairline. */}
+      <div className="hx-hair mt-10" aria-hidden />
+      <footer className="pt-3 pb-6">
+        <p className="hx-hedge">Wellness information only, not medical advice.</p>
       </footer>
 
       <BarcodeSheet

@@ -3,15 +3,17 @@
  * §6.6 counts/streak. The optional stamp appends "cig HH:MM" to record.note
  * so the coach can see spacing between cigarettes.
  *
- * A span-2 RAISED tile: it is a control surface (a stepper, a +1 key and a
- * toggle), not a reading (DESIGN.md "Material system").
+ * The Tobacco section of the Log page (DESIGN.md "Log"): a running head whose
+ * dateline is the day's state, the lg Stepper (two 56 px rule-outlined keys
+ * around the .hx-fig count; its "+" is the one-tap +1), the "Note time"
+ * toggle as a tag with `aria-pressed`, the streak in words with the count in
+ * its tone, and the noted times as a caption.
  *
  * A smoke-free day needs an explicit `tob: 0` (engine/tobacco.ts skips days
- * without a value; INTEGRATION_NOTES), so when nothing is logged yet the card
- * says "not logged" and offers "Smoke-free today" → adjustTobacco(d, 0).
+ * without a value; INTEGRATION_NOTES), so when nothing is logged yet the
+ * section says so and offers "Smoke-free today" → adjustTobacco(d, 0).
  */
 import { useState } from 'react';
-import { Cigarette, ShieldCheck } from 'lucide-react';
 import type { CoachContext, DailyRecord } from '../../data/types';
 import { fmt } from '../../lib/format';
 import { Button, Chip, SectionHeader, Stepper } from '../../ui';
@@ -32,48 +34,39 @@ export default function TobaccoCard({ ctx, todayRecord, onAdjust, onSmokeFree }:
   const stamps = tobaccoStampsFromNote(todayRecord?.note);
   const { avg7, streakDays } = ctx.tobacco;
 
-  const caption = logged
+  const dateline = logged
     ? count === 0
-      ? 'Smoke-free so far today.'
+      ? 'Smoke-free so far today'
       : `${count} today${avg7 !== null ? `, against your ${fmt(avg7, 1)} a day average` : ''}`
-    : 'Not logged yet today.';
+    : 'Not logged yet today';
 
   return (
-    <div className="hx-raised h-full p-4 flex flex-col gap-3">
-      <SectionHeader
-        as="h3"
-        title="Tobacco"
-        caption={caption}
-        action={
-          <Chip size="sm" active={stamp} pressed={stamp} color="blue" onClick={() => setStamp((v) => !v)} aria-label="Note the time of each +1">
+    <section className="flex flex-col" aria-label="Tobacco">
+      <SectionHeader as="h2" rule={false} title="Tobacco" caption={dateline} />
+      <div className="mt-4 flex flex-col gap-3">
+        {/* One tap on "+" is the +1; the stamp rides along when the toggle is on. */}
+        <Stepper value={count} onChange={(n) => onAdjust(n - count, stamp && n - count === 1)} step={1} min={0} max={99} label="Cigarettes today" size="lg" className="w-full" />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <Chip size="sm" active={stamp} pressed={stamp} color="blue" onClick={() => setStamp((v) => !v)}>
             Note time
           </Chip>
-        }
-      />
-      {/* sm stepper (184 px) + the +1 button fit the 324 px card; the lg one overflowed the frame (R6-1). */}
-      <div className="flex items-center justify-between gap-3">
-        <Stepper value={count} onChange={(n) => onAdjust(n - count, stamp && n - count === 1)} step={1} min={0} max={99} label="Cigarettes today" />
-        <Button size="lg" icon={<Cigarette aria-hidden />} onClick={() => onAdjust(1, stamp)} className="shrink-0" aria-label="Add one cigarette">
-          +1
-        </Button>
-      </div>
-      <div className="flex items-center justify-between gap-3 text-[13px] leading-[18px]">
-        <div className="text-hx-text2">
-          {streakDays > 0 ? (
-            <span>
-              <span className="text-hx-green font-semibold">{streakDays}</span> smoke-free {streakDays === 1 ? 'day' : 'days'} in a row
-            </span>
-          ) : (
-            <span>Smoke-free streak starts with a 0 day.</span>
+          {!logged && (
+            <Button variant="secondary" size="md" onClick={onSmokeFree}>
+              Smoke-free today
+            </Button>
           )}
         </div>
-        {!logged && (
-          <Button variant="secondary" size="sm" icon={<ShieldCheck aria-hidden />} onClick={onSmokeFree}>
-            Smoke-free today
-          </Button>
-        )}
+        <p className="hx-cap">
+          {streakDays > 0 ? (
+            <>
+              <span className="text-hx-green">{streakDays}</span> smoke-free {streakDays === 1 ? 'day' : 'days'} in a row
+            </>
+          ) : (
+            'Smoke-free streak starts with a 0 day.'
+          )}
+        </p>
+        {stamps.length > 0 && <p className="hx-cap">Times: {stamps.join(', ')}</p>}
       </div>
-      {stamps.length > 0 && <p className="text-[13px] leading-[18px] text-hx-muted">Times: {stamps.join(', ')}</p>}
-    </div>
+    </section>
   );
 }

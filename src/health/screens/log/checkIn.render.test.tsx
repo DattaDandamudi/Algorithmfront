@@ -71,10 +71,8 @@ describe('CheckInSection', () => {
     expect(screen.getByText('Fatigue')).toBeTruthy();
     expect(screen.getByText('Stress')).toBeTruthy();
     expect(screen.getByText('Muscle soreness')).toBeTruthy();
-    expect(screen.getByText('1, very restful')).toBeTruthy();
-    expect(screen.getByText('7, very restless')).toBeTruthy();
-    expect(screen.getByText('1, no soreness')).toBeTruthy();
-    expect(screen.getByText('7, very sore')).toBeTruthy();
+    expect(screen.getByText('1 very restful to 7 very restless')).toBeTruthy();
+    expect(screen.getByText('1 no soreness to 7 very sore')).toBeTruthy();
     expect(screen.getAllByRole('radiogroup')).toHaveLength(4);
   });
 
@@ -204,8 +202,7 @@ describe('CheckInSection, weekly SRSS', () => {
     }
     // Four daily scales + eight SRSS ones.
     expect(screen.getAllByRole('radiogroup')).toHaveLength(12);
-    expect(screen.getAllByText('0, does not apply at all')).toHaveLength(8);
-    expect(screen.getAllByText('6, fully applies')).toHaveLength(8);
+    expect(screen.getAllByText('0 does not apply at all to 6 fully applies')).toHaveLength(8);
     expect(screen.getByText('Recovery: 0 of 4 answered — the subscale total needs all four.')).toBeTruthy();
     expect(screen.getByText('Stress: 0 of 4 answered — the subscale total needs all four.')).toBeTruthy();
   });
@@ -332,8 +329,7 @@ describe('CheckInSection, monthly PSS-4', () => {
     expect(screen.getByText(/they ask about the last month, which is why they are never asked daily/)).toBeTruthy();
     for (const label of [P1, P2, P3, P4]) expect(screen.getByText(label)).toBeTruthy();
     expect(screen.getAllByRole('radiogroup')).toHaveLength(8); // four daily + four PSS-4
-    expect(screen.getAllByText('0, never')).toHaveLength(4);
-    expect(screen.getAllByText('4, very often')).toHaveLength(4);
+    expect(screen.getAllByText('0 never to 4 very often')).toHaveLength(4);
     expect(ariaLabels(P3)).toEqual(['0 — Never', '1 — Almost never', '2 — Sometimes', '3 — Fairly often', '4 — Very often']);
     expect(screen.queryAllByRole('radio', { checked: true })).toHaveLength(0);
   });
