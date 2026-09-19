@@ -13,8 +13,7 @@
  * screen-reader user is told once, when it matters.
  */
 import { useEffect, useState } from 'react';
-import { Button, Chip } from '../../ui';
-import ProgressRule from './ProgressRule';
+import { Button, Chip, ProgressRule } from '../../ui';
 import { REST_PRESETS, formatRest } from './trainUtils';
 
 export interface RestTimerProps {

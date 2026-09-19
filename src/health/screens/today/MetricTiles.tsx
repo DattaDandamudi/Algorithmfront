@@ -25,9 +25,8 @@ import type { ReactNode } from 'react';
 import type { Band, BaselineDelta, CoachContext, HrvBand } from '../../data/types';
 import { BASELINE_READINGS, COACH_CHIPS, PROTEIN_PER_MEAL_GKG, type EmptyStates, type SuggestedPrompts } from '../../engine';
 import { fmt, fmtMinutes, lbToKg, round } from '../../lib/format';
-import { Delta, Sparkline, Tile, type TileDelta } from '../../ui';
+import { Delta, ProgressRule, Sparkline, Tile, type TileDelta } from '../../ui';
 import { goalBandLabel } from '../trends/series';
-import ProgressRule from './ProgressRule';
 import type { NutritionBaseline } from './useTodayModel';
 
 const HRV_LABEL: Record<HrvBand, { text: string; band: Band }> = {
@@ -39,13 +38,6 @@ const HRV_LABEL: Record<HrvBand, { text: string; band: Band }> = {
 };
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-
-/**
- * A box-score cell is 159 px wide, and the kit's Delta is a non-wrapping
- * inline-flex, so "▲ 11 ms vs 28-day baseline" would break inside the number.
- * Let the caption drop to its own line and keep the glyph and figure whole.
- */
-const CELL = '[&_span.inline-flex]:flex-wrap [&_span.inline-flex>span:first-child]:whitespace-nowrap';
 
 /** Pick the contextual coach prompt for a cell from the engine's suggestions. */
 export function tilePrompt(tile: 'sleep' | 'hrv' | 'rhr' | 'steps' | 'protein' | 'calories', ctx: CoachContext, prompts: SuggestedPrompts): string {
@@ -172,15 +164,17 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, baseline, onOpe
     />
   ) : undefined;
 
+  // A box-score cell is 159 px wide, so every delta takes `wrap`: "▲ 11 ms vs
+  // 28-day baseline" drops its caption to a second line instead of breaking
+  // inside the number.
   return (
     <>
       <Tile
-        className={CELL}
         label="Sleep"
         value={sleepHours}
         dp={1}
         unit="h"
-        delta={{ value: ctx.sleep.delta.delta, good: ctx.sleep.delta.good, dp: 1, unit: 'h' }}
+        delta={{ value: ctx.sleep.delta.delta, good: ctx.sleep.delta.good, dp: 1, unit: 'h', wrap: true }}
         sub={sleepSub}
         chart={sleepRule}
         chartLayout="stack"
@@ -188,33 +182,30 @@ export default function MetricTiles({ ctx, prompts, empty, hrv7, baseline, onOpe
         onClick={open('sleep')}
       />
       <Tile
-        className={CELL}
         label="HRV"
         value={ctx.hrv.today}
         unit="ms"
         band={hrvMeta.band}
         sub={hrvMeta.text}
-        delta={hrvTileDelta(ctx.hrv)}
+        delta={{ ...hrvTileDelta(ctx.hrv), wrap: true }}
         chart={hrvSpark}
         chartLayout="stack"
         emptyHint={empty.hrv ?? 'Log HRV or connect WHOOP to start your baseline.'}
         onClick={open('hrv')}
       />
       <Tile
-        className={CELL}
         label="Resting HR"
         value={ctx.rhr.today}
         unit="bpm"
-        delta={{ value: ctx.rhr.delta, good: ctx.rhr.good, unit: 'bpm', caption: 'vs 28-day avg' }}
+        delta={{ value: ctx.rhr.delta, good: ctx.rhr.good, unit: 'bpm', caption: 'vs 28-day avg', wrap: true }}
         sub={isNum(ctx.rhr.baseline) ? `Baseline ${fmt(ctx.rhr.baseline)} bpm` : undefined}
         emptyHint="Log resting HR or connect WHOOP."
         onClick={open('rhr')}
       />
       <Tile
-        className={CELL}
         label="Steps"
         value={steps}
-        delta={stepsDelta}
+        delta={stepsDelta && { ...stepsDelta, wrap: true }}
         sub={
           <span className="flex flex-col">
             <span>{`${stepsGoalLabel(ctx.steps.goalMin, ctx.steps.goalMax)}${stepsGoalHit ? ', reached' : ''}`}</span>

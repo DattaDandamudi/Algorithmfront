@@ -3,9 +3,12 @@
  *
  * A 10 px triangle in the tone (green when the direction is good, red when
  * bad, neutral when unknown or zero), the figure in text2 with tabular
- * numerals, the caption in muted. The glyph is aria-hidden and a screen-reader
- * string ("up 3 ms") is provided. Markup order is pinned by tests: the glyph
- * span, then a bare aria-hidden span holding " 3 ms".
+ * numerals, the caption in muted. The glyph is set in `font-sans` explicitly:
+ * it would otherwise inherit a serif parent's Literata, and agate is always
+ * Archivo. The glyph is aria-hidden and a screen-reader string ("up 3 ms") is
+ * provided. Markup order is pinned by tests: the glyph span, then a bare
+ * aria-hidden span holding " 3 ms". `wrap` lets the caption drop to a second
+ * line inside a 159 px box-score cell while the glyph and figure stay whole.
  */
 import { fmt } from '../lib/format';
 import { bandText, deltaTone } from './bands';
@@ -22,10 +25,12 @@ export interface DeltaProps {
   format?: (abs: number) => string;
   /** Muted trailing text; default "vs 30-day avg". Pass '' to hide. */
   caption?: string;
+  /** Let the caption drop to a second line in a narrow cell; the glyph and figure stay together on one line. */
+  wrap?: boolean;
   className?: string;
 }
 
-export default function Delta({ value, good, dp = 0, unit = '', format, caption = 'vs 30-day avg', className = '' }: DeltaProps) {
+export default function Delta({ value, good, dp = 0, unit = '', format, caption = 'vs 30-day avg', wrap = false, className = '' }: DeltaProps) {
   const has = value !== null && value !== undefined && !Number.isNaN(value);
   const isZero = has && Math.abs(value) < 0.5 / 10 ** dp;
   const tone = deltaTone(good, has ? (isZero ? 0 : value) : null);
@@ -36,9 +41,9 @@ export default function Delta({ value, good, dp = 0, unit = '', format, caption 
   const sr = !has ? 'no baseline yet' : isZero ? `no change${unit ? ` in ${unit}` : ''}` : `${value > 0 ? 'up' : 'down'} ${num}${unit ? ` ${unit}` : ''}`;
 
   return (
-    <span className={`inline-flex items-baseline gap-1 text-[13px] leading-[18px] ${className}`}>
-      <span className="font-medium text-hx-text2">
-        <span aria-hidden className={`text-[10px] ${bandText(tone)}`}>
+    <span className={`inline-flex items-baseline gap-1 text-[13px] leading-[18px] ${wrap ? 'flex-wrap' : ''} ${className}`}>
+      <span className={`font-medium text-hx-text2 ${wrap ? 'whitespace-nowrap' : ''}`}>
+        <span aria-hidden className={`font-sans text-[10px] ${bandText(tone)}`}>
           {glyph}
         </span>
         {text && <span aria-hidden> {text}</span>}

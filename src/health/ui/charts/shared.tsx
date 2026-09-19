@@ -5,11 +5,13 @@
  * The graphics desk (DESIGN.md "Data marks"): hairlines, direct labels in
  * agate, no legend, no gridlines, no y-axis line, no fills except a 9 percent
  * ink wash where a band applies. The tooltip is a plate slip (.hx-raised) with
- * .hx-agate values and no arrow; each row is keyed by a short stroke or an
- * 8 px square in the series colour; every string is a React text node, never
- * innerHTML. The tooltip only enhances: the last value is direct-labelled and
- * the hidden table always carries every number, so nothing is gated behind
- * hover.
+ * .hx-agate values, no radius, no shadow and no arrow; each row is keyed by a
+ * short stroke or an 8 px square in the series colour; every string is a
+ * React text node, never innerHTML. It grows to 220 px so a label such as
+ * "90% band" never truncates, but never past the room on its side of the
+ * anchor: a long label wraps under itself instead. The tooltip only enhances:
+ * the last value is direct-labelled and the hidden table always carries every
+ * number, so nothing is gated behind hover.
  */
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
@@ -95,19 +97,31 @@ function Key({ row }: { row: TooltipRow }) {
   return <span className="inline-block w-2 h-2 shrink-0" style={style} aria-hidden />;
 }
 
+/** The slip's width: wide enough for "182.4–184.6 lb  90% band" on one line, never wider than the room beside the anchor. */
+const TOOLTIP_MAX_WIDTH = 220;
+const TOOLTIP_MIN_WIDTH = 120;
+
 /** Absolutely positioned plate slip; the parent must be `position: relative`. */
 export function ChartTooltip({ x, width, title, rows, top = 4 }: TooltipProps) {
   const flip = x > width / 2;
-  const style = flip ? { right: Math.max(0, width - x + 10), top } : { left: Math.max(0, x + 10), top };
+  const room = flip ? x - 10 : width - x - 10;
+  const maxWidth = Math.min(TOOLTIP_MAX_WIDTH, Math.max(TOOLTIP_MIN_WIDTH, Math.floor(room)));
+  const style = flip ? { right: Math.max(0, width - x + 10), top, maxWidth } : { left: Math.max(0, x + 10), top, maxWidth };
   return (
-    <div role="status" className="hx-raised hx-agate pointer-events-none absolute z-10 max-w-[170px] !rounded-none px-2.5 py-1.5" style={style}>
-      {title ? <div className="text-hx-muted mb-1 whitespace-nowrap">{title}</div> : null}
+    <div role="status" className="hx-raised hx-agate pointer-events-none absolute z-10 !rounded-none px-2.5 py-1.5" style={style}>
+      {title ? <div className="text-hx-muted mb-1">{title}</div> : null}
       <ul className="space-y-0.5">
         {rows.map((row, i) => (
-          <li key={i} className="flex items-center gap-2 whitespace-nowrap">
-            <Key row={row} />
-            <span className="text-hx-text">{row.value}</span>
-            {row.label ? <span className="text-hx-text2 truncate">{row.label}</span> : null}
+          // The key sits on the first line; the value never breaks inside itself; the
+          // label follows it like prose and wraps under it when the slip is full.
+          <li key={i} className="flex items-start gap-2">
+            <span className="flex h-4 items-center shrink-0">
+              <Key row={row} />
+            </span>
+            <span className="min-w-0">
+              <span className="text-hx-text whitespace-nowrap">{row.value}</span>
+              {row.label ? <span className="text-hx-text2"> {row.label}</span> : null}
+            </span>
           </li>
         ))}
       </ul>

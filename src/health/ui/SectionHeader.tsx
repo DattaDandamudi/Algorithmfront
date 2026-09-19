@@ -8,6 +8,11 @@
  * a slot for a ghost verb or a range toggle. `as="h3"` drops the rule. Put
  * 40 px above a ruled head and 16 px between the head and its content; the
  * rule-to-head 12 px is drawn here. `rule` overrides the default.
+ *
+ * The title wraps inside the measure rather than overflowing it. The dateline
+ * keeps its own width: it sits flush right beside the title when the row can
+ * hold both, and drops to the next line, still flush right, when it cannot,
+ * so it is never squeezed into a sliver beside an action.
  */
 import type { ReactNode } from 'react';
 
@@ -29,8 +34,8 @@ export default function SectionHeader({ title, action, caption, as: Tag = 'h2', 
     <div className={`flex flex-col ${className}`}>
       {inked && <div className="hx-rule" aria-hidden />}
       <div className={`flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 ${inked ? 'pt-3' : ''}`}>
-        <Tag className="hx-label shrink-0">{title}</Tag>
-        {caption && <p className="hx-hedge min-w-0 flex-1 text-right">{caption}</p>}
+        <Tag className="hx-label min-w-0 max-w-full">{title}</Tag>
+        {caption && <p className="hx-hedge min-w-0 flex-auto text-right">{caption}</p>}
         {action && <div className="shrink-0 ml-auto flex items-center">{action}</div>}
       </div>
     </div>

@@ -97,7 +97,8 @@ export default function HistoryView({ model, openId, onOpenChange, onEdit, onDel
     <div className="flex flex-col">
       <section aria-label="Last 14 days" className="mt-6 flex flex-col">
         <SectionHeader as="h2" rule={false} title="Last 14 days" caption={`${active} of ${STRIP_DAYS} days had a session`} />
-        <div className="mt-4 grid gap-x-0.5" style={{ gridTemplateColumns: `repeat(${STRIP_DAYS}, minmax(0, 1fr))` }} aria-hidden>
+        {/* `data-mark`: the fourteen cells are chart marks, so their hairline outlines are grid lines, not frames. */}
+        <div className="mt-4 grid gap-x-0.5" style={{ gridTemplateColumns: `repeat(${STRIP_DAYS}, minmax(0, 1fr))` }} aria-hidden data-mark="">
           {strip.map(({ d, sessions, level }) => (
             <div key={d} className="min-w-0 flex flex-col items-center gap-1">
               <span

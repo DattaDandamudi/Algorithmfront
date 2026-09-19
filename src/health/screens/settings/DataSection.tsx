@@ -20,9 +20,9 @@ import { useHealth, useRecords } from '../../data/store';
 import type { ImportResult } from '../../data/types';
 import { yearMonthOf } from '../../lib/dates';
 import { fmt } from '../../lib/format';
-import { Banner, Button, toast, type Tone } from '../../ui';
+import { Banner, Button, ProgressRule, toast, type Tone } from '../../ui';
 import { useConfirm } from './useConfirm';
-import { Field, Inset, KV, KVList, Note, ProgressRule, StateWord, SubHeading, Words } from './fields';
+import { Field, Inset, KV, KVList, Note, StateWord, SubHeading, Words } from './fields';
 import { EXPORT_REMINDER_DAYS, daysSince, formatBytes, relativeTime } from './util';
 
 type ImportMode = 'merge' | 'replace';

@@ -27,6 +27,8 @@ export interface TileDelta {
   format?: (abs: number) => string;
   /** Default "vs 30-day avg". */
   caption?: string;
+  /** Let the caption drop to its own line inside a 159 px cell (Delta `wrap`). */
+  wrap?: boolean;
 }
 
 export interface TileProps {
@@ -79,7 +81,7 @@ export default function Tile(props: TileProps) {
     <div className="mt-auto pt-2 w-full flex items-end justify-between gap-2">
       <div className="min-w-0">
         {has && delta ? (
-          <Delta value={delta.value} good={delta.good} dp={delta.dp} unit={delta.unit} format={delta.format} caption={delta.caption} />
+          <Delta value={delta.value} good={delta.good} dp={delta.dp} unit={delta.unit} format={delta.format} caption={delta.caption} wrap={delta.wrap} />
         ) : !has && emptyHint ? (
           <span className="hx-cap">{emptyHint}</span>
         ) : null}

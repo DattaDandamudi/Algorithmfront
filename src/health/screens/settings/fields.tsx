@@ -21,8 +21,8 @@
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { fmt, round } from '../../lib/format';
-import { SectionHeader, SegmentedControl, bandBg, bandText, type SegmentedOption, type Tone } from '../../ui';
+import { round } from '../../lib/format';
+import { SectionHeader, SegmentedControl, bandText, type SegmentedOption, type Tone } from '../../ui';
 import { isISODate, normalizeHHMM } from './util';
 
 /** The underline field's text: the kit draws the rule; the field only drops its side padding. */
@@ -160,26 +160,6 @@ export function KV({ k, v }: { k: string; v: ReactNode }) {
     <div className="flex items-baseline justify-between gap-4 min-h-11 py-2 border-t border-hx-border first:border-t-0">
       <dt className="hx-body shrink-0">{k}</dt>
       <dd className={`m-0 min-w-0 flex-1 text-right text-hx-text ${figure ? 'hx-fig-sm' : 'hx-ui'}`}>{v}</dd>
-    </div>
-  );
-}
-
-/**
- * The 2 px progress rule (DESIGN.md "Data marks"): a hairline track with an ink
- * fill, a tone only where a band applies, the reading in .hx-agate at its end.
- * `role="meter"` so the value is announced.
- */
-export function ProgressRule({ value, max, tone = 'ink', label, end, valueText, className = '' }: { value: number; max: number; tone?: Tone | 'ink'; label: string; end?: string; valueText?: string; className?: string }) {
-  const v = Number.isFinite(value) ? Math.max(0, value) : 0;
-  const scale = max > 0 ? max : 1;
-  const frac = Math.min(1, v / scale);
-  const fill = tone === 'ink' ? 'bg-hx-text' : bandBg(tone);
-  return (
-    <div className={`w-full flex items-center gap-2 ${className}`}>
-      <div role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={scale} aria-valuenow={Math.min(v, scale)} aria-valuetext={valueText ?? `${fmt(v)} of ${fmt(scale)}`} className="relative flex-1 h-0.5 bg-hx-border">
-        <span className={`absolute inset-y-0 left-0 ${fill}`} style={{ width: `${Math.round(frac * 1000) / 10}%` }} aria-hidden />
-      </div>
-      {end && <span className="hx-agate shrink-0">{end}</span>}
     </div>
   );
 }

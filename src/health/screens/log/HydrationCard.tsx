@@ -25,9 +25,8 @@ import type { CoachContext, DailyRecord, HHMM, Profile } from '../../data/types'
 import { ML_PER_CUP } from '../../engine/nutrition';
 import { formatClock } from '../../lib/dates';
 import { fmt } from '../../lib/format';
-import { Button, Chip, SectionHeader, Stepper } from '../../ui';
+import { Button, Chip, ProgressRule, SectionHeader, Stepper } from '../../ui';
 import { caffeineLateCaption, caffeinePickHint, normaliseTime } from './logUtils';
-import ProgressRule from './ProgressRule';
 
 export interface CaffeineCardProps {
   todayRecord: DailyRecord | undefined;

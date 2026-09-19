@@ -34,9 +34,8 @@ import type { PlannedExercise, TrainingContext, WorkoutKind } from '../../data/t
 import { LOAD_NOTES, PROGRESSION_NOTES } from '../../engine';
 import { formatDateLong } from '../../lib/dates';
 import { fmt } from '../../lib/format';
-import { Button, EmptyState, SectionHeader, bandBorder, bandText } from '../../ui';
+import { Button, EmptyState, ProgressRule, SectionHeader, bandBorder, bandText } from '../../ui';
 import LoadGauge from './LoadGauge';
-import ProgressRule from './ProgressRule';
 import { Note } from './TrainCard';
 import type { TrainModel } from './useTrainModel';
 import {

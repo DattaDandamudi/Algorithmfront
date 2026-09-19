@@ -1,22 +1,29 @@
 /**
- * ProgressRule — the 2 px progress rule (DESIGN.md "Data marks") for the Train
- * tab: a 2 px `--hx-border` track with an ink fill in bone, or a tone token
- * where a band applies, and an optional `.hx-agate` reading at the rule's end.
- * `role="meter"` so the value is announced; `label` names what is measured.
- * The rest timer and the rest-day recovery ledger draw it in place of the
- * wells and rounded bars they had. Local to `screens/train` because the kit
- * has no bare rule primitive (MacroBar is the same rule with a label and
- * figure attached).
+ * ProgressRule — the 2 px progress rule (DESIGN.md "Data marks").
+ *
+ * A 2 px `--hx-border` track with an ink fill in bone, or a tone token only
+ * where a band applies (blue for steps and water before the goal, green once
+ * a target is met, red over it), and the reading in `.hx-agate` at the rule's
+ * end ("78%", "of 7.9 h", "2 cups left"). This is the bare rule the box-score
+ * cells, the food and water ledgers, the rest timer, the recovery ledger and
+ * the storage row draw in place of the old rings and wells; `MacroBar` is the
+ * same rule with its own label, figure, range wash and floor tick attached.
+ *
+ * `role="meter"` so the value is announced: `label` names what is measured,
+ * `aria-valuenow` is clamped to `max`, and `valueText` (default "x of y")
+ * gives the spoken reading its unit. A null or missing value draws an empty
+ * track rather than a fabricated fill. There is one of these in the tree; a
+ * screen never carries a local copy.
  */
-import { fmt } from '../../lib/format';
-import { bandBg, type Tone } from '../../ui';
+import { fmt } from '../lib/format';
+import { bandBg, type Tone } from './bands';
 
 export interface ProgressRuleProps {
   value: number | null | undefined;
   max: number;
   /** Fill tone when a band applies; 'ink' (default) fills in bone. */
   tone?: Tone | 'ink';
-  /** Accessible name, e.g. "Rest remaining". */
+  /** Accessible name, e.g. "Steps toward goal". */
   label: string;
   /** Agate text at the rule's end. */
   end?: string;

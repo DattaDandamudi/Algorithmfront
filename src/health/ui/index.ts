@@ -17,6 +17,8 @@ export { default as Sparkline } from './Sparkline';
 export type { SparklineProps } from './Sparkline';
 export { default as MacroBar } from './MacroBar';
 export type { MacroBarProps } from './MacroBar';
+export { default as ProgressRule } from './ProgressRule';
+export type { ProgressRuleProps } from './ProgressRule';
 export { default as InsightCard } from './InsightCard';
 export type { InsightCardProps } from './InsightCard';
 export { default as Chip } from './Chip';

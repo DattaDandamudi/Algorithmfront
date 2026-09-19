@@ -5,7 +5,7 @@ screen from the kit alone. Dark only, a 390 px page with 20 px margins (a 350 px
 no tiles. Import from `'../ui'`:
 
 ```ts
-import { Ring, Tile, Delta, Sparkline, MacroBar, InsightCard, Chip, Stepper, Sheet,
+import { Ring, Tile, Delta, Sparkline, MacroBar, ProgressRule, InsightCard, Chip, Stepper, Sheet,
          SegmentedControl, EmptyState, SectionHeader, Button, ToastHost, toast, Banner,
          ProgressRing, bandColor, bandText, bandBg, bandBorder, bandLabel } from '../ui';
 ```
@@ -26,6 +26,14 @@ never pass a placeholder number. Charts live in `./charts` (see `./charts/README
    `.hx-well` wrapper the input drops its own rule.
 3. `.hx-rule` bleeds past the page margin by `--hx-gutter` (20 px on `.hx`; set it on a screen that uses
    another gutter). HealthApp clips the column with `overflow-x-clip`, so the page never widens.
+
+## Marks drawn in HTML: `data-mark`
+
+Most charts are SVG. Where a run of chart marks is HTML instead (the volume heat map's cells, the Train
+14-day strip), put `data-mark` on their container. The review probe treats everything inside as a mark,
+so a hairline around an empty cell there is a grid line, not a frame around a reading, and a cell's
+texture is a fill, not decoration. Never put it on anything that is read as text. Texture, where a test
+demands a non-hue channel, is a tiny inline SVG tile in `backgroundImage`, never a CSS colour-stop image.
 
 ## The type ladder (use the class, never hand-set px)
 
@@ -102,12 +110,23 @@ numeral beside the dial as type; `children` are still centred over it for the he
 
 ## ProgressRing — a 32 px dial where a ring is still wanted (hydration)
 `{ value: number|null; max: number; color?: Tone|cssColor='blue'; size?=32; stroke?=2; label?; children? }`
-1 px track, `stroke` px arc, butt caps. Elsewhere use a progress rule (MacroBar, or a 2 px `.hx-hair` with an ink fill).
+1 px track, `stroke` px arc, butt caps. Elsewhere use `ProgressRule`.
+
+## ProgressRule — the 2 px progress rule
+`{ value: number|null; max: number; tone?: Tone|'ink'='ink'; label: string; end?: string; valueText?: string }`
+A 2 px `--hx-border` track with an ink fill: bone by default, a tone token only where a band applies
+(`blue` for steps and water before the goal, `green` once it is met, `red` over a target), and `end` in
+`.hx-agate` at the rule's end ("78%", "of 7.9 h", "2 cups left"). `role="meter"` named by `label`, with
+`aria-valuenow` clamped to `max` (a `max` of 0 scales to 1) and `valueText` (default "x of y") as the
+spoken reading; a null value draws an empty track. It is the bare rule under a box-score cell, a ledger
+row, the rest timer, the recovery ledger and the storage row; `MacroBar` is the same rule with its own
+label, figure, range wash and floor tick attached. There is one of these in the tree: never add a local
+copy under a screen.
 
 ## Tile — a box-score cell, or a ledger row with `span={2}`
 ```
 { label; value: string|number|null; dp?=0; unit?; size?: 'md'|'lg' (both set .hx-fig);
-  delta?: { value; good; dp?; unit?; format?; caption?='vs 30-day avg' };
+  delta?: { value; good; dp?; unit?; format?; caption?='vs 30-day avg'; wrap? };
   band?: Band (tone square + colour on `sub`); sub?: ReactNode; chart?: ReactNode (Sparkline / progress rule / ProgressRing);
   chartLayout?: 'inline'|'stack'; span?: 1|2; rows?: 1|2 (no-op);
   onClick?: () => void (the whole block becomes a 56 px button that inks its leader); emptyHint?: string }
@@ -115,11 +134,15 @@ numeral beside the dial as type; `children` are still centred over it for the he
 Transparent. A cell (`.hx-cell`) stacks label, figure with unit, band line, chart, delta. A row (`.hx-row`)
 puts the label left and the figure flush right on one line, then the chart, caption and delta. The label
 is the only `.hx-label` inside a Tile (a render test slices tiles by that class). Place cells directly
-inside `.hx-score-grid` and rows inside `.hx-ledger`.
+inside `.hx-score-grid` and rows inside `.hx-ledger`. A cell is 159 px wide, so pass `delta.wrap` there
+(Today does) and the delta's caption drops to its own line instead of breaking inside the number.
 
 ## Delta — ▲ 3 ms vs 30-day avg
-`{ value: number|null; good: boolean|null; dp?=0; unit?; format?(abs); caption?='vs 30-day avg' }`
-A 10 px triangle in the tone, the figure in text2 (tnum), the caption in muted. Pass `caption=''` to hide it.
+`{ value: number|null; good: boolean|null; dp?=0; unit?; format?(abs); caption?='vs 30-day avg'; wrap?: boolean }`
+A 10 px triangle in the tone, the figure in text2 (tnum), the caption in muted. The glyph is `font-sans`
+explicitly so it stays Archivo inside a serif parent (a `.hx-cap` or `.hx-body`). Pass `caption=''` to hide
+it. `wrap` lets the caption drop to a second line in a narrow cell while the glyph and figure stay
+together on one line; do it with the prop, never with an arbitrary-variant reach-in from the screen.
 The markup order (`▼</span><span aria-hidden="true"> 3 ms</span>`) is pinned by tests; do not wrap the figure.
 
 ## Sparkline — 1 px mini line
@@ -173,9 +196,12 @@ under a hairline: the title in bone, then the hint in text2, then a ghost verb. 
 ## SectionHeader — the running head
 `{ title; action?: ReactNode; caption?: string; as?: 'h2'|'h3'; rule?: boolean }`
 `h2` draws the full-bleed ink rule above itself (12 px to the head); `h3` (or `rule={false}`) does not.
-Title flush left in `.hx-label`; `caption` is the dateline flush right in `.hx-hedge` and should be real
-metadata ("vs your 30-day avg", "3 meals left, 14:20"); `action` is a slot for a ghost verb or a range
-toggle. The screen owns the 40 px above a ruled head (`mt-10`) and the 16 px below it (`mt-4`).
+Title flush left in `.hx-label`, wrapping inside the measure (`min-w-0`) rather than overflowing it;
+`caption` is the dateline flush right in `.hx-hedge` and should be real metadata ("vs your 30-day avg",
+"3 meals left, 14:20"); `action` is a slot for a ghost verb or a range toggle. The dateline keeps its own
+width: beside the title when the row can hold both, otherwise on the next line, still flush right, never
+squeezed into a sliver beside an action. The screen owns the 40 px above a ruled head (`mt-10`) and the
+16 px below it (`mt-4`).
 
 ## Button
 `{ variant?: 'primary'|'secondary'|'ghost'|'danger' (='primary'); size?: 'sm'(44)|'md'(44)|'lg'(48);

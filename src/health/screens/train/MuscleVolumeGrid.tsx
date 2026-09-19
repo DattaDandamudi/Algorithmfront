@@ -18,14 +18,18 @@
  *    The `title` on each cell is a hover, and a phone has no hover, so it is a
  *    bonus rather than the mechanism: the hidden table is what a screen reader
  *    reads (the grid is one `role="img"`, so per-cell attributes inside it are
- *    never announced), and `CELL_PATTERN` is the texture channel: the three
- *    non-solid bands carry a faint hatch at 45° or its 135° mirror, so the
- *    grid still separates the bands in print or under forced colours.
+ *    never announced), and `HATCH` is the texture channel: the three non-solid
+ *    bands carry a faint hatch tiled from a tiny inline SVG (never a CSS
+ *    colour-stop image), at one slant or its mirror, so the grid still
+ *    separates the bands in print or under forced colours.
  * 2. **A landmark is advisory, never a cap.** `VOLUME_ADVISORY_NOTE` is
  *    rendered by the grid itself, so any screen that reuses it (Trends does)
  *    gets the note with it. `high` reads "more than most people need to grow";
  *    there is deliberately no "too much" band and nothing here subtracts a set
  *    because a line was crossed.
+ *
+ * The grid container carries `data-mark`: its cells are chart marks, so a
+ * hairline around an empty week is a grid line, not a frame around a reading.
  *
  * Exported from `screens/train/index.ts` for the Trends screen (plan §2c).
  */
@@ -35,7 +39,7 @@ import { VOLUME_ADVISORY_NOTE } from '../../engine';
 import { formatDateShort } from '../../lib/dates';
 import { fmt } from '../../lib/format';
 import { bandText } from '../../ui';
-import { HiddenTable, LEVEL_OPACITY } from '../../ui/charts';
+import { HiddenTable, LEVEL_OPACITY, TOKEN } from '../../ui/charts';
 import { Note } from './TrainCard';
 import { muscleLabel, volumeStatusPhrase, volumeStatusTone, volumeStatusWord } from './trainUtils';
 
@@ -66,20 +70,55 @@ const DENSITY: Record<MuscleVolume['status'], number> = {
 };
 
 /**
- * The texture channel: a faint stock-coloured hatch at 45° or its 135° mirror
- * (never horizontal or vertical, which read as rules), so the bands differ in
+ * The texture channel: a faint stock-coloured hatch tiled from a `pitch` px
+ * SVG tile with one 1 px diagonal, at one slant or its mirror (never
+ * horizontal or vertical, which read as rules), so the bands differ in
  * *pattern* as well as density. The productive band is the plain one.
  */
-const CELL_PATTERN: Record<MuscleVolume['status'], string | undefined> = {
-  'below-mev': 'repeating-linear-gradient(45deg, rgba(16,14,11,0.5) 0 1px, rgba(16,14,11,0) 1px 4px)',
-  building: 'repeating-linear-gradient(135deg, rgba(16,14,11,0.5) 0 1px, rgba(16,14,11,0) 1px 4px)',
-  productive: undefined,
-  high: 'repeating-linear-gradient(45deg, rgba(16,14,11,0.5) 0 1px, rgba(16,14,11,0) 1px 3px)',
+interface Hatch {
+  /** Tile size in px, which is the distance between lines along an edge. */
+  pitch: number;
+  /** '\\' runs top-left to bottom-right; '/' is its mirror. */
+  slant: '\\' | '/';
+}
+const HATCH: Record<MuscleVolume['status'], Hatch | null> = {
+  'below-mev': { pitch: 6, slant: '\\' },
+  building: { pitch: 6, slant: '/' },
+  productive: null,
+  high: { pitch: 4, slant: '\\' },
 };
+
+/** The stock (`--hx-base`) at half strength: the hatch cuts into the bone fill without adding a colour. A literal, because a data URI cannot read a CSS variable. */
+const HATCH_INK = '#100E0B';
+const HATCH_ALPHA = 0.5;
+
+/** Percent-encode for `url("data:…")`: encodeURIComponent leaves ' ( ) alone and they would end the URL early. */
+const encode = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/** One tile: a single diagonal plus the two corner stubs that keep the line continuous across tiles. */
+function hatchTile({ pitch: p, slant }: Hatch): string {
+  const d = slant === '\\' ? `M0 0L${p} ${p} M${p - 1} -1L${p + 1} 1 M-1 ${p - 1}L1 ${p + 1}` : `M0 ${p}L${p} 0 M-1 1L1 -1 M${p - 1} ${p + 1}L${p + 1} ${p - 1}`;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${p}' height='${p}'><path d='${d}' stroke='${HATCH_INK}' stroke-opacity='${HATCH_ALPHA}' stroke-width='1' fill='none'/></svg>`;
+  return `url("data:image/svg+xml,${encode(svg)}")`;
+}
+
+/** The same hatch drawn across a `size` px legend swatch. */
+function hatchSwatchPath({ pitch: p, slant }: Hatch, size: number): string {
+  const lines: string[] = [];
+  for (let k = -size; k <= size; k += p) lines.push(slant === '\\' ? `M${k} 0L${k + size} ${size}` : `M${k} ${size}L${k + size} 0`);
+  return lines.join(' ');
+}
+
+const CELL_TEXTURE = Object.fromEntries(
+  LEGEND.map((status) => {
+    const hatch = HATCH[status];
+    return [status, hatch ? hatchTile(hatch) : undefined];
+  }),
+) as Record<MuscleVolume['status'], string | undefined>;
 
 /** Fill for one band: bone at the band's density, plus the hatch that survives without it. */
 export function volumeCellStyle(status: MuscleVolume['status']): CSSProperties {
-  const image = CELL_PATTERN[status];
+  const image = CELL_TEXTURE[status];
   return { backgroundColor: 'var(--hx-text)', opacity: DENSITY[status], ...(image ? { backgroundImage: image } : {}) };
 }
 
@@ -87,6 +126,8 @@ export function volumeCellStyle(status: MuscleVolume['status']): CSSProperties {
 export function volumeCellText(v: MuscleVolume): string {
   return `${fmt(v.sets, v.sets % 1 === 0 ? 0 : 1)} sets — ${volumeStatusWord(v.status)}`;
 }
+
+const SWATCH = 8;
 
 export default function MuscleVolumeGrid({
   weeks,
@@ -113,7 +154,7 @@ export default function MuscleVolumeGrid({
         sized to its widest label, and a per-row grid would give every row its
         own track widths — a heat map whose columns do not line up.
       */}
-      <div role="img" aria-label={ariaLabel} className="grid items-center" style={{ gridTemplateColumns: columns, columnGap: 2, rowGap: 2 }}>
+      <div role="img" aria-label={ariaLabel} data-mark="" className="grid items-center" style={{ gridTemplateColumns: columns, columnGap: 2, rowGap: 2 }}>
         {muscles.map((current, row) => (
           <Fragment key={current.muscle}>
             <span className="hx-agate whitespace-nowrap pr-1">{muscleLabel(current.muscle)}</span>
@@ -138,13 +179,20 @@ export default function MuscleVolumeGrid({
         ))}
       </div>
 
+      {/* The legend written as words, each led by an SVG swatch at the band's density with its hatch. */}
       <ul className="hx-agate mt-3 flex flex-wrap gap-x-4 gap-y-1">
-        {LEGEND.map((status) => (
-          <li key={status} className="flex items-center gap-1.5">
-            <span className="w-2 h-2 shrink-0" style={volumeCellStyle(status)} aria-hidden />
-            {volumeStatusWord(status)}
-          </li>
-        ))}
+        {LEGEND.map((status) => {
+          const hatch = HATCH[status];
+          return (
+            <li key={status} className="flex items-center gap-1.5">
+              <svg width={SWATCH} height={SWATCH} viewBox={`0 0 ${SWATCH} ${SWATCH}`} className="block shrink-0" style={{ opacity: DENSITY[status] }} aria-hidden>
+                <rect width={SWATCH} height={SWATCH} fill={TOKEN.text} />
+                {hatch && <path d={hatchSwatchPath(hatch, SWATCH)} stroke={HATCH_INK} strokeOpacity={HATCH_ALPHA} strokeWidth={1} fill="none" />}
+              </svg>
+              {volumeStatusWord(status)}
+            </li>
+          );
+        })}
       </ul>
 
       <HiddenTable

@@ -19,7 +19,7 @@ The graphics desk in `../../DESIGN.md` ("Data marks") is authoritative; in brief
 * Bars are square, on one baseline hairline; the heat map fills by ink density (`LEVEL_OPACITY` = 0.12 / 0.28 / 0.5 / 0.8 of bone), never a colour ramp.
 * Tooltips enhance, never gate: a crosshair snaps to the nearest x on pointer/touch, the SVG is
   focusable (`←`/`→`/`Home`/`End`/`Esc`), and a visually-hidden `<table>` (the "table view twin")
-  lists every number. The tooltip is a plate slip (`.hx-raised`, no radius, no arrow) in `.hx-agate`; strings are React text nodes (never `innerHTML`); values lead, labels follow.
+  lists every number. The tooltip is a plate slip (`.hx-raised`, no radius, no shadow, no arrow) in `.hx-agate`, up to 220 px wide but never wider than the room on its side of the anchor; a long label wraps under its value rather than truncating ("90% band" fits on one line); strings are React text nodes (never `innerHTML`); values lead, labels follow.
 * The empty frame is an italic `.hx-body` sentence under a hairline, flush left, at the chart's height so the layout never jumps.
 * Hit targets at least 24 px: the whole plot (time series), the whole slot (bars), the cell pitch (heatmap).
 * Colours inside SVG are CSS variables only (`var(--hx-text)`, `var(--hx-blue)` …) — pass tokens, not hex. `DEFAULT_CHART_WIDTH` is the 350 px measure.
